@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+*.exe
+*.msi
+.vscode/
+.kiro/

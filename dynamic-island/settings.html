@@ -1,0 +1,379 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>灵动岛 - 设置</title>
+  <style>
+    :root {
+      --bg: #0c111d;
+      --panel: rgba(16, 23, 39, 0.74);
+      --panel-border: rgba(143, 163, 191, 0.22);
+      --text: #e9f0ff;
+      --muted: #93a4c8;
+      --primary: #29c6ff;
+      --primary-2: #3eff9f;
+      --danger: #ff5b6e;
+      --ok: #39d98a;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --shadow: 0 24px 50px rgba(0, 0, 0, 0.38);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(41, 198, 255, 0.22), transparent 34%),
+        radial-gradient(circle at 100% 100%, rgba(62, 255, 159, 0.16), transparent 28%),
+        linear-gradient(165deg, #0a0f1b 0%, #0b1322 46%, #091523 100%);
+      color: var(--text);
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: auto;
+    }
+
+    .shell {
+      width: min(760px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .shell::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      background: linear-gradient(130deg, rgba(41, 198, 255, 0.16), rgba(62, 255, 159, 0.08), transparent 45%);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .hero {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hero h1 {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: 0.2px;
+    }
+
+    .hero p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 560px;
+      line-height: 1.5;
+    }
+
+    .badge {
+      border: 1px solid rgba(62, 255, 159, 0.35);
+      color: #b2ffd8;
+      background: rgba(27, 77, 58, 0.36);
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 5px 10px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid rgba(143, 163, 191, 0.2);
+      background: rgba(13, 19, 34, 0.78);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: #8ea2c8;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(143, 163, 191, 0.16);
+      margin-bottom: 10px;
+    }
+
+    .row:last-child { margin-bottom: 0; }
+
+    .row h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .row p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .switch {
+      width: 46px;
+      height: 26px;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: rgba(129, 145, 170, 0.5);
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 3px;
+      top: 3px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform .22s cubic-bezier(.2,.8,.2,1);
+    }
+
+    .switch input:checked + .slider {
+      background: linear-gradient(90deg, #1ea9ff 0%, #3eff9f 100%);
+    }
+
+    .switch input:checked + .slider::before {
+      transform: translateX(20px);
+    }
+
+    .input,
+    .select {
+      background: rgba(9, 14, 26, 0.92);
+      border: 1px solid rgba(125, 142, 170, 0.42);
+      color: var(--text);
+      border-radius: 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .input:focus,
+    .select:focus {
+      border-color: #3dcfff;
+      box-shadow: 0 0 0 3px rgba(61, 207, 255, 0.16);
+    }
+
+    .shortcut { width: 156px; text-align: center; padding: 8px 10px; cursor: pointer; }
+    .shortcut.recording {
+      border-color: var(--danger);
+      color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(255, 91, 110, 0.16);
+    }
+
+    .path { width: 100%; padding: 10px 12px; margin-top: 10px; }
+
+    .select {
+      width: 130px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 11px;
+      cursor: pointer;
+      transition: transform .08s ease, filter .2s ease, opacity .2s ease;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 13px;
+    }
+
+    .btn:active { transform: translateY(1px); }
+
+    .btn-secondary {
+      color: #d9e7ff;
+      background: rgba(26, 39, 67, 0.75);
+      border: 1px solid rgba(126, 154, 193, 0.34);
+    }
+
+    .btn-secondary:hover { filter: brightness(1.1); }
+
+    .btn-primary {
+      color: #041824;
+      background: linear-gradient(90deg, #36c5ff 0%, #51ffb0 100%);
+    }
+
+    .btn-primary:hover { filter: brightness(1.04); }
+
+    .btn-primary:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .footer {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .save {
+      flex: 1;
+      min-width: 220px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #fff;
+      border: 1px solid rgba(110, 137, 176, 0.35);
+      background: linear-gradient(135deg, #1a5cb8, #2b86ff);
+    }
+
+    .save:hover { filter: brightness(1.07); }
+
+    .status {
+      min-height: 20px;
+      font-size: 13px;
+      color: var(--ok);
+      width: 100%;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: #cde7ff;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(143, 163, 191, 0.2);
+      border-radius: 9px;
+      padding: 7px 8px;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    @media (max-width: 560px) {
+      body { padding: 12px; }
+      .shell { padding: 16px; border-radius: 18px; }
+      .hero h1 { font-size: 24px; }
+      .shortcut, .select { width: 130px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <h1>灵动岛设置</h1>
+        <p>保留轻量核心功能：快捷键、剪贴板识别、歌词模式，以及 PluginMarket 源修复。</p>
+      </div>
+      <span class="badge">UI Pro Layout</span>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <div class="card-title">基础能力</div>
+
+        <div class="row">
+          <div>
+            <h3>监听剪贴板链接</h3>
+            <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="clipboard-toggle" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="row">
+          <div>
+            <h3>打开链接快捷键</h3>
+            <p>点击输入框后直接按组合键录入。</p>
+          </div>
+          <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
+        </div>
+
+        <div class="row">
+          <div>
+            <h3>歌词显示模式</h3>
+            <p>控制收起状态下的音乐展示策略。</p>
+          </div>
+          <select id="lyric-mode" class="select">
+            <option value="lyric">显示歌词</option>
+            <option value="info">仅歌曲信息</option>
+            <option value="off">关闭</option>
+          </select>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-title">InfLink / PluginMarket</div>
+
+        <div class="row" style="display:block;">
+          <h3>InfLink 下载地址</h3>
+          <p>仅提供下载地址，不再执行 InfLink 插件文件写入。</p>
+          <div class="mono">https://github.com/BetterNCM/InfinityLink</div>
+          <div class="actions">
+            <button id="open-inflink-btn" class="btn btn-secondary" type="button">打开下载地址</button>
+          </div>
+        </div>
+
+        <div class="row" style="display:block;">
+          <h3>PluginMarket main.js 源修复</h3>
+          <p>仅执行源地址替换（旧源 → BetterNCM 官方源）。</p>
+          <input id="betterncm-path" class="input path" value="C:\betterncm" />
+          <div class="actions">
+            <button id="install-betterncm-btn" class="btn btn-primary" type="button">执行 main.js 源修复</button>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <button id="save-btn" class="btn save" type="button">保存基础设置</button>
+      <div id="status" class="status"></div>
+    </footer>
+  </main>
+
+  <script type="module" src="/src/settings.ts"></script>
+</body>
+</html>

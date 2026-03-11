@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DynamicIsland</title>
+    <script type="module" src="/src/main.ts" defer></script>
+</head>
+<body>
+    <div id="island-capsule">
+        <!-- 内容层 -->
+        <div id="time-wrapper" class="content-wrapper">
+            <div id="time-text">00:00:00</div>
+        </div>
+        <div id="notice-area" class="content-wrapper">
+            <div class="icon-box" id="notice-icon">
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+                    <path d="M512 426.688a42.688 42.688 0 0 0-42.688 42.688v298.688a42.688 42.688 0 0 0 85.376 0V469.376A42.688 42.688 0 0 0 512 426.688zM507.776 213.376a59.776 59.776 0 1 0 0 119.552 59.776 59.776 0 0 0 0-119.552z" fill="#ffffff"/>
+                    <path d="M512 0a512 512 0 1 0 0 1024 512 512 0 0 0 0-1024z m0 938.688a426.624 426.624 0 0 1-426.688-426.688c0-235.648 190.976-426.688 426.688-426.688s426.688 190.976 426.688 426.688-190.976 426.688-426.688 426.688z" fill="#ffffff"/>
+                </svg>
+            </div>
+            <div id="notice-msg">通知消息</div>
+        </div>
+        <div id="url-list" class="content-wrapper"></div>
+        <div id="lyric-area" class="content-wrapper">
+            <div class="music-indicator" id="music-indicator">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+            <div id="lyric-text-wrap">
+                <div id="lyric-text"></div>
+                <div id="lyric-meta"></div>
+            </div>
+            <div class="media-controls" id="media-controls">
+                <button class="media-btn" id="btn-prev" title="上一曲">
+                    <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button class="media-btn play-btn" id="btn-play" title="播放/暂停">
+                    <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <svg id="icon-pause" width="16" height="16" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+                </button>
+                <button class="media-btn" id="btn-next" title="下一曲">
+                    <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- 视图切换指示点：胶囊底部居中 -->
+        <div id="view-switcher">
+            <div id="view-dots"></div>
+        </div>
+    </div>
+</body>
+</html>
