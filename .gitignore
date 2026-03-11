@@ -5,3 +5,4 @@ target/
 *.msi
 .vscode/
 .kiro/
+debug-run.bat
