@@ -26,16 +26,6 @@
         "resizable": false,
         "skipTaskbar": true,
         "center": false
-      },
-      {
-        "label": "settings",
-        "title": "\u7075\u52a8\u5c9b - \u8bbe\u7f6e",
-        "url": "settings.html",
-        "width": 560,
-        "height": 760,
-        "resizable": false,
-        "center": true,
-        "visible": false
       }
     ],
     "security": {

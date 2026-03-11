@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::net::TcpStream;
@@ -31,6 +31,18 @@ const CAPSULE_EXPANDED_H: f64 = 74.0;
 const CAPSULE_TOP_PAD: f64 = 5.0;
 
 const SNAP_DURATION_MS: f64 = 300.0;
+
+/// 全局复用的 HTTP client，避免每次歌词请求重新初始化 TLS
+fn shared_http_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .pool_max_idle_per_host(2)
+            .build()
+            .expect("failed to create http client")
+    })
+}
 const SNAP_FRAME_MS: u64 = 10;
 
 const DEFAULT_BETTERNCM_ROOT: &str = r"C:\betterncm";
@@ -870,9 +882,7 @@ fn extract_synced_from_object(json: &serde_json::Value) -> Option<Vec<LyricLine>
 
 /// 浠庣綉鏄撲簯闊充箰鑾峰彇姝岃瘝锛堜綔涓?LRCLIB 鐨勫鐢ㄦ簮锛?
 fn fetch_lyrics_from_netease(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build().ok()?;
+    let client = shared_http_client();
 
     let cleaned_title = clean_title(title);
     let cleaned_artist = artist.split(['/', ',']).next().unwrap_or(artist).trim();
@@ -907,9 +917,7 @@ fn fetch_lyrics_from_netease(title: &str, artist: &str) -> Option<Vec<LyricLine>
 }
 
 fn fetch_lyrics_from_lrclib(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build().ok()?;
+    let client = shared_http_client();
     let ua = "DynamicIsland/1.0 (https://github.com/user/dynamic-island)";
 
     let cleaned_title = clean_title(title);
@@ -1190,7 +1198,7 @@ pub fn run() {
                 let mut last_bt = get_bt_devices();
 
                 loop {
-                    thread::sleep(Duration::from_secs(4));
+                    thread::sleep(Duration::from_secs(8));
                     let online = check_internet();
                     let ssid = get_wifi_ssid();
                     if online && (!was_online || (ssid != last_ssid && ssid.is_some())) {
@@ -1222,7 +1230,7 @@ pub fn run() {
             thread::spawn(move || {
                 let mut last_text = String::new();
                 loop {
-                    thread::sleep(Duration::from_millis(800));
+                    thread::sleep(Duration::from_millis(1200));
                     if !cb_enabled.load(Ordering::Relaxed) { continue; }
                     if let Some(text) = read_clipboard_text() {
                         if text != last_text {
@@ -1357,7 +1365,10 @@ pub fn run() {
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
-                            thread::spawn(move || {
+                            thread::Builder::new()
+                                .name("lyric-fetch".into())
+                                .stack_size(512 * 1024) // 512KB 栈，默认 8MB
+                                .spawn(move || {
                                 // 姣忎釜绛栫暐鍓嶆鏌ヤ唬鏁帮紝濡傛灉宸茶繃鏈熷氨鎻愬墠閫€鍑?
                                 let res = std::panic::catch_unwind(|| {
                                     if gen_ref.load(Ordering::Relaxed) != gen { return None; }
@@ -1373,7 +1384,7 @@ pub fn run() {
                                     let mut guard = result_ref.lock().unwrap_or_else(|e| e.into_inner());
                                     *guard = Some((gen, lyrics.unwrap_or_default(), not_found));
                                 }
-                            });
+                            }).ok();
                         }
                     }
 
