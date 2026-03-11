@@ -39,9 +39,12 @@ html, body {
     cursor: grab;
     transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1),
                 height 0.35s cubic-bezier(0.25, 1, 0.5, 1),
-                border-radius 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+                border-radius 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+                box-shadow 0.24s ease;
     overflow: hidden;
     box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    will-change: width, height, transform;
 }
 
 #island-capsule:active { cursor: grabbing; }
@@ -56,6 +59,25 @@ html, body {
     border-radius: 28px;
 }
 
+#island-capsule.switch-pulse {
+    animation: switch-pulse 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes switch-pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+    35% {
+        transform: scale(1.02);
+        box-shadow: 0 6px 28px rgba(0, 0, 0, 0.6);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+}
+
 .content-wrapper {
     display: flex;
     align-items: center;
@@ -66,13 +88,49 @@ html, body {
     inset: 0;
 }
 
-/* --- 时间 --- */
+/* --- 时间（日期左侧 · 时间居中 · 天气右侧） --- */
+#time-wrapper {
+    justify-content: center;
+    padding: 0 18px;
+}
+
+.time-side {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    position: absolute;
+    top: 50%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+    transition: opacity 0.32s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+}
+
+.time-side-left {
+    color: rgba(255, 255, 255, 0.82);
+    letter-spacing: 0.4px;
+    right: calc(50% + 52px);
+}
+
+.time-side-right {
+    color: rgba(255, 255, 255, 0.65);
+    letter-spacing: 0.2px;
+    left: calc(50% + 52px);
+}
+
+#island-capsule.expanded .time-side {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
 #time-text {
     font-size: 17px;
     font-weight: 600;
     letter-spacing: 0.6px;
     opacity: 0.92;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* --- 通知 --- */

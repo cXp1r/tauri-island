@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
@@ -9,10 +9,12 @@
 </head>
 <body>
     <div id="island-capsule">
-        <!-- 内容层 -->
         <div id="time-wrapper" class="content-wrapper">
+            <div id="date-text" class="time-side time-side-left">周三 · 03/11</div>
             <div id="time-text">00:00:00</div>
+            <div id="weather-text" class="time-side time-side-right">天气获取中...</div>
         </div>
+
         <div id="notice-area" class="content-wrapper">
             <div class="icon-box" id="notice-icon">
                 <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
@@ -22,7 +24,9 @@
             </div>
             <div id="notice-msg">通知消息</div>
         </div>
+
         <div id="url-list" class="content-wrapper"></div>
+
         <div id="lyric-area" class="content-wrapper">
             <div class="music-indicator" id="music-indicator">
                 <div class="bar"></div>
@@ -48,7 +52,6 @@
             </div>
         </div>
 
-        <!-- 视图切换指示点：胶囊底部居中 -->
         <div id="view-switcher">
             <div id="view-dots"></div>
         </div>
