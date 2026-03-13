@@ -44,6 +44,7 @@ fn shared_http_client() -> &'static reqwest::blocking::Client {
     })
 }
 const SNAP_FRAME_MS: u64 = 10;
+const PRIVACY_POLL_MS: u64 = 1200;
 
 const DEFAULT_BETTERNCM_ROOT: &str = r"C:\betterncm";
 const BETTERNCM_PLUGINMARKET_OLD_SOURCE: &str =
@@ -98,23 +99,6 @@ fn check_internet() -> bool {
     TcpStream::connect_timeout(&"8.8.8.8:53".parse().unwrap(), Duration::from_secs(2)).is_ok()
 }
 
-fn get_wifi_ssid() -> Option<String> {
-    let output = Command::new("cmd")
-        .args(["/c", "chcp 65001 >nul && netsh wlan show interfaces"])
-        .creation_flags(CREATE_NO_WINDOW).output().ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with("SSID") && !line.contains("BSSID") {
-            if let Some(val) = line.split(':').nth(1) {
-                let s = val.trim().to_string();
-                if !s.is_empty() { return Some(s); }
-            }
-        }
-    }
-    None
-}
-
 fn get_bt_devices() -> HashSet<String> {
     let mut devices = HashSet::new();
     let ps = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Object -ExpandProperty FriendlyName"#;
@@ -127,6 +111,59 @@ fn get_bt_devices() -> HashSet<String> {
         }
     }
     devices
+}
+
+fn read_reg_u64_value(key: &winreg::RegKey, name: &str) -> Option<u64> {
+    if let Ok(v) = key.get_value::<u64, _>(name) {
+        return Some(v);
+    }
+    if let Ok(v) = key.get_value::<u32, _>(name) {
+        return Some(v as u64);
+    }
+    if let Ok(v) = key.get_value::<String, _>(name) {
+        return v.trim().parse::<u64>().ok();
+    }
+    None
+}
+
+fn is_registry_capability_key_in_use_recursive(key: &winreg::RegKey) -> bool {
+    let start = read_reg_u64_value(key, "LastUsedTimeStart").unwrap_or(0);
+    let stop = read_reg_u64_value(key, "LastUsedTimeStop").unwrap_or(0);
+    if start > 0 && (stop == 0 || stop < start) {
+        return true;
+    }
+
+    use winreg::enums::KEY_READ;
+    for sub in key.enum_keys().flatten() {
+        if let Ok(child) = key.open_subkey_with_flags(&sub, KEY_READ) {
+            if is_registry_capability_key_in_use_recursive(&child) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_capability_in_use(capability: &str) -> bool {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let root_path = format!(
+        r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{}",
+        capability
+    );
+
+    match hkcu.open_subkey_with_flags(root_path, KEY_READ) {
+        Ok(root) => is_registry_capability_key_in_use_recursive(&root),
+        Err(_) => false,
+    }
+}
+
+fn get_privacy_usage_state() -> (bool, bool) {
+    let microphone = is_capability_in_use("microphone");
+    let camera = is_capability_in_use("webcam");
+    (microphone, camera)
 }
 
 fn extract_urls(text: &str) -> Vec<String> {
@@ -1184,32 +1221,16 @@ pub fn run() {
 
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(2));
-                let was_online = check_internet();
-                let last_ssid = get_wifi_ssid();
-                if was_online {
-                    let msg = match &last_ssid {
-                        Some(ssid) => format!("Network connected: {}", ssid),
-                        None => "Network connected".to_string(),
-                    };
-                    trigger_notification(&win_hw, &noti_hw, &exp_hw, &msg);
-                }
-                let mut was_online = was_online;
-                let mut last_ssid = last_ssid;
+                let mut was_online = check_internet();
                 let mut last_bt = get_bt_devices();
 
                 loop {
                     thread::sleep(Duration::from_secs(8));
                     let online = check_internet();
-                    let ssid = get_wifi_ssid();
-                    if online && (!was_online || (ssid != last_ssid && ssid.is_some())) {
-                        let msg = match &ssid {
-                            Some(s) => format!("馃寪 {}", s),
-                            None => "Network connected".to_string(),
-                        };
-                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &msg);
+                    if !online && was_online {
+                        trigger_notification(&win_hw, &noti_hw, &exp_hw, "Network disconnected");
                     }
                     was_online = online;
-                    last_ssid = ssid;
 
                     let bt = get_bt_devices();
                     let new_devs: Vec<_> = bt.difference(&last_bt).cloned().collect();
@@ -1217,6 +1238,28 @@ pub fn run() {
                         trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("Bluetooth connected: {}", name));
                     }
                     last_bt = bt;
+                }
+            });
+
+            // --- 麦克风/摄像头使用状态监控 ---
+            let win_privacy = window.clone();
+            thread::spawn(move || {
+                let mut last = get_privacy_usage_state();
+                let _ = win_privacy.emit("privacy-usage", serde_json::json!({
+                    "microphone": last.0,
+                    "camera": last.1
+                }));
+
+                loop {
+                    thread::sleep(Duration::from_millis(PRIVACY_POLL_MS));
+                    let current = get_privacy_usage_state();
+                    if current != last {
+                        last = current;
+                        let _ = win_privacy.emit("privacy-usage", serde_json::json!({
+                            "microphone": current.0,
+                            "camera": current.1
+                        }));
+                    }
                 }
             });
 

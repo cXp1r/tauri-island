@@ -24,6 +24,9 @@ const iconPause = document.getElementById("icon-pause") as HTMLElement;
 
 const viewSwitcher = document.getElementById("view-switcher") as HTMLDivElement;
 const viewDots = document.getElementById("view-dots") as HTMLDivElement;
+const privacyIndicators = document.getElementById("privacy-indicators") as HTMLDivElement;
+const privacyMic = document.getElementById("privacy-mic") as HTMLDivElement;
+const privacyCamera = document.getElementById("privacy-camera") as HTMLDivElement;
 
 let noticeTimer: number | null = null;
 let pendingUrls: string[] = [];
@@ -31,6 +34,8 @@ let isShowingUrlList = false;
 let isMusicPlaying = false;
 let isPlaying = false;
 let lyricMode = "lyric"; // "off" | "info" | "lyric"
+let privacyPopupTimer: number | null = null;
+let privacyPulseCleanupTimer: number | null = null;
 
 type ViewMode = "time" | "notice" | "urls" | "lyric";
 let currentView: ViewMode = "time";
@@ -55,6 +60,16 @@ type WttrCondition = {
 
 type WttrResponse = {
   current_condition?: WttrCondition[];
+};
+
+type PrivacyUsagePayload = {
+  microphone: boolean;
+  camera: boolean;
+};
+
+let lastPrivacyUsage: PrivacyUsagePayload = {
+  microphone: false,
+  camera: false,
 };
 
 const WEATHER_CODE_CN: Record<string, string> = {
@@ -245,6 +260,7 @@ function setView(mode: ViewMode, animated = true) {
   }
 
   updateCapsuleSize();
+  syncPrivacyFocusForCurrentView();
   void syncCurrentView(mode);
   updateSwitcherUI();
 }
@@ -268,6 +284,11 @@ function updateCapsuleSize() {
   }
 }
 
+function syncPrivacyFocusForCurrentView() {
+  const popupActive = privacyIndicators.classList.contains("active");
+  timeWrapper.classList.toggle("privacy-focus", popupActive && currentView === "time");
+}
+
 function updatePlayIcon() {
   iconPlay.style.display = isPlaying ? "none" : "block";
   iconPause.style.display = isPlaying ? "block" : "none";
@@ -277,6 +298,54 @@ function updatePlayIcon() {
   } else {
     musicIndicator.classList.add("paused");
   }
+}
+
+function hidePrivacyPopup() {
+  if (privacyPopupTimer) {
+    clearTimeout(privacyPopupTimer);
+    privacyPopupTimer = null;
+  }
+  if (privacyPulseCleanupTimer) {
+    clearTimeout(privacyPulseCleanupTimer);
+    privacyPulseCleanupTimer = null;
+  }
+  capsule.classList.remove("privacy-active", "privacy-pulse");
+  privacyIndicators.classList.remove("active", "pulse");
+  privacyMic.classList.remove("active");
+  privacyCamera.classList.remove("active");
+  syncPrivacyFocusForCurrentView();
+}
+
+function showPrivacyPopup(payload: PrivacyUsagePayload) {
+  const { microphone, camera } = payload;
+  if (!microphone && !camera) return;
+
+  privacyMic.classList.toggle("active", microphone);
+  privacyCamera.classList.toggle("active", camera);
+  syncPrivacyFocusForCurrentView();
+
+  capsule.classList.add("privacy-active");
+  capsule.classList.remove("privacy-pulse");
+  void capsule.offsetWidth;
+  capsule.classList.add("privacy-pulse");
+  if (privacyPulseCleanupTimer) {
+    clearTimeout(privacyPulseCleanupTimer);
+  }
+  privacyPulseCleanupTimer = window.setTimeout(() => {
+    capsule.classList.remove("privacy-pulse");
+    privacyPulseCleanupTimer = null;
+  }, 460);
+
+  privacyIndicators.classList.remove("pulse");
+  void privacyIndicators.offsetWidth;
+  privacyIndicators.classList.add("active", "pulse");
+
+  if (privacyPopupTimer) {
+    clearTimeout(privacyPopupTimer);
+  }
+  privacyPopupTimer = window.setTimeout(() => {
+    hidePrivacyPopup();
+  }, 3000);
 }
 
 function formatDateLabel(now: Date): string {
@@ -391,6 +460,20 @@ listen("notice-timeout", () => {
 
 listen("reset-view", () => {
   restoreUserView();
+});
+
+listen<PrivacyUsagePayload>("privacy-usage", (event) => {
+  const next = event.payload;
+  const micStarted = next.microphone && !lastPrivacyUsage.microphone;
+  const camStarted = next.camera && !lastPrivacyUsage.camera;
+
+  if (micStarted || camStarted) {
+    showPrivacyPopup(next);
+  } else if (privacyIndicators.classList.contains("active") && (next.microphone || next.camera)) {
+    showPrivacyPopup(next);
+  }
+
+  lastPrivacyUsage = next;
 });
 
 listen<string[]>("clipboard-urls", (event) => {
@@ -608,6 +691,7 @@ setInterval(() => {
 void refreshWeather(true);
 
 showOnlyView("time");
+hidePrivacyPopup();
 void syncCurrentView(currentView);
 invoke<{ lyric_mode: string }>("get_settings").then((s) => {
   lyricMode = s.lyric_mode || "lyric";
