@@ -1,0 +1,525 @@
+/* ==================== AI Agent 模式样式 ==================== */
+
+/* 七彩流光边框 */
+@property --rainbow-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+}
+
+#island-capsule.agent-active {
+    position: relative;
+}
+
+#island-capsule.agent-active::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(
+        from var(--rainbow-angle),
+        #6366f1,
+        #a855f7,
+        #ec4899,
+        #f43f5e,
+        #f97316,
+        #eab308,
+        #22c55e,
+        #06b6d4,
+        #6366f1
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.7;
+}
+
+#island-capsule.agent-idle::before {
+    animation: rainbow-rotate 6s linear infinite;
+    opacity: 0.5;
+}
+
+#island-capsule.agent-thinking::before {
+    animation: rainbow-rotate 1.5s linear infinite, rainbow-pulse 2s ease-in-out infinite;
+    opacity: 0.85;
+}
+
+#island-capsule.agent-generating::before {
+    animation: rainbow-rotate 0.8s linear infinite;
+    opacity: 1;
+}
+
+#island-capsule.agent-error::before {
+    animation: error-flash 0.5s ease-in-out 3;
+    background: conic-gradient(from var(--rainbow-angle), #ef4444, #dc2626, #ef4444);
+    opacity: 1;
+}
+
+@keyframes rainbow-rotate {
+    to { --rainbow-angle: 360deg; }
+}
+
+@keyframes rainbow-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.9; }
+}
+
+@keyframes error-flash {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+/* ===== Agent 区域 ===== */
+#agent-area {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+    gap: 0;
+    background: linear-gradient(180deg, rgba(15, 15, 26, 0.95) 0%, rgba(10, 10, 18, 0.98) 100%);
+    border-radius: inherit;
+    box-sizing: border-box;
+    overflow: hidden;
+    align-items: stretch;
+    justify-content: flex-start;
+    z-index: 1;
+}
+
+/* ===== 状态栏 — 主角：模型名 ===== */
+#agent-status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    height: 28px;
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+    padding: 0 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+}
+
+#agent-model-name {
+    font-weight: 600;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    letter-spacing: 0.3px;
+}
+
+#agent-status-label {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    transition: background 0.3s, color 0.3s;
+}
+
+#agent-status-label.thinking {
+    background: rgba(168, 85, 247, 0.2);
+    color: rgba(216, 180, 254, 0.95);
+}
+
+#agent-status-label.generating {
+    background: rgba(99, 102, 241, 0.2);
+    color: rgba(165, 180, 252, 0.95);
+}
+
+#agent-status-label.error {
+    background: rgba(239, 68, 68, 0.2);
+    color: rgba(252, 165, 165, 0.95);
+}
+
+/* 清空按钮 */
+#agent-clear-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: color 0.2s, background 0.2s;
+    font-family: var(--font-main);
+}
+
+#agent-clear-btn:hover {
+    color: rgba(252, 165, 165, 0.9);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* ===== 消息区域 ===== */
+#agent-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 6px 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+#agent-messages::-webkit-scrollbar { width: 3px; }
+#agent-messages::-webkit-scrollbar-track { background: transparent; }
+#agent-messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+#agent-messages::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* ===== 消息气泡 ===== */
+.agent-message {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 82%;
+    width: fit-content;
+    flex-shrink: 0;
+    animation: msg-in 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes msg-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.agent-message.user {
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.agent-message.assistant {
+    align-self: flex-start;
+    margin-right: auto;
+}
+
+.message-content {
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    word-wrap: break-word;
+    word-break: break-word;
+}
+
+/* 用户消息 — 渐变蓝紫，主角感 */
+.agent-message.user .message-content {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    border-bottom-right-radius: 6px;
+    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.25);
+}
+
+/* 助手消息 — 玻璃态，退后一步 */
+.agent-message.assistant .message-content {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
+    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom-left-radius: 6px;
+}
+
+/* ===== 思考区域 ===== */
+.thinking-section {
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: rgba(168, 85, 247, 0.08);
+    border-radius: 12px;
+    border-left: 2px solid rgba(168, 85, 247, 0.4);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.thinking-section:hover { background: rgba(168, 85, 247, 0.12); }
+
+.thinking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 500;
+}
+
+.thinking-content {
+    margin-top: 8px;
+    display: none;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.thinking-section.expanded .thinking-content { display: block; }
+.thinking-toggle { font-size: 9px; opacity: 0.5; }
+
+/* ===== 输入区域 — 玻璃态 ===== */
+#agent-input-area {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 6px 6px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    margin-top: 8px;
+    transition: border-color 0.2s;
+}
+
+#agent-input-area:focus-within {
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+#agent-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: white;
+    font-size: 13px;
+    font-family: var(--font-main);
+    padding: 4px 0;
+}
+
+#agent-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+#agent-send-btn,
+#agent-stop-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+
+#agent-send-btn {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+#agent-send-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 3px 12px rgba(99, 102, 241, 0.45);
+}
+
+#agent-send-btn:active { transform: scale(0.94); }
+
+#agent-stop-btn {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+#agent-stop-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 3px 12px rgba(239, 68, 68, 0.45);
+}
+
+#agent-stop-btn:active { transform: scale(0.94); }
+
+/* ===== Markdown 渲染 ===== */
+.message-content code {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: rgba(165, 180, 252, 0.95);
+}
+
+.message-content pre {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 12px;
+    border-radius: 10px;
+    overflow-x: auto;
+    margin: 8px 0;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.message-content pre code {
+    background: transparent;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.message-content strong { font-weight: 600; color: white; }
+.message-content ul, .message-content ol { margin-left: 18px; margin-top: 4px; margin-bottom: 4px; }
+.message-content li { margin: 3px 0; }
+
+/* ===== 收起态 ===== */
+#island-capsule:not(.agent-expanded) #agent-area {
+    padding: 0 16px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+}
+
+#island-capsule:not(.agent-expanded) #agent-status-bar,
+#island-capsule:not(.agent-expanded) #agent-messages,
+#island-capsule:not(.agent-expanded) #agent-input-area {
+    display: none;
+}
+
+#island-capsule:not(.agent-expanded) #agent-area::before {
+    content: "AI";
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ===== 展开态 ===== */
+#island-capsule.agent-expanded {
+    width: 460px;
+    height: 480px;
+    border-radius: 24px;
+}
+
+#island-capsule.agent-expanded #agent-area {
+    padding: 10px 14px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+
+#island-capsule.agent-expanded #agent-status-bar,
+#island-capsule.agent-expanded #agent-messages,
+#island-capsule.agent-expanded #agent-input-area {
+    display: flex;
+}
+
+#island-capsule.agent-expanded #agent-area::before {
+    display: none;
+}
+
+/* ===== 确认弹窗 ===== */
+#agent-confirm-dialog {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: none;
+}
+
+#agent-confirm-dialog.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#agent-confirm-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: inherit;
+    backdrop-filter: blur(4px);
+}
+
+#agent-confirm-box {
+    position: relative;
+    background: rgba(30, 30, 45, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 22px 24px 16px;
+    width: 250px;
+    backdrop-filter: blur(20px);
+    animation: confirm-pop 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes confirm-pop {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+#agent-confirm-text {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+    text-align: center;
+    margin-bottom: 18px;
+    line-height: 1.5;
+}
+
+#agent-confirm-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+#agent-confirm-buttons button {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-main);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+#agent-confirm-buttons button:active { transform: scale(0.96); }
+
+#agent-confirm-cancel {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+#agent-confirm-cancel:hover { background: rgba(255, 255, 255, 0.12); }
+
+#agent-confirm-ok {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+#agent-confirm-ok:hover {
+    box-shadow: 0 3px 12px rgba(239, 68, 68, 0.4);
+}
+
+/* ===== 收起过渡：隐藏内容避免闪现 ===== */
+#agent-area.collapsing {
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+#agent-area.collapsing::before {
+    display: none !important;
+}
+#island-capsule.privacy-active #agent-area {
+    opacity: 0;
+    transform: translateY(3px) scale(0.965);
+    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+}
+
+#island-capsule.privacy-active #agent-confirm-dialog {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#island-capsule:not(.privacy-active) #agent-area {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+}

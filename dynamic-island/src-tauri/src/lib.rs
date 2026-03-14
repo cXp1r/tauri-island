@@ -18,6 +18,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use zip::read::ZipArchive;
 use zip::write::FileOptions;
 use zip::ZipWriter;
+use serde::{Deserialize, Serialize};
 
 const WIN_W: f64 = 340.0;
 const TOP_MARGIN: f64 = 0.0;
@@ -29,6 +30,11 @@ const CAPSULE_LYRIC_W: f64 = 320.0;
 const CAPSULE_EXPANDED_W: f64 = 330.0;
 const CAPSULE_EXPANDED_H: f64 = 74.0;
 const CAPSULE_TOP_PAD: f64 = 5.0;
+
+// Agent 展开态尺寸
+const AGENT_EXPANDED_W: f64 = 460.0;
+const AGENT_EXPANDED_H: f64 = 480.0;
+const WIN_H_DEFAULT: f64 = 84.0;
 
 const SNAP_DURATION_MS: f64 = 300.0;
 
@@ -97,6 +103,65 @@ fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64,
 
 fn check_internet() -> bool {
     TcpStream::connect_timeout(&"8.8.8.8:53".parse().unwrap(), Duration::from_secs(2)).is_ok()
+}
+
+fn get_settings_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("dynamic-island");
+    fs::create_dir_all(&path).ok();
+    path.push("settings.json");
+    path
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SettingsData {
+    #[serde(default)]
+    clipboard_enabled: bool,
+    #[serde(default = "default_shortcut")]
+    shortcut_key: String,
+    #[serde(default = "default_lyric_mode")]
+    lyric_mode: String,
+    #[serde(default)]
+    ai_api_url: String,
+    #[serde(default)]
+    ai_api_key: String,
+    #[serde(default)]
+    ai_model: String,
+    #[serde(default)]
+    is_reasoning_model: bool,
+}
+
+fn default_shortcut() -> String {
+    "Alt+O".to_string()
+}
+
+fn default_lyric_mode() -> String {
+    "lyric".to_string()
+}
+
+fn load_settings_from_file() -> SettingsData {
+    let path = get_settings_path();
+    if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(data) = serde_json::from_str::<SettingsData>(&content) {
+            return data;
+        }
+    }
+    SettingsData {
+        clipboard_enabled: true,
+        shortcut_key: default_shortcut(),
+        lyric_mode: default_lyric_mode(),
+        ai_api_url: String::new(),
+        ai_api_key: String::new(),
+        ai_model: String::new(),
+        is_reasoning_model: false,
+    }
+}
+
+fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
+    let path = get_settings_path();
+    let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn get_bt_devices() -> HashSet<String> {
@@ -228,6 +293,12 @@ fn start_drag(state: tauri::State<'_, IslandState>) {
 #[tauri::command]
 fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(false, Ordering::Relaxed);
+
+    // Agent 展开态时不自动吸附回顶部
+    if state.agent_expanded.load(Ordering::Relaxed) {
+        return;
+    }
+
     let target_x = state.home_x;
     let target_y = TOP_MARGIN;
     if let Ok(pos) = window.outer_position() {
@@ -277,10 +348,89 @@ fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
 #[tauri::command]
 fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "notice" | "urls" | "lyric" => view,
+        "time" | "notice" | "urls" | "lyric" | "agent" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
+}
+
+#[tauri::command]
+fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
+    state.agent_expanded.store(expanded, Ordering::Relaxed);
+    let screen_w = state.screen_w;
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    if expanded {
+        // 展开：从当前窗口尺寸动画到 agent 展开尺寸
+        let target_w = AGENT_EXPANDED_W;
+        let target_h = AGENT_EXPANDED_H + 10.0;
+        let target_x = (screen_w - target_w) / 2.0;
+
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let from_w = WIN_W;
+            let from_h = WIN_H_DEFAULT;
+            let target_y = from_y;
+
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
+        }
+    } else {
+        // 收起：从 agent 展开尺寸动画缩小到默认尺寸，然后 snap_back 到顶部
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let from_w = AGENT_EXPANDED_W;
+            let from_h = AGENT_EXPANDED_H + 10.0;
+            // 缩小后保持中心不变
+            let center_x = from_x + from_w / 2.0;
+            let target_x = center_x - WIN_W / 2.0;
+            let target_y = from_y;
+            let target_w = WIN_W;
+            let target_h = WIN_H_DEFAULT;
+
+            let home_x = (screen_w - WIN_W) / 2.0;
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
+                // 缩小完成后吸附回顶部
+                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+        }
+    }
+}
+
+/// 动画插值窗口尺寸和位置，duration_ms 与 CSS transition 同步
+fn animate_resize(
+    window: &tauri::WebviewWindow,
+    from_x: f64, from_y: f64, from_w: f64, from_h: f64,
+    to_x: f64, to_y: f64, to_w: f64, to_h: f64,
+    duration_ms: f64,
+) {
+    let start = Instant::now();
+    loop {
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        let p = (elapsed / duration_ms).min(1.0);
+        let t = ease_out_cubic(p);
+
+        let cur_w = from_w + (to_w - from_w) * t;
+        let cur_h = from_h + (to_h - from_h) * t;
+        let cur_x = from_x + (to_x - from_x) * t;
+        let cur_y = from_y + (to_y - from_y) * t;
+
+        let _ = window.set_size(tauri::LogicalSize::new(cur_w, cur_h));
+        let _ = window.set_position(tauri::LogicalPosition::new(cur_x, cur_y));
+
+        if p >= 1.0 { break; }
+        thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
+    }
 }
 
 #[tauri::command]
@@ -311,6 +461,60 @@ fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
 }
 
 #[tauri::command]
+fn ai_get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
+    let api_url = state.ai_api_url.lock().unwrap().clone();
+    let api_key = state.ai_api_key.lock().unwrap().clone();
+    let model = state.ai_model.lock().unwrap().clone();
+    let is_reasoning = state.is_reasoning_model.load(Ordering::Relaxed);
+
+    // 掩码 API Key，只显示前 4 位和后 4 位
+    let masked_key = if api_key.len() > 8 {
+        format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..])
+    } else if !api_key.is_empty() {
+        "****".to_string()
+    } else {
+        String::new()
+    };
+
+    serde_json::json!({
+        "api_url": api_url,
+        "api_key": masked_key,
+        "model": model,
+        "is_reasoning_model": is_reasoning
+    })
+}
+
+#[tauri::command]
+fn ai_save_settings(
+    state: tauri::State<'_, IslandState>,
+    api_url: String,
+    api_key: String,
+    model: String,
+) -> Result<(), String> {
+    *state.ai_api_url.lock().unwrap() = api_url.clone();
+    *state.ai_api_key.lock().unwrap() = api_key.clone();
+    *state.ai_model.lock().unwrap() = model.clone();
+
+    // 检查是否已配置
+    let enabled = !api_url.is_empty() && !api_key.is_empty() && !model.is_empty();
+    state.ai_enabled.store(enabled, Ordering::Relaxed);
+
+    // 持久化到文件
+    let settings_data = SettingsData {
+        clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
+        shortcut_key: state.shortcut_key.lock().unwrap().clone(),
+        lyric_mode: state.lyric_mode.lock().unwrap().clone(),
+        ai_api_url: api_url,
+        ai_api_key: api_key,
+        ai_model: model,
+        is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
+    };
+
+    save_settings_to_file(&settings_data)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn save_settings(
     app: tauri::AppHandle,
     state: tauri::State<'_, IslandState>,
@@ -324,7 +528,7 @@ fn save_settings(
 
     // 閫氱煡鍓嶇姝岃瘝妯″紡鍙樻洿
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.emit("lyric-mode-changed", lyric_mode);
+        let _ = win.emit("lyric-mode-changed", &lyric_mode);
     }
 
     // 閲嶆柊娉ㄥ唽蹇嵎閿?
@@ -340,6 +544,344 @@ fn save_settings(
             }
         }
     });
+
+    // 持久化到文件
+    let settings_data = SettingsData {
+        clipboard_enabled,
+        shortcut_key,
+        lyric_mode,
+        ai_api_url: state.ai_api_url.lock().unwrap().clone(),
+        ai_api_key: state.ai_api_key.lock().unwrap().clone(),
+        ai_model: state.ai_model.lock().unwrap().clone(),
+        is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
+    };
+
+    let _ = save_settings_to_file(&settings_data);
+}
+
+#[tauri::command]
+fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_json::Value, String> {
+    let api_url = state.ai_api_url.lock().unwrap().clone();
+    let api_key = state.ai_api_key.lock().unwrap().clone();
+    let model = state.ai_model.lock().unwrap().clone();
+
+    if api_url.is_empty() || api_key.is_empty() || model.is_empty() {
+        return Err("AI 配置不完整".to_string());
+    }
+
+    // 构建测试请求
+    let request_body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hi"
+            }
+        ],
+        "stream": false,
+        "max_tokens": 10
+    });
+
+    let client = shared_http_client();
+    let url = if api_url.ends_with("/chat/completions") {
+        api_url.clone()
+    } else if api_url.ends_with('/') {
+        format!("{}chat/completions", api_url)
+    } else {
+        format!("{}/chat/completions", api_url)
+    };
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().unwrap_or_default();
+        return Err(format!("API 返回错误 {}: {}", status, error_text));
+    }
+
+    let response_json: serde_json::Value = response
+        .json()
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
+    // 检测是否为思考模型
+    let is_reasoning = response_json
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| {
+            // 检查是否有 reasoning_content 或 thinking 字段
+            if m.get("reasoning_content").is_some() {
+                Some(true)
+            } else if m.get("thinking").is_some() {
+                Some(true)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(false);
+
+    // 更新状态
+    state.is_reasoning_model.store(is_reasoning, Ordering::Relaxed);
+
+    // 持久化
+    let settings_data = SettingsData {
+        clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
+        shortcut_key: state.shortcut_key.lock().unwrap().clone(),
+        lyric_mode: state.lyric_mode.lock().unwrap().clone(),
+        ai_api_url: api_url,
+        ai_api_key: api_key,
+        ai_model: model,
+        is_reasoning_model: is_reasoning,
+    };
+
+    save_settings_to_file(&settings_data)?;
+
+    Ok(serde_json::json!({
+        "is_reasoning_model": is_reasoning
+    }))
+}
+
+#[tauri::command]
+fn ai_stop_generation(state: tauri::State<'_, IslandState>) {
+    state.ai_generating.store(false, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn ai_clear_history(state: tauri::State<'_, IslandState>) {
+    state.ai_history.lock().unwrap().clear();
+}
+
+#[tauri::command]
+fn ai_send_message(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, IslandState>,
+    content: String,
+) -> Result<(), String> {
+    let api_url = state.ai_api_url.lock().unwrap().clone();
+    let api_key = state.ai_api_key.lock().unwrap().clone();
+    let model = state.ai_model.lock().unwrap().clone();
+    let is_reasoning = state.is_reasoning_model.load(Ordering::Relaxed);
+
+    if api_url.is_empty() || api_key.is_empty() || model.is_empty() {
+        return Err("AI 配置不完整".to_string());
+    }
+
+    // 添加用户消息到历史
+    {
+        let mut history = state.ai_history.lock().unwrap();
+        history.push(ChatMessage {
+            role: "user".to_string(),
+            content: content.clone(),
+            reasoning_content: None,
+        });
+
+        // 限制历史长度为最近 20 轮对话（40 条消息）
+        if history.len() > 40 {
+            let excess = history.len() - 40;
+            history.drain(0..excess);
+        }
+    }
+
+    // 设置生成状态
+    state.ai_generating.store(true, Ordering::Relaxed);
+
+    // 在新线程中执行流式请求
+    let ai_history = state.ai_history.clone();
+    let ai_generating = state.ai_generating.clone();
+
+    thread::spawn(move || {
+        // 发送开始状态
+        let window = if let Some(win) = app.get_webview_window("main") {
+            win
+        } else {
+            return;
+        };
+
+        let _ = window.emit("ai-status", serde_json::json!({
+            "status": if is_reasoning { "thinking" } else { "generating" }
+        }));
+
+        // 构建请求
+        let messages: Vec<serde_json::Value> = {
+            let history = ai_history.lock().unwrap();
+            history.iter().map(|msg| {
+                let mut obj = serde_json::json!({
+                    "role": msg.role,
+                    "content": msg.content
+                });
+                if let Some(ref reasoning) = msg.reasoning_content {
+                    obj["reasoning_content"] = serde_json::Value::String(reasoning.clone());
+                }
+                obj
+            }).collect()
+        };
+
+        let request_body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": true
+        });
+
+        let url = if api_url.ends_with("/chat/completions") {
+            api_url.clone()
+        } else if api_url.ends_with("/v1") || api_url.ends_with("/v1/") {
+            let base = api_url.trim_end_matches('/');
+            format!("{}/chat/completions", base)
+        } else if api_url.ends_with('/') {
+            format!("{}v1/chat/completions", api_url)
+        } else {
+            format!("{}/v1/chat/completions", api_url)
+        };
+
+        println!("[AI] Requesting URL: {}", url);
+        println!("[AI] Model: {}, Messages: {}", model, messages.len());
+
+        // 发起流式请求 — 不设置总超时，只设置连接超时
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .build()
+            .unwrap();
+
+        let response = match client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                println!("[AI] Request failed: {}", e);
+                let _ = window.emit("ai-status", serde_json::json!({
+                    "status": "error",
+                    "error": format!("请求失败: {}", e)
+                }));
+                ai_generating.store(false, Ordering::Relaxed);
+                return;
+            }
+        };
+
+        println!("[AI] Response status: {}", response.status());
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().unwrap_or_default();
+            println!("[AI] API error {}: {}", status, error_text);
+            let _ = window.emit("ai-status", serde_json::json!({
+                "status": "error",
+                "error": format!("API 返回错误 {}: {}", status, error_text)
+            }));
+            ai_generating.store(false, Ordering::Relaxed);
+            return;
+        }
+
+        // 解析 SSE 流
+        let mut assistant_content = String::new();
+        let mut reasoning_content = String::new();
+        let mut in_thinking_phase = is_reasoning;
+
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(response);
+
+        for line in reader.lines() {
+            // 检查是否被停止
+            if !ai_generating.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let line = match line {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = window.emit("ai-status", serde_json::json!({
+                        "status": "error",
+                        "error": format!("读取响应失败: {}", e)
+                    }));
+                    break;
+                }
+            };
+
+            let line = line.trim();
+            if line.is_empty() || line == "data: [DONE]" {
+                continue;
+            }
+
+            if !line.starts_with("data: ") {
+                continue;
+            }
+
+            let json_str = &line[6..];
+            let chunk: serde_json::Value = match serde_json::from_str(json_str) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // 提取 delta
+            if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
+                if let Some(choice) = choices.get(0) {
+                    if let Some(delta) = choice.get("delta") {
+                        // 检查思考内容
+                        if let Some(reasoning) = delta.get("reasoning_content").and_then(|r| r.as_str()) {
+                            reasoning_content.push_str(reasoning);
+                            let _ = window.emit("ai-thinking-token", serde_json::json!({
+                                "text": reasoning
+                            }));
+                        }
+
+                        // 检查普通内容
+                        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                            // 如果之前在思考阶段，现在切换到生成阶段
+                            if in_thinking_phase && !content.is_empty() {
+                                in_thinking_phase = false;
+                                let _ = window.emit("ai-status", serde_json::json!({
+                                    "status": "generating"
+                                }));
+                            }
+
+                            assistant_content.push_str(content);
+                            let _ = window.emit("ai-token", serde_json::json!({
+                                "text": content
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 保存完整的 assistant 回复到历史
+        if !assistant_content.is_empty() || !reasoning_content.is_empty() {
+            let mut history = ai_history.lock().unwrap();
+            history.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: assistant_content,
+                reasoning_content: if reasoning_content.is_empty() {
+                    None
+                } else {
+                    Some(reasoning_content)
+                },
+            });
+
+            // 限制历史长度
+            if history.len() > 40 {
+                let excess = history.len() - 40;
+                history.drain(0..excess);
+            }
+        }
+
+        // 发送完成状态
+        let _ = window.emit("ai-status", serde_json::json!({
+            "status": "completed"
+        }));
+
+        ai_generating.store(false, Ordering::Relaxed);
+    });
+
+    Ok(())
 }
 
 // --- 濯掍綋鎺у埗 ---
@@ -1065,8 +1607,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_drag, end_drag, drag_move,
             open_url, get_pending_urls, set_interacting, dismiss_island, set_current_view,
+            set_agent_expanded,
             open_settings, get_settings, save_settings, install_betterncm_support,
-            media_play_pause, media_next, media_prev
+            media_play_pause, media_next, media_prev,
+            ai_get_settings, ai_save_settings, ai_detect_model_type,
+            ai_send_message, ai_stop_generation, ai_clear_history
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -1086,11 +1631,26 @@ pub fn run() {
             let is_notifying = Arc::new(AtomicBool::new(false));
             let is_dragging = Arc::new(AtomicBool::new(false));
             let is_interacting = Arc::new(AtomicBool::new(false));
-            let clipboard_enabled = Arc::new(AtomicBool::new(true));
+
+            // 从文件加载设置
+            let settings = load_settings_from_file();
+            let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-            let shortcut_key = Arc::new(Mutex::new("Alt+O".to_string()));
-            let lyric_mode = Arc::new(Mutex::new("lyric".to_string()));
+            let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
+            let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let current_view = Arc::new(Mutex::new("time".to_string()));
+
+            // AI 相关字段
+            let ai_api_url = Arc::new(Mutex::new(settings.ai_api_url.clone()));
+            let ai_api_key = Arc::new(Mutex::new(settings.ai_api_key.clone()));
+            let ai_model = Arc::new(Mutex::new(settings.ai_model.clone()));
+            let is_reasoning_model = Arc::new(AtomicBool::new(settings.is_reasoning_model));
+            let ai_enabled = Arc::new(AtomicBool::new(
+                !settings.ai_api_url.is_empty() && !settings.ai_api_key.is_empty() && !settings.ai_model.is_empty()
+            ));
+            let ai_generating = Arc::new(AtomicBool::new(false));
+            let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
+            let agent_expanded = Arc::new(AtomicBool::new(false));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -1102,7 +1662,15 @@ pub fn run() {
                 shortcut_key: shortcut_key.clone(),
                 lyric_mode: lyric_mode.clone(),
                 current_view: current_view.clone(),
+                agent_expanded: agent_expanded.clone(),
                 screen_w, home_x, hwnd, scale,
+                ai_api_url: ai_api_url.clone(),
+                ai_api_key: ai_api_key.clone(),
+                ai_model: ai_model.clone(),
+                is_reasoning_model: is_reasoning_model.clone(),
+                ai_enabled: ai_enabled.clone(),
+                ai_generating: ai_generating.clone(),
+                ai_history: ai_history.clone(),
             });
 
             // --- 绯荤粺鎵樼洏 ---
@@ -1138,7 +1706,8 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
                 let pending_url_sc = pending_url.clone();
-                let _ = app.global_shortcut().on_shortcut("Alt+O", move |_app, _shortcut, event| {
+                let shortcut_str = settings.shortcut_key.clone();
+                let _ = app.global_shortcut().on_shortcut(shortcut_str.as_str(), move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         let urls = pending_url_sc.lock().unwrap();
                         if let Some(url) = urls.first() {
@@ -1156,6 +1725,7 @@ pub fn run() {
             let interact_m = is_interacting.clone();
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
+            let agent_expanded_m = agent_expanded.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music = Arc::new(AtomicBool::new(false));
             let is_music_m = is_music.clone();
@@ -1169,22 +1739,24 @@ pub fn run() {
                     if let Some((mx, my)) = get_cursor_pos() {
                         // 鏍规嵁褰撳墠鐘舵€佺‘瀹氳兌鍥婂搴?
                         let expanded = exp_m.load(Ordering::Relaxed);
+                        let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
-                        let cw = if expanded {
-                            CAPSULE_EXPANDED_W
+                        let (cw, ch, cur_win_w) = if agent_exp && view == "agent" {
+                            (AGENT_EXPANDED_W, AGENT_EXPANDED_H, AGENT_EXPANDED_W)
+                        } else if expanded {
+                            (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, WIN_W)
                         } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
-                            CAPSULE_LYRIC_W
+                            (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, WIN_W)
                         } else {
-                            CAPSULE_COLLAPSED_W
+                            (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H, WIN_W)
                         };
-                        let ch = if expanded { CAPSULE_EXPANDED_H } else { CAPSULE_COLLAPSED_H };
 
                         let rect = get_window_rect(hwnd);
                         let on_capsule = if let Some(rect) = rect {
                             let win_x = rect.left as f64;
                             let win_y = rect.top as f64;
-                            let capsule_x = win_x + (WIN_W * scale - cw * scale) / 2.0;
+                            let capsule_x = win_x + (cur_win_w * scale - cw * scale) / 2.0;
                             let capsule_y = win_y + CAPSULE_TOP_PAD * scale;
                             let fmx = mx as f64;
                             let fmy = my as f64;
@@ -1199,7 +1771,7 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        if !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                        if !agent_exp && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
                             let in_zone = mx > center_x - 75 && mx < center_x + 75 && my < 12;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -1527,6 +2099,14 @@ fn create_tray_icon() -> Vec<u8> {
     rgba
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String, // "system" | "user" | "assistant"
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+}
+
 pub struct IslandState {
     pub is_notifying: Arc<AtomicBool>,
     pub is_expanded: Arc<AtomicBool>,
@@ -1536,11 +2116,20 @@ pub struct IslandState {
     pub pending_url: Arc<Mutex<Vec<String>>>,
     pub shortcut_key: Arc<Mutex<String>>,
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
-    pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric"
+    pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
+    pub agent_expanded: Arc<AtomicBool>,
     pub screen_w: f64,
     pub home_x: f64,
     pub hwnd: HWND,
     pub scale: f64,
+    // AI Agent 相关字段
+    pub ai_api_url: Arc<Mutex<String>>,
+    pub ai_api_key: Arc<Mutex<String>>,
+    pub ai_model: Arc<Mutex<String>>,
+    pub is_reasoning_model: Arc<AtomicBool>,
+    pub ai_enabled: Arc<AtomicBool>,
+    pub ai_generating: Arc<AtomicBool>,
+    pub ai_history: Arc<Mutex<Vec<ChatMessage>>>,
 }
 
 unsafe impl Send for IslandState {}

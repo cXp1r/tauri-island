@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles-agent.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DynamicIsland</title>
     <script type="module" src="/src/main.ts" defer></script>
@@ -49,6 +50,40 @@
                 <button class="media-btn" id="btn-next" title="下一曲">
                     <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
                 </button>
+            </div>
+        </div>
+
+        <div id="agent-area" class="content-wrapper">
+            <div id="agent-status-bar">
+                <div id="agent-model-name"></div>
+                <div id="agent-status-label"></div>
+                <button id="agent-clear-btn" title="清空历史">清空</button>
+            </div>
+            <div id="agent-messages"></div>
+            <div id="agent-input-area">
+                <input type="text" id="agent-input" placeholder="输入消息..." />
+                <button id="agent-send-btn" title="发送">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="agent-stop-btn" title="停止" style="display:none">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <rect x="6" y="6" width="12" height="12" stroke="currentColor" stroke-width="2" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div id="agent-confirm-dialog" style="display:none">
+            <div id="agent-confirm-backdrop"></div>
+            <div id="agent-confirm-box">
+                <div id="agent-confirm-text">确定要清空对话历史吗？</div>
+                <div id="agent-confirm-buttons">
+                    <button id="agent-confirm-cancel">取消</button>
+                    <button id="agent-confirm-ok">清空</button>
+                </div>
             </div>
         </div>
 

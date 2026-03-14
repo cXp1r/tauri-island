@@ -369,6 +369,36 @@
           </div>
         </div>
       </article>
+
+      <article class="card">
+        <div class="card-title">AI Agent 配置</div>
+
+        <div class="row" style="display:block;">
+          <h3>API 地址</h3>
+          <p>OpenAI 兼容的 API 端点地址。</p>
+          <input id="ai-api-url" class="input path" placeholder="https://api.openai.com/v1" />
+        </div>
+
+        <div class="row" style="display:block;">
+          <h3>API Key</h3>
+          <p>用于身份验证的 API 密钥。</p>
+          <input id="ai-api-key" class="input path" type="password" placeholder="sk-..." />
+        </div>
+
+        <div class="row" style="display:block;">
+          <h3>模型名称</h3>
+          <p>要使用的模型标识符。</p>
+          <input id="ai-model" class="input path" placeholder="gpt-4o" />
+        </div>
+
+        <div class="row" style="display:block;">
+          <h3>模型类型检测</h3>
+          <p id="ai-model-type-result" style="margin-bottom:8px;">未检测</p>
+          <div class="actions">
+            <button id="ai-detect-btn" class="btn btn-secondary" type="button">检测模型类型</button>
+          </div>
+        </div>
+      </article>
     </section>
 
     <footer class="footer">

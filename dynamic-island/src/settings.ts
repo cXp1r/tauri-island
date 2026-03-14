@@ -1,9 +1,17 @@
 ﻿import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 
 type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
   lyric_mode: string;
+};
+
+type AISettingsResponse = {
+  api_url: string;
+  api_key: string;
+  model: string;
+  is_reasoning_model: boolean;
 };
 
 type PluginMarketRepairResult = {
@@ -24,6 +32,12 @@ const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInpu
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
 const openInfLinkBtn = document.getElementById("open-inflink-btn") as HTMLButtonElement;
 
+const aiApiUrlInput = document.getElementById("ai-api-url") as HTMLInputElement;
+const aiApiKeyInput = document.getElementById("ai-api-key") as HTMLInputElement;
+const aiModelInput = document.getElementById("ai-model") as HTMLInputElement;
+const aiDetectBtn = document.getElementById("ai-detect-btn") as HTMLButtonElement;
+const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTMLParagraphElement;
+
 let isRecording = false;
 let statusTimer: number | null = null;
 const shortcutHint = "请按下快捷键...";
@@ -33,6 +47,27 @@ async function loadSettings() {
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
+
+  // 加载 AI 设置
+  try {
+    const aiSettings = await invoke<AISettingsResponse>("ai_get_settings");
+    aiApiUrlInput.value = aiSettings.api_url || "";
+    aiApiKeyInput.value = aiSettings.api_key || "";
+    aiModelInput.value = aiSettings.model || "";
+
+    if (aiSettings.is_reasoning_model) {
+      aiModelTypeResult.textContent = "✅ 思考模型";
+      aiModelTypeResult.style.color = "#39d98a";
+    } else if (aiSettings.model) {
+      aiModelTypeResult.textContent = "普通模型";
+      aiModelTypeResult.style.color = "#93a4c8";
+    } else {
+      aiModelTypeResult.textContent = "未检测";
+      aiModelTypeResult.style.color = "#93a4c8";
+    }
+  } catch (e) {
+    console.error("加载 AI 设置失败:", e);
+  }
 }
 
 function openExternal(url: string) {
@@ -97,7 +132,24 @@ saveBtn.addEventListener("click", async () => {
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
     });
-    showStatus("基础设置已保存");
+
+    // 保存 AI 设置
+    const apiUrl = aiApiUrlInput.value.trim();
+    const apiKey = aiApiKeyInput.value.trim();
+    const model = aiModelInput.value.trim();
+
+    if (apiUrl || apiKey || model) {
+      await invoke("ai_save_settings", {
+        apiUrl: apiUrl,
+        apiKey: apiKey,
+        model: model,
+      });
+
+      // 通知主窗口更新 AI 状态
+      await emit("ai-settings-changed", {});
+    }
+
+    showStatus("设置已保存");
   } catch (e) {
     showStatus(`保存失败: ${String(e)}`, true, 4500);
   }
@@ -129,6 +181,55 @@ repairBtn.addEventListener("click", async () => {
   } finally {
     repairBtn.disabled = false;
     repairBtn.textContent = originalText;
+  }
+});
+
+aiDetectBtn.addEventListener("click", async () => {
+  const apiUrl = aiApiUrlInput.value.trim();
+  const apiKey = aiApiKeyInput.value.trim();
+  const model = aiModelInput.value.trim();
+
+  if (!apiUrl || !apiKey || !model) {
+    showStatus("请先填写完整的 AI 配置", true);
+    return;
+  }
+
+  const originalText = aiDetectBtn.textContent || "检测模型类型";
+  aiDetectBtn.disabled = true;
+  aiDetectBtn.textContent = "检测中...";
+  aiModelTypeResult.textContent = "检测中...";
+  aiModelTypeResult.style.color = "#93a4c8";
+
+  try {
+    // 先保存设置
+    await invoke("ai_save_settings", {
+      apiUrl: apiUrl,
+      apiKey: apiKey,
+      model: model,
+    });
+
+    // 执行检测
+    const result = await invoke<{ is_reasoning_model: boolean }>("ai_detect_model_type");
+
+    if (result.is_reasoning_model) {
+      aiModelTypeResult.textContent = "✅ 思考模型";
+      aiModelTypeResult.style.color = "#39d98a";
+      showStatus("检测完成：这是一个思考模型");
+    } else {
+      aiModelTypeResult.textContent = "普通模型";
+      aiModelTypeResult.style.color = "#93a4c8";
+      showStatus("检测完成：这是一个普通模型");
+    }
+
+    // 通知主窗口更新 AI 状态
+    await emit("ai-settings-changed", {});
+  } catch (e) {
+    aiModelTypeResult.textContent = "检测失败";
+    aiModelTypeResult.style.color = "#ff6f7f";
+    showStatus(`检测失败: ${String(e)}`, true, 4500);
+  } finally {
+    aiDetectBtn.disabled = false;
+    aiDetectBtn.textContent = originalText;
   }
 });
 
