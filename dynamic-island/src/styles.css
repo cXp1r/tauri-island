@@ -43,7 +43,7 @@ html, body {
                 transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
                 box-shadow 0.24s ease;
     overflow: hidden;
-    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     will-change: width, height, transform;
     isolation: isolate;
 }
@@ -101,15 +101,15 @@ html, body {
 @keyframes switch-pulse {
     0% {
         transform: scale(1);
-        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     }
     35% {
         transform: scale(1.02);
-        box-shadow: 0 6px 28px rgba(0, 0, 0, 0.6);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
     }
     100% {
         transform: scale(1);
-        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     }
 }
 

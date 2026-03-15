@@ -361,6 +361,17 @@ fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 }
 
 #[tauri::command]
+fn sync_window_height(window: tauri::WebviewWindow, height: f64) {
+    // 前端传来胶囊实际高度 + padding，动态调整窗口高度
+    let new_h = height.max(60.0).min(600.0);
+    if let Ok(size) = window.outer_size() {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let cur_w = size.width as f64 / scale;
+        let _ = window.set_size(tauri::LogicalSize::new(cur_w, new_h));
+    }
+}
+
+#[tauri::command]
 fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
     state.agent_expanded.store(expanded, Ordering::Relaxed);
     let screen_w = state.screen_w;
@@ -1614,7 +1625,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_drag, end_drag, drag_move,
             open_url, get_pending_urls, set_interacting, dismiss_island, set_current_view,
-            set_agent_expanded,
+            set_agent_expanded, sync_window_height,
             open_settings, get_settings, save_settings, install_betterncm_support,
             media_play_pause, media_next, media_prev,
             ai_get_settings, ai_save_settings, ai_detect_model_type,

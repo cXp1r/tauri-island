@@ -763,12 +763,16 @@ capsule.addEventListener("click", (e: MouseEvent) => {
       const willExpand = !capsule.classList.contains("agent-expanded");
       if (willExpand) {
         // 展开：同时启动后端窗口动画和前端 CSS 过渡
+        skipResizeSync = true;
         capsule.classList.add("agent-expanded");
         void invoke("set_agent_expanded", { expanded: true });
+        window.setTimeout(() => { skipResizeSync = false; }, 400);
       } else {
         // 收起：同时启动后端窗口动画和前端 CSS 过渡
+        skipResizeSync = true;
         capsule.classList.remove("agent-expanded");
         void invoke("set_agent_expanded", { expanded: false });
+        window.setTimeout(() => { skipResizeSync = false; }, 700);
       }
     }, 250);
     return;
@@ -838,6 +842,19 @@ void refreshWeather(true);
 showOnlyView("time");
 hidePrivacyPopup();
 void syncCurrentView(currentView);
+
+// 监听胶囊尺寸变化，动态调整窗口高度（agent 展开/收起由 set_agent_expanded 处理）
+let skipResizeSync = false;
+const capsuleObserver = new ResizeObserver((entries) => {
+  if (skipResizeSync) return;
+  for (const entry of entries) {
+    const h = entry.contentRect.height;
+    // 胶囊高度 + padding-top(5px) + 底部余量(5px)
+    const windowH = h + 10;
+    void invoke("sync_window_height", { height: windowH });
+  }
+});
+capsuleObserver.observe(capsule);
 invoke<{ lyric_mode: string }>("get_settings").then((s) => {
   lyricMode = s.lyric_mode || "lyric";
 });
