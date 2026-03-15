@@ -297,6 +297,8 @@ function setView(mode: ViewMode, animated = true) {
   syncPrivacyFocusForCurrentView();
   void syncCurrentView(mode);
   updateSwitcherUI();
+
+  // 七彩边框已禁用
 }
 
 function syncCurrentView(mode: ViewMode) {
@@ -1143,7 +1145,6 @@ invoke<{ api_url: string; model: string }>("ai_get_settings").then((settings) =>
   console.log("AI enabled:", aiEnabled);
   if (aiEnabled) {
     agentModelName.textContent = settings.model;
-    capsule.classList.add("agent-active");
     updateAgentBorderState("idle");
     updateAgentStatus("就绪");
     updateSwitcherUI();
@@ -1161,7 +1162,6 @@ listen("ai-settings-changed", () => {
     if (aiEnabled) {
       agentModelName.textContent = settings.model;
       if (!wasEnabled) {
-        capsule.classList.add("agent-active");
         updateAgentBorderState("idle");
         updateAgentStatus("就绪");
       }

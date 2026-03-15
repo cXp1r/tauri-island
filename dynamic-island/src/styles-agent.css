@@ -87,6 +87,11 @@
     align-items: stretch;
     justify-content: flex-start;
     z-index: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    backface-visibility: hidden;
+    perspective: 1000px;
+    transition: padding 0.2s ease, flex-direction 0s ease, align-items 0s ease, justify-content 0s ease, background 0.2s ease;
 }
 
 /* ===== 状态栏 — 主角：模型名 ===== */
@@ -103,6 +108,9 @@
     padding: 0 2px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     margin-bottom: 8px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    gap: 8px;
 }
 
 #agent-model-name {
@@ -110,6 +118,14 @@
     font-size: 12px;
     color: rgba(255, 255, 255, 0.9);
     letter-spacing: 0.3px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.2;
+    height: 16px;
+    display: flex;
+    align-items: center;
 }
 
 #agent-status-label {
@@ -120,7 +136,16 @@
     color: rgba(255, 255, 255, 0.5);
     font-weight: 500;
     letter-spacing: 0.2px;
-    transition: background 0.3s, color 0.3s;
+    transition: background 0.3s ease, color 0.3s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    white-space: nowrap;
+    display: inline-block;
+    line-height: 1.2;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
 }
 
 #agent-status-label.thinking {
@@ -147,8 +172,15 @@
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 6px;
-    transition: color 0.2s, background 0.2s;
+    transition: color 0.2s ease, background 0.2s ease;
     font-family: var(--font-main);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    white-space: nowrap;
+    flex-shrink: 0;
+    height: 16px;
+    display: flex;
+    align-items: center;
 }
 
 #agent-clear-btn:hover {
@@ -170,12 +202,27 @@
     padding: 6px 2px;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+    will-change: scroll-position;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-#agent-messages::-webkit-scrollbar { width: 3px; }
-#agent-messages::-webkit-scrollbar-track { background: transparent; }
-#agent-messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
-#agent-messages::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+#agent-messages::-webkit-scrollbar {
+    width: 3px;
+}
+
+#agent-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#agent-messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+#agent-messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
 
 /* ===== 消息气泡 ===== */
 .agent-message {
@@ -185,12 +232,21 @@
     max-width: 82%;
     width: fit-content;
     flex-shrink: 0;
-    animation: msg-in 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: msg-in 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    will-change: opacity, transform;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 @keyframes msg-in {
-    from { opacity: 0; transform: translateY(6px) scale(0.97); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .agent-message.user {
@@ -210,6 +266,8 @@
     line-height: 1.6;
     word-wrap: break-word;
     word-break: break-word;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* 用户消息 — 渐变蓝紫，主角感 */
@@ -239,10 +297,14 @@
     font-size: 11px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-.thinking-section:hover { background: rgba(168, 85, 247, 0.12); }
+.thinking-section:hover {
+    background: rgba(168, 85, 247, 0.12);
+}
 
 .thinking-header {
     display: flex;
@@ -257,10 +319,18 @@
     line-height: 1.5;
     white-space: pre-wrap;
     color: rgba(255, 255, 255, 0.55);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-.thinking-section.expanded .thinking-content { display: block; }
-.thinking-toggle { font-size: 9px; opacity: 0.5; }
+.thinking-section.expanded .thinking-content {
+    display: block;
+}
+
+.thinking-toggle {
+    font-size: 9px;
+    opacity: 0.5;
+}
 
 /* ===== 输入区域 — 玻璃态 ===== */
 #agent-input-area {
@@ -274,7 +344,9 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     flex-shrink: 0;
     margin-top: 8px;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #agent-input-area:focus-within {
@@ -290,9 +362,13 @@
     font-size: 13px;
     font-family: var(--font-main);
     padding: 4px 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-#agent-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+#agent-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
 
 #agent-send-btn,
 #agent-stop-btn {
@@ -305,8 +381,10 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
     flex-shrink: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #agent-send-btn {
@@ -319,7 +397,9 @@
     box-shadow: 0 3px 12px rgba(99, 102, 241, 0.45);
 }
 
-#agent-send-btn:active { transform: scale(0.94); }
+#agent-send-btn:active {
+    transform: scale(0.94);
+}
 
 #agent-stop-btn {
     background: linear-gradient(135deg, #ef4444, #dc2626);
@@ -331,7 +411,9 @@
     box-shadow: 0 3px 12px rgba(239, 68, 68, 0.45);
 }
 
-#agent-stop-btn:active { transform: scale(0.94); }
+#agent-stop-btn:active {
+    transform: scale(0.94);
+}
 
 /* ===== Markdown 渲染 ===== */
 .message-content code {
@@ -341,6 +423,8 @@
     font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
     font-size: 12px;
     color: rgba(165, 180, 252, 0.95);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .message-content pre {
@@ -358,9 +442,21 @@
     color: rgba(255, 255, 255, 0.85);
 }
 
-.message-content strong { font-weight: 600; color: white; }
-.message-content ul, .message-content ol { margin-left: 18px; margin-top: 4px; margin-bottom: 4px; }
-.message-content li { margin: 3px 0; }
+.message-content strong {
+    font-weight: 600;
+    color: white;
+}
+
+.message-content ul,
+.message-content ol {
+    margin-left: 18px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.message-content li {
+    margin: 3px 0;
+}
 
 /* ===== 收起态 ===== */
 #island-capsule:not(.agent-expanded) #agent-area {
@@ -369,6 +465,8 @@
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.85);
+    will-change: auto;
+    transition: padding 0.2s ease, background 0.2s ease;
 }
 
 #island-capsule:not(.agent-expanded) #agent-status-bar,
@@ -386,6 +484,13 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    will-change: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    display: block;
+    line-height: 1;
+    height: 1em;
+    flex-shrink: 0;
 }
 
 /* ===== 展开态 ===== */
@@ -400,6 +505,8 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
+    will-change: auto;
+    transition: padding 0.2s ease, background 0.2s ease;
 }
 
 #island-capsule.agent-expanded #agent-status-bar,

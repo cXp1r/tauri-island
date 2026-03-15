@@ -313,7 +313,13 @@ fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) 
 #[tauri::command]
 fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
     if let Ok(pos) = window.outer_position() {
-        let _ = window.set_position(tauri::PhysicalPosition::new(pos.x + dx, pos.y + dy));
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let logical_x = pos.x as f64 / scale;
+        let logical_y = pos.y as f64 / scale;
+        let _ = window.set_position(tauri::LogicalPosition::new(
+            logical_x + dx as f64,
+            logical_y + dy as f64,
+        ));
     }
 }
 
@@ -1734,7 +1740,10 @@ pub fn run() {
 
             thread::spawn(move || {
                 let hwnd = HWND(hwnd_raw as *mut _);
-                let center_x = (screen_w / 2.0) as i32;
+                let center_x = (screen_w * scale / 2.0) as i32;
+                let zone_half = (75.0 * scale) as i32;
+                let zone_top = (12.0 * scale) as i32;
+                let zone_bottom = (90.0 * scale) as i32;
                 let mut was_on_capsule = false;
 
                 loop {
@@ -1774,11 +1783,11 @@ pub fn run() {
                         }
 
                         if !agent_exp && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
-                            let in_zone = mx > center_x - 75 && mx < center_x + 75 && my < 12;
+                            let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
-                            } else if my > 90 && exp_m.load(Ordering::Relaxed) {
+                            } else if my > zone_bottom && exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
                             }
