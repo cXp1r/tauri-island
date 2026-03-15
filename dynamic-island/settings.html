@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
@@ -6,173 +6,241 @@
   <title>灵动岛 - 设置</title>
   <style>
     :root {
-      --bg: #0c111d;
-      --panel: rgba(16, 23, 39, 0.74);
-      --panel-border: rgba(143, 163, 191, 0.22);
-      --text: #e9f0ff;
-      --muted: #93a4c8;
-      --primary: #29c6ff;
-      --primary-2: #3eff9f;
-      --danger: #ff5b6e;
-      --ok: #39d98a;
-      --radius-lg: 16px;
-      --radius-md: 12px;
-      --shadow: 0 24px 50px rgba(0, 0, 0, 0.38);
+      --bg: #f5f5f5;
+      --surface: #ffffff;
+      --surface-hover: #f3f3f3;
+      --border: #e0e0e0;
+      --text: #1f1f1f;
+      --text-secondary: #717171;
+      --text-muted: #a0a0a0;
+      --primary: #0078d4;
+      --primary-hover: #1084d7;
+      --primary-active: #005a9e;
+      --danger: #d13438;
+      --ok: #107c10;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1f1f1f;
+        --surface: #2d2d2d;
+        --surface-hover: #3d3d3d;
+        --border: #404040;
+        --text: #e0e0e0;
+        --text-secondary: #b0b0b0;
+        --text-muted: #808080;
+        --primary: #0078d4;
+        --primary-hover: #1084d7;
+        --primary-active: #005a9e;
+        --danger: #f48771;
+        --ok: #6cc24a;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
+      }
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       min-height: 100vh;
-      font-family: "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background:
-        radial-gradient(circle at 0% 0%, rgba(41, 198, 255, 0.22), transparent 34%),
-        radial-gradient(circle at 100% 100%, rgba(62, 255, 159, 0.16), transparent 28%),
-        linear-gradient(165deg, #0a0f1b 0%, #0b1322 46%, #091523 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
       color: var(--text);
-      padding: 20px;
       display: flex;
       justify-content: center;
-      align-items: flex-start;
-      overflow: auto;
-    }
-
-    .shell {
-      width: min(760px, 100%);
-      background: var(--panel);
-      border: 1px solid var(--panel-border);
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(14px);
-      padding: 24px;
-      position: relative;
-      overflow: hidden;
-      isolation: isolate;
-    }
-
-    .shell::before {
-      content: "";
-      position: absolute;
-      inset: -1px;
-      background: linear-gradient(130deg, rgba(41, 198, 255, 0.16), rgba(62, 255, 159, 0.08), transparent 45%);
-      z-index: -1;
-      pointer-events: none;
-    }
-
-    .hero {
-      margin-bottom: 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .hero h1 {
-      font-size: 28px;
-      font-weight: 700;
-      line-height: 1.2;
-      letter-spacing: 0.2px;
-    }
-
-    .hero p {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 13px;
-      max-width: 560px;
-      line-height: 1.5;
-    }
-
-    .badge {
-      border: 1px solid rgba(62, 255, 159, 0.35);
-      color: #b2ffd8;
-      background: rgba(27, 77, 58, 0.36);
-      border-radius: 999px;
-      font-size: 12px;
-      padding: 5px 10px;
-      white-space: nowrap;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 14px;
-    }
-
-    .card {
-      border: 1px solid rgba(143, 163, 191, 0.2);
-      background: rgba(13, 19, 34, 0.78);
-      border-radius: var(--radius-lg);
-      padding: 14px;
-    }
-
-    .card-title {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.9px;
-      color: #8ea2c8;
-      margin-bottom: 12px;
-      font-weight: 700;
-    }
-
-    .row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
       align-items: center;
-      padding: 12px;
-      border-radius: var(--radius-md);
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(143, 163, 191, 0.16);
-      margin-bottom: 10px;
+      padding: 20px;
     }
 
-    .row:last-child { margin-bottom: 0; }
+    .container {
+      width: min(900px, 100%);
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      display: flex;
+      height: min(600px, 80vh);
+      overflow: hidden;
+    }
 
-    .row h3 {
-      font-size: 14px;
+    .sidebar {
+      width: 200px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header h1 {
+      font-size: 16px;
       font-weight: 600;
-      margin-bottom: 3px;
+      margin-bottom: 4px;
     }
 
-    .row p {
+    .sidebar-header p {
       font-size: 12px;
-      color: var(--muted);
-      line-height: 1.45;
+      color: var(--text-muted);
+    }
+
+    .nav-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .nav-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: all 0.15s ease;
+      font-size: 13px;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    .nav-item.active {
+      background: rgba(0, 120, 212, 0.1);
+      border-left-color: var(--primary);
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .content-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .content-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .content-header p {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .content-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .setting-group {
+      margin-bottom: 24px;
+    }
+
+    .setting-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .setting-group-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+
+    .setting-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .setting-item:last-child {
+      border-bottom: none;
+    }
+
+    .setting-label {
+      flex: 1;
+    }
+
+    .setting-label h3 {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .setting-label p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .setting-control {
+      flex-shrink: 0;
+      margin-left: 16px;
     }
 
     .switch {
-      width: 46px;
-      height: 26px;
+      width: 44px;
+      height: 24px;
       position: relative;
-      flex-shrink: 0;
+      display: inline-block;
     }
 
-    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
 
     .slider {
       position: absolute;
       inset: 0;
-      border-radius: 999px;
-      background: rgba(129, 145, 170, 0.5);
+      border-radius: 12px;
+      background: #ccc;
       cursor: pointer;
-      transition: all .2s ease;
+      transition: background 0.2s ease;
     }
 
     .slider::before {
       content: "";
       position: absolute;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       left: 3px;
       top: 3px;
       border-radius: 50%;
       background: #fff;
-      transition: transform .22s cubic-bezier(.2,.8,.2,1);
+      transition: transform 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     }
 
     .switch input:checked + .slider {
-      background: linear-gradient(90deg, #1ea9ff 0%, #3eff9f 100%);
+      background: var(--primary);
     }
 
     .switch input:checked + .slider::before {
@@ -181,231 +249,437 @@
 
     .input,
     .select {
-      background: rgba(9, 14, 26, 0.92);
-      border: 1px solid rgba(125, 142, 170, 0.42);
+      background: var(--surface);
+      border: 1px solid var(--border);
       color: var(--text);
-      border-radius: 10px;
+      border-radius: 4px;
       font-size: 13px;
+      padding: 8px 12px;
       outline: none;
-      transition: border-color .2s ease, box-shadow .2s ease;
+      transition: border-color 0.15s ease;
+      font-family: inherit;
     }
 
     .input:focus,
     .select:focus {
-      border-color: #3dcfff;
-      box-shadow: 0 0 0 3px rgba(61, 207, 255, 0.16);
+      border-color: var(--primary);
     }
 
-    .shortcut { width: 156px; text-align: center; padding: 8px 10px; cursor: pointer; }
-    .shortcut.recording {
-      border-color: var(--danger);
-      color: var(--danger);
-      box-shadow: 0 0 0 3px rgba(255, 91, 110, 0.16);
+    .input.shortcut {
+      width: 140px;
+      text-align: center;
+      cursor: pointer;
     }
 
-    .path { width: 100%; padding: 10px 12px; margin-top: 10px; }
+    .input.path {
+      width: 100%;
+      margin-top: 8px;
+    }
 
     .select {
-      width: 130px;
-      padding: 8px 10px;
+      width: 140px;
       cursor: pointer;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .input-group .input {
+      width: 100%;
     }
 
     .actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      margin-top: 10px;
+      margin-top: 8px;
     }
 
     .btn {
-      border: none;
-      border-radius: 11px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
       cursor: pointer;
-      transition: transform .08s ease, filter .2s ease, opacity .2s ease;
-      font-weight: 600;
+      transition: all 0.15s ease;
+      font-weight: 500;
       font-size: 13px;
-      padding: 10px 13px;
+      padding: 8px 16px;
+      background: var(--surface);
+      color: var(--text);
+      user-select: none;
     }
 
-    .btn:active { transform: translateY(1px); }
-
-    .btn-secondary {
-      color: #d9e7ff;
-      background: rgba(26, 39, 67, 0.75);
-      border: 1px solid rgba(126, 154, 193, 0.34);
+    .btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--text-muted);
     }
 
-    .btn-secondary:hover { filter: brightness(1.1); }
+    .btn:active {
+      background: var(--border);
+    }
 
     .btn-primary {
-      color: #041824;
-      background: linear-gradient(90deg, #36c5ff 0%, #51ffb0 100%);
+      color: #fff;
+      background: var(--primary);
+      border-color: var(--primary);
     }
 
-    .btn-primary:hover { filter: brightness(1.04); }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-primary:active {
+      background: var(--primary-active);
+      border-color: var(--primary-active);
+    }
 
     .btn-primary:disabled {
-      opacity: .55;
+      opacity: 0.6;
       cursor: not-allowed;
-    }
-
-    .footer {
-      margin-top: 16px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .save {
-      flex: 1;
-      min-width: 220px;
-      padding: 12px 16px;
-      font-size: 14px;
-      color: #fff;
-      border: 1px solid rgba(110, 137, 176, 0.35);
-      background: linear-gradient(135deg, #1a5cb8, #2b86ff);
-    }
-
-    .save:hover { filter: brightness(1.07); }
-
-    .status {
-      min-height: 20px;
-      font-size: 13px;
-      color: var(--ok);
-      width: 100%;
-      margin-top: 8px;
-      line-height: 1.4;
     }
 
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      color: #cde7ff;
+      color: var(--text);
       font-size: 12px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(143, 163, 191, 0.2);
-      border-radius: 9px;
-      padding: 7px 8px;
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
       margin-top: 8px;
       word-break: break-all;
+      line-height: 1.5;
     }
 
-    @media (max-width: 560px) {
-      body { padding: 12px; }
-      .shell { padding: 16px; border-radius: 18px; }
-      .hero h1 { font-size: 24px; }
-      .shortcut, .select { width: 130px; }
+    .footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .save-btn {
+      padding: 8px 24px;
+      font-size: 13px;
+      color: #fff;
+      background: var(--primary);
+      border: 1px solid var(--primary);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-weight: 500;
+    }
+
+    .save-btn:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--ok);
+      flex: 1;
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    /* 滚动条样式 - Webkit 浏览器 */
+    .nav-list::-webkit-scrollbar,
+    .content-body::-webkit-scrollbar {
+      width: 12px;
+    }
+
+    .nav-list::-webkit-scrollbar-track,
+    .content-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .nav-list::-webkit-scrollbar-thumb,
+    .content-body::-webkit-scrollbar-thumb {
+      background: var(--text-muted);
+      border-radius: 6px;
+      border: 3px solid transparent;
+      background-clip: padding-box;
+      transition: background 0.2s ease;
+    }
+
+    .nav-list::-webkit-scrollbar-thumb:hover,
+    .content-body::-webkit-scrollbar-thumb:hover {
+      background: var(--text-secondary);
+      background-clip: padding-box;
+    }
+
+    .nav-list::-webkit-scrollbar-thumb:active,
+    .content-body::-webkit-scrollbar-thumb:active {
+      background: var(--text);
+      background-clip: padding-box;
+    }
+
+    /* Firefox 滚动条样式 */
+    .nav-list,
+    .content-body {
+      scrollbar-color: var(--text-muted) transparent;
+      scrollbar-width: thin;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+        height: auto;
+        max-height: 90vh;
+      }
+
+      .sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        flex-direction: row;
+        height: auto;
+      }
+
+      .sidebar-header {
+        flex: 1;
+        border-bottom: none;
+        border-right: 1px solid var(--border);
+      }
+
+      .nav-list {
+        flex: 1;
+        display: flex;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0;
+      }
+
+      .nav-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        padding: 12px 16px;
+        white-space: nowrap;
+      }
+
+      .nav-item.active {
+        border-left: none;
+        border-bottom-color: var(--primary);
+      }
+
+      .content-body {
+        padding: 16px;
+      }
+
+      .input.shortcut,
+      .select {
+        width: 100%;
+      }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header class="hero">
-      <div style="display:flex;align-items:center;gap:14px;">
-        <img src="/src/assets/logo-bw-morph.svg" alt="Dynamic Island Logo" width="52" height="52" style="border-radius:14px;flex-shrink:0;" />
-        <div>
-          <h1>灵动岛设置</h1>
-          <p>保留轻量核心功能：快捷键、剪贴板识别、歌词模式，以及 PluginMarket 源修复。</p>
+  <div class="container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>灵动岛</h1>
+        <p>设置</p>
+      </div>
+      <nav class="nav-list">
+        <div class="nav-item active" data-page="basic">基础能力</div>
+        <div class="nav-item" data-page="plugins">插件管理</div>
+        <div class="nav-item" data-page="ai">AI Agent</div>
+      </nav>
+    </aside>
+
+    <div class="content">
+      <header class="content-header">
+        <h2 id="page-title">基础能力</h2>
+        <p id="page-desc">配置快捷键、剪贴板识别和歌词显示。</p>
+      </header>
+
+      <div class="content-body">
+        <!-- 基础能力页面 -->
+        <div class="page active" id="page-basic">
+          <div class="setting-group">
+            <div class="setting-group-title">剪贴板</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>监听剪贴板链接</h3>
+                <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="clipboard-toggle" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">快捷键</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>打开链接快捷键</h3>
+                <p>点击输入框后直接按组合键录入。</p>
+              </div>
+              <div class="setting-control">
+                <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">音乐</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>歌词显示模式</h3>
+                <p>控制收起状态下的音乐展示策略。</p>
+              </div>
+              <div class="setting-control">
+                <select id="lyric-mode" class="select">
+                  <option value="lyric">显示歌词</option>
+                  <option value="info">仅歌曲信息</option>
+                  <option value="off">关闭</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 插件管理页面 -->
+        <div class="page" id="page-plugins">
+          <div class="setting-group">
+            <div class="setting-group-title">InfLink</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>InfLink 下载地址</h3>
+                <p>仅提供下载地址，不再执行 InfLink 插件文件写入。</p>
+              </div>
+              <div class="mono">https://github.com/BetterNCM/InfinityLink</div>
+              <div class="actions">
+                <button id="open-inflink-btn" class="btn" type="button">打开下载地址</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">PluginMarket</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>PluginMarket main.js 源修复</h3>
+                <p>仅执行源地址替换（旧源 → BetterNCM 官方源）。</p>
+              </div>
+              <div class="input-group">
+                <input id="betterncm-path" class="input path" value="C:\betterncm" />
+                <div class="actions">
+                  <button id="install-betterncm-btn" class="btn btn-primary" type="button">执行源修复</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Agent 页面 -->
+        <div class="page" id="page-ai">
+          <div class="setting-group">
+            <div class="setting-group-title">API 配置</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>API 地址</h3>
+                <p>OpenAI 兼容的 API 端点地址。</p>
+              </div>
+              <input id="ai-api-url" class="input path" placeholder="https://api.openai.com/v1" />
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>API Key</h3>
+                <p>用于身份验证的 API 密钥。</p>
+              </div>
+              <input id="ai-api-key" class="input path" type="password" placeholder="sk-..." />
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>模型名称</h3>
+                <p>要使用的模型标识符。</p>
+              </div>
+              <input id="ai-model" class="input path" placeholder="gpt-4o" />
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">模型检测</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>模型类型检测</h3>
+                <p id="ai-model-type-result">未检测</p>
+              </div>
+              <div class="actions">
+                <button id="ai-detect-btn" class="btn" type="button">检测模型类型</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <span class="badge">UI Pro Layout</span>
-    </header>
 
-    <section class="grid">
-      <article class="card">
-        <div class="card-title">基础能力</div>
+      <footer class="footer">
+        <button id="save-btn" class="save-btn" type="button">保存设置</button>
+        <div id="status" class="status"></div>
+      </footer>
+    </div>
+  </div>
 
-        <div class="row">
-          <div>
-            <h3>监听剪贴板链接</h3>
-            <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="clipboard-toggle" checked />
-            <span class="slider"></span>
-          </label>
-        </div>
+  <script>
+    // 页面切换逻辑
+    const navItems = document.querySelectorAll('.nav-item');
+    const pages = document.querySelectorAll('.page');
+    const pageTitle = document.getElementById('page-title');
+    const pageDesc = document.getElementById('page-desc');
 
-        <div class="row">
-          <div>
-            <h3>打开链接快捷键</h3>
-            <p>点击输入框后直接按组合键录入。</p>
-          </div>
-          <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
-        </div>
+    const pageInfo = {
+      basic: {
+        title: '基础能力',
+        desc: '配置快捷键、剪贴板识别和歌词显示。'
+      },
+      plugins: {
+        title: '插件管理',
+        desc: '管理 InfLink 和 PluginMarket 相关设置。'
+      },
+      ai: {
+        title: 'AI Agent',
+        desc: '配置 OpenAI 兼容的 API 和模型参数。'
+      }
+    };
 
-        <div class="row">
-          <div>
-            <h3>歌词显示模式</h3>
-            <p>控制收起状态下的音乐展示策略。</p>
-          </div>
-          <select id="lyric-mode" class="select">
-            <option value="lyric">显示歌词</option>
-            <option value="info">仅歌曲信息</option>
-            <option value="off">关闭</option>
-          </select>
-        </div>
-      </article>
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const pageId = item.dataset.page;
 
-      <article class="card">
-        <div class="card-title">InfLink / PluginMarket</div>
+        // 更新导航状态
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
 
-        <div class="row" style="display:block;">
-          <h3>InfLink 下载地址</h3>
-          <p>仅提供下载地址，不再执行 InfLink 插件文件写入。</p>
-          <div class="mono">https://github.com/BetterNCM/InfinityLink</div>
-          <div class="actions">
-            <button id="open-inflink-btn" class="btn btn-secondary" type="button">打开下载地址</button>
-          </div>
-        </div>
+        // 更新页面显示
+        pages.forEach(page => page.classList.remove('active'));
+        document.getElementById(`page-${pageId}`).classList.add('active');
 
-        <div class="row" style="display:block;">
-          <h3>PluginMarket main.js 源修复</h3>
-          <p>仅执行源地址替换（旧源 → BetterNCM 官方源）。</p>
-          <input id="betterncm-path" class="input path" value="C:\betterncm" />
-          <div class="actions">
-            <button id="install-betterncm-btn" class="btn btn-primary" type="button">执行 main.js 源修复</button>
-          </div>
-        </div>
-      </article>
-
-      <article class="card">
-        <div class="card-title">AI Agent 配置</div>
-
-        <div class="row" style="display:block;">
-          <h3>API 地址</h3>
-          <p>OpenAI 兼容的 API 端点地址。</p>
-          <input id="ai-api-url" class="input path" placeholder="https://api.openai.com/v1" />
-        </div>
-
-        <div class="row" style="display:block;">
-          <h3>API Key</h3>
-          <p>用于身份验证的 API 密钥。</p>
-          <input id="ai-api-key" class="input path" type="password" placeholder="sk-..." />
-        </div>
-
-        <div class="row" style="display:block;">
-          <h3>模型名称</h3>
-          <p>要使用的模型标识符。</p>
-          <input id="ai-model" class="input path" placeholder="gpt-4o" />
-        </div>
-
-        <div class="row" style="display:block;">
-          <h3>模型类型检测</h3>
-          <p id="ai-model-type-result" style="margin-bottom:8px;">未检测</p>
-          <div class="actions">
-            <button id="ai-detect-btn" class="btn btn-secondary" type="button">检测模型类型</button>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <footer class="footer">
-      <button id="save-btn" class="btn save" type="button">保存基础设置</button>
-      <div id="status" class="status"></div>
-    </footer>
-  </main>
+        // 更新标题和描述
+        pageTitle.textContent = pageInfo[pageId].title;
+        pageDesc.textContent = pageInfo[pageId].desc;
+      });
+    });
+  </script>
 
   <script type="module" src="/src/settings.ts"></script>
 </body>

@@ -1,5 +1,6 @@
 ﻿import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
 type SettingsResponse = {
   clipboard_enabled: boolean;
@@ -231,6 +232,88 @@ aiDetectBtn.addEventListener("click", async () => {
     aiDetectBtn.disabled = false;
     aiDetectBtn.textContent = originalText;
   }
+});
+
+// 窗口调整大小功能
+const appWindow = getCurrentWindow();
+let isResizing = false;
+let resizeDirection = "";
+let startX = 0;
+let startY = 0;
+let startWidth = 0;
+let startHeight = 0;
+let startPosX = 0;
+let startPosY = 0;
+
+const resizeHandles = document.querySelectorAll(".resize-handle");
+
+resizeHandles.forEach((handle) => {
+  handle.addEventListener("mousedown", async (e: Event) => {
+    const mouseEvent = e as MouseEvent;
+    e.preventDefault();
+    isResizing = true;
+    resizeDirection = (handle as HTMLElement).dataset.direction || "";
+    startX = mouseEvent.screenX;
+    startY = mouseEvent.screenY;
+
+    const size = await appWindow.outerSize();
+    const position = await appWindow.outerPosition();
+    startWidth = size.width;
+    startHeight = size.height;
+    startPosX = position.x;
+    startPosY = position.y;
+  });
+});
+
+document.addEventListener("mousemove", async (e: MouseEvent) => {
+  if (!isResizing) return;
+
+  const deltaX = e.screenX - startX;
+  const deltaY = e.screenY - startY;
+
+  let newWidth = startWidth;
+  let newHeight = startHeight;
+  let newX = startPosX;
+  let newY = startPosY;
+
+  // 最小尺寸限制
+  const minWidth = 600;
+  const minHeight = 400;
+
+  if (resizeDirection.includes("e")) {
+    newWidth = Math.max(minWidth, startWidth + deltaX);
+  }
+  if (resizeDirection.includes("w")) {
+    const proposedWidth = startWidth - deltaX;
+    if (proposedWidth >= minWidth) {
+      newWidth = proposedWidth;
+      newX = startPosX + deltaX;
+    }
+  }
+  if (resizeDirection.includes("s")) {
+    newHeight = Math.max(minHeight, startHeight + deltaY);
+  }
+  if (resizeDirection.includes("n")) {
+    const proposedHeight = startHeight - deltaY;
+    if (proposedHeight >= minHeight) {
+      newHeight = proposedHeight;
+      newY = startPosY + deltaY;
+    }
+  }
+
+  try {
+    await appWindow.setSize(new LogicalSize(newWidth, newHeight));
+    if (newX !== startPosX || newY !== startPosY) {
+      await appWindow.setPosition(new LogicalPosition(newX, newY));
+    }
+  } catch (err) {
+    console.error("调整窗口大小失败:", err);
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  isResizing = false;
+  resizeDirection = "";
 });
 
 void loadSettings();

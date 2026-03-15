@@ -441,8 +441,9 @@ fn open_settings(app: tauri::AppHandle) {
     } else {
         let _ = tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App("settings.html".into()))
             .title("灵动岛 - 设置")
-            .inner_size(560.0, 760.0)
-            .resizable(false)
+            .inner_size(1000.0, 600.0)
+            .min_inner_size(800.0, 500.0)
+            .resizable(true)
             .center()
             .build();
     }
@@ -1691,8 +1692,9 @@ pub fn run() {
                             } else {
                                 let _ = tauri::WebviewWindowBuilder::new(app, "settings", tauri::WebviewUrl::App("settings.html".into()))
                                     .title("灵动岛 - 设置")
-                                    .inner_size(560.0, 760.0)
-                                    .resizable(false)
+                                    .inner_size(1000.0, 600.0)
+                                    .min_inner_size(800.0, 500.0)
+                                    .resizable(true)
                                     .center()
                                     .build();
                             }
