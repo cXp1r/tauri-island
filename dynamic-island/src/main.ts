@@ -1,4 +1,4 @@
-﻿﻿import { listen } from "@tauri-apps/api/event";
+﻿﻿﻿﻿import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
@@ -56,14 +56,12 @@ let currentAssistantMessage: HTMLDivElement | null = null;
 let currentThinkingSection: HTMLDivElement | null = null;
 let thinkingStartTime = 0;
 
-type ViewMode = "time" | "notice" | "urls" | "lyric" | "agent";
+type ViewMode = "time" | "lyric" | "agent";
 let currentView: ViewMode = "time";
 let userChosenView: ViewMode = "time";
 
 const viewElements: Record<ViewMode, HTMLElement> = {
   time: timeWrapper,
-  notice: noticeArea,
-  urls: urlList,
   lyric: lyricArea,
   agent: agentArea,
 };
@@ -294,7 +292,6 @@ function setView(mode: ViewMode, animated = true) {
   }
 
   updateCapsuleSize();
-  syncPrivacyFocusForCurrentView();
   void syncCurrentView(mode);
   updateSwitcherUI();
 
@@ -333,10 +330,6 @@ function updateCapsuleSize() {
   }
 }
 
-function syncPrivacyFocusForCurrentView() {
-  const popupActive = privacyIndicators.classList.contains("active");
-  timeWrapper.classList.toggle("privacy-focus", popupActive && currentView === "time");
-}
 
 function updatePlayIcon() {
   iconPlay.style.display = isPlaying ? "none" : "block";
@@ -362,7 +355,6 @@ function hidePrivacyPopup() {
   privacyIndicators.classList.remove("active", "pulse");
   privacyMic.classList.remove("active");
   privacyCamera.classList.remove("active");
-  syncPrivacyFocusForCurrentView();
 }
 
 function showPrivacyPopup(payload: PrivacyUsagePayload) {
@@ -374,15 +366,6 @@ function showPrivacyPopup(payload: PrivacyUsagePayload) {
 
   privacyMic.classList.toggle("active", microphone);
   privacyCamera.classList.toggle("active", camera);
-
-  // 取消所有 content-wrapper 上的 fill:forwards 动画，否则动画填充值会覆盖 CSS 的 opacity:0
-  (Object.keys(viewElements) as ViewMode[]).forEach((v) => {
-    viewElements[v].getAnimations().forEach((a) => a.cancel());
-  });
-  // 确保当前视图仍然可见（cancel 会清除 fill 值）
-  viewElements[currentView].style.display = "flex";
-
-  syncPrivacyFocusForCurrentView();
 
   capsule.classList.add("privacy-active");
   capsule.classList.remove("privacy-pulse");
@@ -479,6 +462,12 @@ async function refreshWeather(force = false) {
   }
 }
 
+function dismissOverlays() {
+  noticeArea.classList.remove("active");
+  urlList.classList.remove("active");
+  urlList.innerHTML = "";
+}
+
 function restoreUserView() {
   isShowingUrlList = false;
   if (noticeTimer) {
@@ -486,7 +475,8 @@ function restoreUserView() {
     noticeTimer = null;
   }
 
-  urlList.innerHTML = "";
+  dismissOverlays();
+
   const views = getAvailableViews();
   if (views.includes(userChosenView)) {
     setView(userChosenView, true);
@@ -510,6 +500,8 @@ listen<boolean>("set-expand", (event) => {
     updateCapsuleSize();
     if (isShowingUrlList) {
       restoreUserView();
+    } else {
+      dismissOverlays();
     }
   }
 });
@@ -519,7 +511,7 @@ listen<string>("show-notice", (event) => {
 });
 
 listen("notice-timeout", () => {
-  if (!isShowingUrlList) restoreUserView();
+  if (!isShowingUrlList) dismissOverlays();
 });
 
 listen("reset-view", () => {
@@ -533,8 +525,9 @@ listen<PrivacyUsagePayload>("privacy-usage", (event) => {
 
   if (micStarted || camStarted) {
     showPrivacyPopup(next);
-  } else if (privacyIndicators.classList.contains("active") && (next.microphone || next.camera)) {
-    showPrivacyPopup(next);
+  } else if (!next.microphone && !next.camera && (lastPrivacyUsage.microphone || lastPrivacyUsage.camera)) {
+    // 麦克风和摄像头都停止使用，主动收起隐私弹窗
+    hidePrivacyPopup();
   }
 
   lastPrivacyUsage = next;
@@ -620,8 +613,8 @@ listen<{ title: string; artist: string }>("media-paused", () => {
 function showNotice(msg: string) {
   if (isShowingUrlList) return;
 
-  setView("notice", true);
   noticeMsg.innerText = msg;
+  noticeArea.classList.add("active");
   capsule.classList.add("expanded");
   capsule.classList.remove("lyric-collapsed");
 
@@ -630,7 +623,7 @@ function showNotice(msg: string) {
   }
 
   noticeTimer = window.setTimeout(() => {
-    if (!isShowingUrlList) restoreUserView();
+    if (!isShowingUrlList) dismissOverlays();
   }, 3000);
 }
 
@@ -654,7 +647,9 @@ function showUrlList() {
 
   isShowingUrlList = true;
   void invoke("set_interacting", { active: true });
-  setView("urls", true);
+
+  // 隐藏通知覆盖层，显示 URL 列表覆盖层
+  noticeArea.classList.remove("active");
 
   urlList.innerHTML = "";
   pendingUrls.forEach((url) => {
@@ -671,6 +666,7 @@ function showUrlList() {
     urlList.appendChild(item);
   });
 
+  urlList.classList.add("active");
   capsule.classList.add("expanded");
   capsule.classList.remove("lyric-collapsed");
 }
@@ -1167,7 +1163,7 @@ invoke<{ api_url: string; model: string }>("ai_get_settings").then((settings) =>
     updateSwitcherUI();
   }
 }).catch((error) => {
-  console.error("Failed to load AI settings:", error);
+  console.error("加载 AI 设置失败:", error);
 });
 
 // 监听 AI 设置变更

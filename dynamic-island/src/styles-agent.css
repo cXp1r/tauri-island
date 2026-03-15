@@ -612,21 +612,14 @@
     display: none !important;
 }
 #island-capsule.privacy-active #agent-area {
-    opacity: 0;
-    transform: translateY(3px) scale(0.965);
-    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
-                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
     pointer-events: none;
 }
 
 #island-capsule.privacy-active #agent-confirm-dialog {
-    opacity: 0;
     pointer-events: none;
 }
 
 #island-capsule:not(.privacy-active) #agent-area {
     opacity: 1;
     transform: none;
-    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
-                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
 }

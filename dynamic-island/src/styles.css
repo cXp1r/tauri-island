@@ -154,16 +154,13 @@ html, body {
                 transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-#island-capsule.privacy-active .content-wrapper {
-    opacity: 0;
-    transform: translateY(3px) scale(0.965);
-    pointer-events: none;
+#island-capsule.privacy-active #view-switcher {
+    padding: 0 18px;
 }
 
 /* --- 时间（日期左侧 · 时间居中 · 天气右侧） --- */
 #time-wrapper {
     justify-content: center;
-    padding: 0 18px;
 }
 
 .time-side {
@@ -207,28 +204,31 @@ html, body {
                 transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-#time-wrapper.privacy-focus #time-text {
-    opacity: 0;
-    transform: scale(0.92);
-}
-
-#time-wrapper.privacy-focus .time-side {
-    opacity: 0;
-    transform: translateY(-50%) scale(0.9);
-}
-
 /* --- 通知 --- */
 #notice-area {
-    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     align-items: center;
     justify-content: center;
     gap: 10px;
-    width: 100%;
-    height: 100%;
     padding: 0 20px;
     cursor: pointer;
+    background: #000;
+    border-radius: inherit;
+    z-index: 18;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
 }
-#notice-area:hover { background: rgba(255, 255, 255, 0.04); }
+#notice-area.active {
+    opacity: 1;
+    pointer-events: auto;
+    display: flex;
+}
+#notice-area:hover { background: rgba(0, 0, 0, 0.92); }
 
 .icon-box {
     width: 30px;
@@ -252,14 +252,27 @@ html, body {
 
 /* --- URL列表 --- */
 #url-list {
-    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     flex-direction: column;
     align-items: stretch;
     padding: 6px 12px;
     gap: 2px;
-    width: 100%;
     overflow-y: auto;
-    max-height: 100%;
+    background: #000;
+    border-radius: inherit;
+    z-index: 18;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+}
+#url-list.active {
+    opacity: 1;
+    pointer-events: auto;
+    display: flex;
 }
 .url-item {
     font-size: 12px;
@@ -389,11 +402,6 @@ html, body {
     display: flex;
 }
 
-#island-capsule.privacy-active #view-switcher {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px);
-}
-
 /* 页面指示点（可点击） */
 #view-dots {
     display: flex;
@@ -420,26 +428,29 @@ html, body {
 
 #privacy-indicators {
     position: absolute;
-    top: 50%;
-    left: 50%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.84);
+    transform: scale(0.84);
     transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1),
                 transform 0.22s cubic-bezier(0.25, 1, 0.5, 1);
     pointer-events: none;
     z-index: 20;
     padding: 0;
-    border-radius: 0;
-    background: transparent;
+    border-radius: inherit;
+    background: #000;
     backdrop-filter: none;
 }
 
 #privacy-indicators.active {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
 }
 
 #privacy-indicators.pulse {
@@ -448,13 +459,13 @@ html, body {
 
 @keyframes privacy-popup-pulse {
     0% {
-        transform: translate(-50%, -50%) scale(0.86);
+        transform: scale(0.86);
     }
     48% {
-        transform: translate(-50%, -50%) scale(1.08);
+        transform: scale(1.08);
     }
     100% {
-        transform: translate(-50%, -50%) scale(1);
+        transform: scale(1);
     }
 }
 

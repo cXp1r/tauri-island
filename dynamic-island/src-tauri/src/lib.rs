@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::net::TcpStream;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 use tauri::{Emitter, Manager};
@@ -102,7 +101,9 @@ fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64,
 }
 
 fn check_internet() -> bool {
-    TcpStream::connect_timeout(&"8.8.8.8:53".parse().unwrap(), Duration::from_secs(2)).is_ok()
+    use windows::Win32::Networking::WinInet::{InternetGetConnectedState, INTERNET_CONNECTION};
+    let mut flags = INTERNET_CONNECTION::default();
+    unsafe { InternetGetConnectedState(&mut flags, None).is_ok() }
 }
 
 fn get_settings_path() -> PathBuf {
@@ -354,7 +355,7 @@ fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
 #[tauri::command]
 fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "notice" | "urls" | "lyric" | "agent" => view,
+        "time" | "lyric" | "agent" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
@@ -1817,19 +1818,34 @@ pub fn run() {
                 thread::sleep(Duration::from_secs(2));
                 let mut was_online = check_internet();
                 let mut last_bt = get_bt_devices();
+                let mut offline_streak: u32 = 0;
+                const OFFLINE_CONFIRM: u32 = 3; // 连续 3 次失败才判定断网
 
                 loop {
                     thread::sleep(Duration::from_secs(8));
                     let online = check_internet();
-                    if !online && was_online {
-                        trigger_notification(&win_hw, &noti_hw, &exp_hw, "Network disconnected");
+                    if !online {
+                        offline_streak = offline_streak.saturating_add(1);
+                        if was_online && offline_streak >= OFFLINE_CONFIRM {
+                            was_online = false;
+                            trigger_notification(&win_hw, &noti_hw, &exp_hw, "网络已断开");
+                        }
+                    } else {
+                        offline_streak = 0;
+                        if !was_online {
+                            was_online = true;
+                            trigger_notification(&win_hw, &noti_hw, &exp_hw, "网络已连接");
+                        }
                     }
-                    was_online = online;
 
                     let bt = get_bt_devices();
                     let new_devs: Vec<_> = bt.difference(&last_bt).cloned().collect();
                     if let Some(name) = new_devs.first() {
-                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("Bluetooth connected: {}", name));
+                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已连接: {}", name));
+                    }
+                    let lost_devs: Vec<_> = last_bt.difference(&bt).cloned().collect();
+                    if let Some(name) = lost_devs.first() {
+                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已断开: {}", name));
                     }
                     last_bt = bt;
                 }
@@ -1877,11 +1893,11 @@ pub fn run() {
                                 *pending_url_cb.lock().unwrap() = urls.clone();
                                 let shortcut = "Alt+O";
                                 if urls.len() == 1 {
-                                    let msg = format!("Link copied. Press {} or click to open", shortcut);
+                                    let msg = format!("已复制链接，按 {} 或点击打开", shortcut);
                                     let _ = win_cb.emit("clipboard-urls", urls.clone());
                                     trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
                                 } else {
-                                    let msg = format!("Detected {} links. Click to view", urls.len());
+                                    let msg = format!("检测到 {} 个链接，点击查看", urls.len());
                                     let _ = win_cb.emit("clipboard-urls", urls.clone());
                                     trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
                                 }
