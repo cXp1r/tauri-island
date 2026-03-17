@@ -488,3 +488,69 @@ html, body {
     display: flex;
 }
 
+/* ===== 收起状态的小绿条 ===== */
+#collapsed-indicator {
+    display: none;
+    position: fixed;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(90deg, #22c55e, #2edb67, #22c55e);
+    border-radius: 2px;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 0 8px rgba(46, 219, 103, 0.5);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, width 0.2s ease;
+    z-index: 1000;
+}
+
+#collapsed-indicator:hover {
+    transform: translateX(-50%) scaleX(1.15);
+    width: 70px;
+    box-shadow: 0 0 14px rgba(46, 219, 103, 0.7);
+}
+
+#collapsed-indicator:active {
+    transform: translateX(-50%) scaleX(1.05);
+}
+
+/* 胶囊收起动画 - 平滑缩小 */
+#island-capsule.minimizing {
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.2s ease,
+                transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: scale(0.3);
+    opacity: 0;
+}
+
+/* 胶囊收起完成状态 */
+#island-capsule.minimized {
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0);
+}
+
+/* 胶囊展开动画 */
+#island-capsule.expanding {
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.2s ease,
+                transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: scale(1);
+    opacity: 1;
+}
+
+/* body 收起状态 - 只显示绿条 */
+body.minimized {
+    padding-top: 0;
+}
+
+body.minimized #collapsed-indicator {
+    display: block;
+}
+

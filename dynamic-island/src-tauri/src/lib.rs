@@ -35,6 +35,10 @@ const AGENT_EXPANDED_W: f64 = 460.0;
 const AGENT_EXPANDED_H: f64 = 480.0;
 const WIN_H_DEFAULT: f64 = 84.0;
 
+// 收起态（绿条）尺寸
+const MINIMIZED_W: f64 = 70.0;
+const MINIMIZED_H: f64 = 12.0;
+
 const SNAP_DURATION_MS: f64 = 300.0;
 
 /// 全局复用的 HTTP client，避免每次歌词请求重新初始化 TLS
@@ -422,6 +426,101 @@ fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         } else {
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
         }
+    }
+}
+
+#[tauri::command]
+fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, minimized: bool) {
+    state.is_minimized.store(minimized, Ordering::Relaxed);
+    let screen_w = state.screen_w;
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    if minimized {
+        // 收起到绿条：窗口缩小到绿条尺寸
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let from_w = WIN_W;
+            let from_h = WIN_H_DEFAULT;
+
+            // 绿条居中在屏幕顶部
+            let target_x = (screen_w - MINIMIZED_W) / 2.0;
+            let target_y = TOP_MARGIN;
+            let target_w = MINIMIZED_W;
+            let target_h = MINIMIZED_H;
+
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 250.0);
+            });
+        }
+    } else {
+        // 从绿条展开：恢复到默认尺寸
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let from_w = MINIMIZED_W;
+            let from_h = MINIMIZED_H;
+
+            // 恢复到屏幕顶部居中
+            let target_x = (screen_w - WIN_W) / 2.0;
+            let target_y = TOP_MARGIN;
+            let target_w = WIN_W;
+            let target_h = WIN_H_DEFAULT;
+
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 250.0);
+            });
+        }
+    }
+}
+
+#[tauri::command]
+fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
+    // 获取鼠标位置
+    let Some((x, y)) = get_cursor_pos() else { return };
+    let Ok(hwnd) = window.hwnd() else { return };
+
+    let cmd_id: i32 = unsafe {
+        let hwnd = HWND(hwnd.0);
+
+        // 创建菜单
+        let Ok(h_menu) = CreatePopupMenu() else { return };
+
+        // 添加菜单项
+        let _ = AppendMenuW(h_menu, MF_STRING, 1, windows::core::w!("收起"));
+        let _ = AppendMenuW(h_menu, MF_STRING, 2, windows::core::w!("设置"));
+
+        // 显示菜单并跟踪选择（阻塞直到用户选择或取消）
+        let cmd = TrackPopupMenu(
+            h_menu,
+            TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+            x,
+            y,
+            None,
+            hwnd,
+            None,
+        );
+
+        let _ = DestroyMenu(h_menu);
+        cmd.0
+    };
+
+    // TrackPopupMenu 返回后，在新线程中异步执行菜单动作，
+    // 避免在当前 command 上下文中创建窗口导致死锁。
+    match cmd_id {
+        1 => {
+            let _ = app.emit("context-menu-action", "minimize");
+        }
+        2 => {
+            thread::spawn(move || {
+                // 短暂延迟确保主线程 command 调用完全返回
+                thread::sleep(Duration::from_millis(50));
+                open_settings(app);
+            });
+        }
+        _ => {}
     }
 }
 
@@ -1626,7 +1725,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_drag, end_drag, drag_move,
             open_url, get_pending_urls, set_interacting, dismiss_island, set_current_view,
-            set_agent_expanded, sync_window_height,
+            set_agent_expanded, sync_window_height, set_minimized, show_context_menu,
             open_settings, get_settings, save_settings, install_betterncm_support,
             media_play_pause, media_next, media_prev,
             ai_get_settings, ai_save_settings, ai_detect_model_type,
@@ -1670,6 +1769,7 @@ pub fn run() {
             let ai_generating = Arc::new(AtomicBool::new(false));
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
+            let is_minimized = Arc::new(AtomicBool::new(false));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -1682,6 +1782,7 @@ pub fn run() {
                 lyric_mode: lyric_mode.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
+                is_minimized: is_minimized.clone(),
                 screen_w, home_x, hwnd, scale,
                 ai_api_url: ai_api_url.clone(),
                 ai_api_key: ai_api_key.clone(),
@@ -2156,6 +2257,7 @@ pub struct IslandState {
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
     pub agent_expanded: Arc<AtomicBool>,
+    pub is_minimized: Arc<AtomicBool>,
     pub screen_w: f64,
     pub home_x: f64,
     pub hwnd: HWND,

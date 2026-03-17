@@ -39,6 +39,7 @@ const viewDots = document.getElementById("view-dots") as HTMLDivElement;
 const privacyIndicators = document.getElementById("privacy-indicators") as HTMLDivElement;
 const privacyMic = document.getElementById("privacy-mic") as HTMLDivElement;
 const privacyCamera = document.getElementById("privacy-camera") as HTMLDivElement;
+const collapsedIndicator = document.getElementById("collapsed-indicator") as HTMLDivElement;
 
 let noticeTimer: number | null = null;
 let pendingUrls: string[] = [];
@@ -48,6 +49,7 @@ let isPlaying = false;
 let lyricMode = "lyric"; // "off" | "info" | "lyric"
 let privacyPopupTimer: number | null = null;
 let privacyPulseCleanupTimer: number | null = null;
+let isMinimized = false;
 
 // AI Agent 相关状态
 let aiEnabled = false;
@@ -356,6 +358,63 @@ function hidePrivacyPopup() {
   privacyMic.classList.remove("active");
   privacyCamera.classList.remove("active");
 }
+
+// ===== 收起/展开功能 =====
+function minimizeIsland() {
+  if (isMinimized) return; // 已经收起了
+  isMinimized = true;
+
+  // 添加缩小动画类
+  capsule.classList.add("minimizing");
+
+  // 等待动画完成
+  setTimeout(() => {
+    capsule.classList.remove("minimizing");
+    capsule.classList.add("minimized");
+    document.body.classList.add("minimized");
+    // 通知后端缩小窗口
+    void invoke("set_minimized", { minimized: true });
+  }, 250);
+}
+
+function expandFromMinimized() {
+  if (!isMinimized) return; // 已经展开了
+  isMinimized = false;
+
+  // 先通知后端恢复窗口尺寸
+  void invoke("set_minimized", { minimized: false });
+
+  // 隐藏绿条
+  document.body.classList.remove("minimized");
+
+  // 准备展开动画
+  capsule.classList.remove("minimized");
+  capsule.classList.add("expanding");
+
+  // 动画完成后移除动画类
+  setTimeout(() => {
+    capsule.classList.remove("expanding");
+  }, 250);
+}
+
+// ===== 右键菜单 =====
+function showContextMenu() {
+  // 使用后端显示系统菜单
+  void invoke("show_context_menu");
+}
+
+// 监听菜单动作
+listen<string>("context-menu-action", (event) => {
+  const action = event.payload;
+  if (action === "minimize") {
+    minimizeIsland();
+  } else if (action === "settings") {
+    // 延迟执行，确保菜单完全关闭后再打开设置窗口
+    setTimeout(() => {
+      void invoke("open_settings");
+    }, 100);
+  }
+});
 
 function showPrivacyPopup(payload: PrivacyUsagePayload) {
   const { microphone, camera } = payload;
@@ -700,6 +759,7 @@ let mouseDownY = 0;
 const DRAG_THRESHOLD = 5; // 像素，超过此距离才算拖动
 
 capsule.addEventListener("mousedown", (e: MouseEvent) => {
+  // 右键不触发拖动
   if (e.button !== 0) return;
   const target = e.target as HTMLElement;
   if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
@@ -718,6 +778,26 @@ capsule.addEventListener("mousedown", (e: MouseEvent) => {
   lastY = e.screenY;
   mouseDownX = e.screenX;
   mouseDownY = e.screenY;
+});
+
+// 右键菜单功能
+capsule.addEventListener("contextmenu", (e: MouseEvent) => {
+  e.preventDefault();
+
+  // Agent 展开态时不显示菜单
+  if (capsule.classList.contains("agent-expanded")) return;
+
+  // 隐私弹窗显示时不显示菜单
+  if (capsule.classList.contains("privacy-active")) return;
+
+  // 显示系统菜单
+  showContextMenu();
+});
+
+// 绿条点击展开
+collapsedIndicator.addEventListener("click", (e: MouseEvent) => {
+  e.stopPropagation();
+  expandFromMinimized();
 });
 
 let agentClickTimer: number | null = null;
