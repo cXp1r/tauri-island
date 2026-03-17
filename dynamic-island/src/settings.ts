@@ -7,6 +7,7 @@ type SettingsResponse = {
   shortcut_key: string;
   lyric_mode: string;
   indicator_color: string;
+  agent_window_size: string;
 };
 
 type AISettingsResponse = {
@@ -40,6 +41,7 @@ const aiApiKeyInput = document.getElementById("ai-api-key") as HTMLInputElement;
 const aiModelInput = document.getElementById("ai-model") as HTMLInputElement;
 const aiDetectBtn = document.getElementById("ai-detect-btn") as HTMLButtonElement;
 const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTMLParagraphElement;
+const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
 
 let isRecording = false;
 let statusTimer: number | null = null;
@@ -51,6 +53,7 @@ async function loadSettings() {
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
+  agentWindowSizeSelect.value = settings.agent_window_size || "medium";
 
   // 加载 AI 设置
   try {
@@ -136,6 +139,7 @@ saveBtn.addEventListener("click", async () => {
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
       indicatorColor: indicatorColorInput.value,
+      agentWindowSize: agentWindowSizeSelect.value,
     });
 
     // 保存 AI 设置

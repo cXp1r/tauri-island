@@ -30,9 +30,6 @@ const CAPSULE_EXPANDED_W: f64 = 330.0;
 const CAPSULE_EXPANDED_H: f64 = 74.0;
 const CAPSULE_TOP_PAD: f64 = 5.0;
 
-// Agent 展开态尺寸
-const AGENT_EXPANDED_W: f64 = 460.0;
-const AGENT_EXPANDED_H: f64 = 480.0;
 const WIN_H_DEFAULT: f64 = 84.0;
 
 // 收起态（绿条）尺寸
@@ -136,6 +133,8 @@ struct SettingsData {
     is_reasoning_model: bool,
     #[serde(default = "default_indicator_color")]
     indicator_color: String,
+    #[serde(default = "default_agent_window_size")]
+    agent_window_size: String,
 }
 
 fn default_shortcut() -> String {
@@ -148,6 +147,18 @@ fn default_lyric_mode() -> String {
 
 fn default_indicator_color() -> String {
     "#2edb67".to_string()
+}
+
+fn default_agent_window_size() -> String {
+    "medium".to_string()
+}
+
+fn get_agent_window_size(size: &str) -> (f64, f64) {
+    match size {
+        "small" => (380.0, 400.0),
+        "large" => (540.0, 560.0),
+        _ => (460.0, 480.0), // medium (default)
+    }
 }
 
 fn load_settings_from_file() -> SettingsData {
@@ -166,6 +177,7 @@ fn load_settings_from_file() -> SettingsData {
         ai_model: String::new(),
         is_reasoning_model: false,
         indicator_color: default_indicator_color(),
+        agent_window_size: default_agent_window_size(),
     }
 }
 
@@ -389,10 +401,14 @@ fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
     let screen_w = state.screen_w;
     let scale = window.scale_factor().unwrap_or(1.0);
 
+    // 从设置中获取窗口大小档位
+    let size_setting = state.agent_window_size.lock().unwrap().clone();
+    let (agent_w, agent_h) = get_agent_window_size(&size_setting);
+
     if expanded {
         // 展开：从当前窗口尺寸动画到 agent 展开尺寸
-        let target_w = AGENT_EXPANDED_W;
-        let target_h = AGENT_EXPANDED_H + 10.0;
+        let target_w = agent_w;
+        let target_h = agent_h + 10.0;
         let target_x = (screen_w - target_w) / 2.0;
 
         if let Ok(pos) = window.outer_position() {
@@ -414,8 +430,8 @@ fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let from_w = AGENT_EXPANDED_W;
-            let from_h = AGENT_EXPANDED_H + 10.0;
+            let from_w = agent_w;
+            let from_h = agent_h + 10.0;
             // 缩小后保持中心不变
             let center_x = from_x + from_w / 2.0;
             let target_x = center_x - WIN_W / 2.0;
@@ -579,11 +595,13 @@ fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let clipboard_enabled = state.clipboard_enabled.load(Ordering::Relaxed);
     let lyric_mode = state.lyric_mode.lock().unwrap().clone();
     let indicator_color = state.indicator_color.lock().unwrap().clone();
+    let agent_window_size = state.agent_window_size.lock().unwrap().clone();
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
         "lyric_mode": lyric_mode,
-        "indicator_color": indicator_color
+        "indicator_color": indicator_color,
+        "agent_window_size": agent_window_size
     })
 }
 
@@ -636,6 +654,7 @@ fn ai_save_settings(
         ai_model: model,
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
         indicator_color: state.indicator_color.lock().unwrap().clone(),
+        agent_window_size: state.agent_window_size.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -650,15 +669,18 @@ fn save_settings(
     shortcut_key: String,
     lyric_mode: String,
     indicator_color: String,
+    agent_window_size: String,
 ) {
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
     *state.indicator_color.lock().unwrap() = indicator_color.clone();
+    *state.agent_window_size.lock().unwrap() = agent_window_size.clone();
 
     // 通知前端指示器颜色变更
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.emit("indicator-color-changed", &indicator_color);
+        let _ = win.emit("agent-window-size-changed", &agent_window_size);
     }
 
     // 閫氱煡鍓嶇姝岃瘝妯″紡鍙樻洿
@@ -690,6 +712,7 @@ fn save_settings(
         ai_model: state.ai_model.lock().unwrap().clone(),
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
         indicator_color,
+        agent_window_size,
     };
 
     let _ = save_settings_to_file(&settings_data);
@@ -775,6 +798,7 @@ fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_js
         ai_model: model,
         is_reasoning_model: is_reasoning,
         indicator_color: state.indicator_color.lock().unwrap().clone(),
+        agent_window_size: state.agent_window_size.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -1790,6 +1814,7 @@ pub fn run() {
             let agent_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
+            let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -1812,6 +1837,7 @@ pub fn run() {
                 ai_generating: ai_generating.clone(),
                 ai_history: ai_history.clone(),
                 indicator_color: indicator_color.clone(),
+                agent_window_size: agent_window_size.clone(),
             });
 
             // --- 绯荤粺鎵樼洏 ---
@@ -1868,6 +1894,7 @@ pub fn run() {
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
             let agent_expanded_m = agent_expanded.clone();
+            let agent_window_size_m = agent_window_size.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music = Arc::new(AtomicBool::new(false));
             let is_music_m = is_music.clone();
@@ -1888,7 +1915,9 @@ pub fn run() {
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
                         let (cw, ch, cur_win_w) = if agent_exp && view == "agent" {
-                            (AGENT_EXPANDED_W, AGENT_EXPANDED_H, AGENT_EXPANDED_W)
+                            let size_setting = agent_window_size_m.lock().unwrap().clone();
+                            let (aw, ah) = get_agent_window_size(&size_setting);
+                            (aw, ah, aw)
                         } else if expanded {
                             (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, WIN_W)
                         } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
@@ -2293,6 +2322,8 @@ pub struct IslandState {
     pub ai_history: Arc<Mutex<Vec<ChatMessage>>>,
     // 收起状态小横条颜色
     pub indicator_color: Arc<Mutex<String>>,
+    // AI 窗口大小档位
+    pub agent_window_size: Arc<Mutex<String>>,
 }
 
 unsafe impl Send for IslandState {}

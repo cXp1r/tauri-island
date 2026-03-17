@@ -615,6 +615,14 @@ listen<string>("indicator-color-changed", (event) => {
   applyIndicatorColor(event.payload);
 });
 
+listen<string>("agent-window-size-changed", async () => {
+  // 如果当前 AI 窗口已展开，应用新的窗口大小
+  if (capsule.classList.contains("agent-expanded")) {
+    await invoke("set_agent_expanded", { expanded: false });
+    await invoke("set_agent_expanded", { expanded: true });
+  }
+});
+
 listen<boolean>("playback-state", (event) => {
   isPlaying = event.payload;
   updatePlayIcon();
