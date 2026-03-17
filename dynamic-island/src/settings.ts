@@ -6,6 +6,7 @@ type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
   lyric_mode: string;
+  indicator_color: string;
 };
 
 type AISettingsResponse = {
@@ -26,6 +27,7 @@ const INFLINK_URL = "https://github.com/BetterNCM/InfinityLink";
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
+const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
 
@@ -48,6 +50,7 @@ async function loadSettings() {
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
+  indicatorColorInput.value = settings.indicator_color || "#2edb67";
 
   // 加载 AI 设置
   try {
@@ -132,6 +135,7 @@ saveBtn.addEventListener("click", async () => {
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
+      indicatorColor: indicatorColorInput.value,
     });
 
     // 保存 AI 设置

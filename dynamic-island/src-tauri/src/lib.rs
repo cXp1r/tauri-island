@@ -134,6 +134,8 @@ struct SettingsData {
     ai_model: String,
     #[serde(default)]
     is_reasoning_model: bool,
+    #[serde(default = "default_indicator_color")]
+    indicator_color: String,
 }
 
 fn default_shortcut() -> String {
@@ -142,6 +144,10 @@ fn default_shortcut() -> String {
 
 fn default_lyric_mode() -> String {
     "lyric".to_string()
+}
+
+fn default_indicator_color() -> String {
+    "#2edb67".to_string()
 }
 
 fn load_settings_from_file() -> SettingsData {
@@ -159,6 +165,7 @@ fn load_settings_from_file() -> SettingsData {
         ai_api_key: String::new(),
         ai_model: String::new(),
         is_reasoning_model: false,
+        indicator_color: default_indicator_color(),
     }
 }
 
@@ -451,7 +458,7 @@ fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandSta
 
             let w = window.clone();
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 250.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0);
             });
         }
     } else {
@@ -470,7 +477,7 @@ fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandSta
 
             let w = window.clone();
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 250.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0);
             });
         }
     }
@@ -571,10 +578,12 @@ fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let shortcut = state.shortcut_key.lock().unwrap().clone();
     let clipboard_enabled = state.clipboard_enabled.load(Ordering::Relaxed);
     let lyric_mode = state.lyric_mode.lock().unwrap().clone();
+    let indicator_color = state.indicator_color.lock().unwrap().clone();
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
-        "lyric_mode": lyric_mode
+        "lyric_mode": lyric_mode,
+        "indicator_color": indicator_color
     })
 }
 
@@ -626,6 +635,7 @@ fn ai_save_settings(
         ai_api_key: api_key,
         ai_model: model,
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
+        indicator_color: state.indicator_color.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -639,10 +649,17 @@ fn save_settings(
     clipboard_enabled: bool,
     shortcut_key: String,
     lyric_mode: String,
+    indicator_color: String,
 ) {
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
+    *state.indicator_color.lock().unwrap() = indicator_color.clone();
+
+    // 通知前端指示器颜色变更
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.emit("indicator-color-changed", &indicator_color);
+    }
 
     // 閫氱煡鍓嶇姝岃瘝妯″紡鍙樻洿
     if let Some(win) = app.get_webview_window("main") {
@@ -672,6 +689,7 @@ fn save_settings(
         ai_api_key: state.ai_api_key.lock().unwrap().clone(),
         ai_model: state.ai_model.lock().unwrap().clone(),
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
+        indicator_color,
     };
 
     let _ = save_settings_to_file(&settings_data);
@@ -756,6 +774,7 @@ fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_js
         ai_api_key: api_key,
         ai_model: model,
         is_reasoning_model: is_reasoning,
+        indicator_color: state.indicator_color.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -1770,6 +1789,7 @@ pub fn run() {
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
+            let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -1791,6 +1811,7 @@ pub fn run() {
                 ai_enabled: ai_enabled.clone(),
                 ai_generating: ai_generating.clone(),
                 ai_history: ai_history.clone(),
+                indicator_color: indicator_color.clone(),
             });
 
             // --- 绯荤粺鎵樼洏 ---
@@ -2270,6 +2291,8 @@ pub struct IslandState {
     pub ai_enabled: Arc<AtomicBool>,
     pub ai_generating: Arc<AtomicBool>,
     pub ai_history: Arc<Mutex<Vec<ChatMessage>>>,
+    // 收起状态小横条颜色
+    pub indicator_color: Arc<Mutex<String>>,
 }
 
 unsafe impl Send for IslandState {}

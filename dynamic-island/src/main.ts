@@ -360,6 +360,11 @@ function hidePrivacyPopup() {
 }
 
 // ===== 收起/展开功能 =====
+function applyIndicatorColor(color: string) {
+  collapsedIndicator.style.background = `linear-gradient(90deg, ${color}dd, ${color}, ${color}dd)`;
+  collapsedIndicator.style.boxShadow = `0 0 8px ${color}80`;
+}
+
 function minimizeIsland() {
   if (isMinimized) return; // 已经收起了
   isMinimized = true;
@@ -367,14 +372,14 @@ function minimizeIsland() {
   // 添加缩小动画类
   capsule.classList.add("minimizing");
 
-  // 等待动画完成
+  // 等待动画完成（与 CSS transform 动画时长 300ms 同步）
   setTimeout(() => {
     capsule.classList.remove("minimizing");
     capsule.classList.add("minimized");
     document.body.classList.add("minimized");
     // 通知后端缩小窗口
     void invoke("set_minimized", { minimized: true });
-  }, 250);
+  }, 300);
 }
 
 function expandFromMinimized() {
@@ -391,10 +396,10 @@ function expandFromMinimized() {
   capsule.classList.remove("minimized");
   capsule.classList.add("expanding");
 
-  // 动画完成后移除动画类
+  // 动画完成后移除动画类（与 CSS transform 动画时长 300ms 同步）
   setTimeout(() => {
     capsule.classList.remove("expanding");
-  }, 250);
+  }, 300);
 }
 
 // ===== 右键菜单 =====
@@ -547,8 +552,9 @@ function restoreUserView() {
 
 listen<boolean>("set-expand", (event) => {
   if (event.payload) {
-    // Agent 展开态时不响应普通展开
+    // Agent 展开态或最小化状态时不响应普通展开
     if (capsule.classList.contains("agent-expanded")) return;
+    if (isMinimized) return;
     capsule.classList.add("expanded");
     capsule.classList.remove("lyric-collapsed");
     updateSwitcherUI();
@@ -603,6 +609,10 @@ listen<string>("lyric-mode-changed", (event) => {
     setView("time", true);
   }
   updateSwitcherUI();
+});
+
+listen<string>("indicator-color-changed", (event) => {
+  applyIndicatorColor(event.payload);
 });
 
 listen<boolean>("playback-state", (event) => {
@@ -931,8 +941,11 @@ const capsuleObserver = new ResizeObserver((entries) => {
   }
 });
 capsuleObserver.observe(capsule);
-invoke<{ lyric_mode: string }>("get_settings").then((s) => {
+invoke<{ lyric_mode: string; indicator_color: string }>("get_settings").then((s) => {
   lyricMode = s.lyric_mode || "lyric";
+  if (s.indicator_color) {
+    applyIndicatorColor(s.indicator_color);
+  }
 });
 
 // ==================== AI Agent 功能 ====================
