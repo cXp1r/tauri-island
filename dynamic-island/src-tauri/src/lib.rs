@@ -156,8 +156,8 @@ fn default_agent_window_size() -> String {
 fn get_agent_window_size(size: &str) -> (f64, f64) {
     match size {
         "small" => (380.0, 400.0),
-        "large" => (540.0, 560.0),
-        _ => (460.0, 480.0), // medium (default)
+        "large" => (620.0, 640.0),
+        _ => (520.0, 540.0), // medium (default)
     }
 }
 
