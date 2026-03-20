@@ -587,6 +587,8 @@ weatherCitySearch.addEventListener("input", () => {
         });
       }
       cityResultsEl.classList.add("active");
+      // 自动滚动让搜索结果可见
+      cityResultsEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (e) {
       console.error("搜索城市失败:", e);
     }

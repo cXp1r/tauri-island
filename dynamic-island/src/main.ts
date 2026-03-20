@@ -1,4 +1,4 @@
-﻿﻿﻿import { listen } from "@tauri-apps/api/event";
+﻿﻿import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
@@ -857,6 +857,12 @@ setInterval(() => {
   void refreshWeather();
 }, WEATHER_REFRESH_MS);
 void refreshWeather(true);
+
+// 监听设置页天气城市变更 → 立即刷新
+listen("weather-city-changed", () => {
+  lastWeatherFetchAt = 0;
+  void refreshWeather(true);
+});
 
 showOnlyView("time");
 hidePrivacyPopup();

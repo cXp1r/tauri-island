@@ -256,7 +256,7 @@ fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, St
 }
 
 #[tauri::command]
-fn save_weather_city(state: tauri::State<'_, IslandState>, city: String, lat: f64, lon: f64) {
+fn save_weather_city(app: tauri::AppHandle, state: tauri::State<'_, IslandState>, city: String, lat: f64, lon: f64) {
     *state.weather_city.lock().unwrap() = city;
     *state.weather_lat.lock().unwrap() = lat;
     *state.weather_lon.lock().unwrap() = lon;
@@ -264,6 +264,11 @@ fn save_weather_city(state: tauri::State<'_, IslandState>, city: String, lat: f6
     // 持久化
     let settings_data = settings::build_settings_data(&state);
     let _ = settings::save_settings_to_file(&settings_data);
+
+    // 通知主窗口刷新天气
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.emit("weather-city-changed", ());
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
