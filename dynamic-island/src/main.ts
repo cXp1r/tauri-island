@@ -1,4 +1,4 @@
-﻿﻿import { listen } from "@tauri-apps/api/event";
+﻿import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
@@ -779,11 +779,18 @@ capsule.addEventListener("click", (e: MouseEvent) => {
         void invoke("set_agent_expanded", { expanded: true });
         window.setTimeout(() => { skipResizeSync = false; }, 400);
       } else {
-        // 收起：同时启动后端窗口动画和前端 CSS 过渡
+        // 收起：先淡出内容，再缩小尺寸，避免文字抖动
         skipResizeSync = true;
-        capsule.classList.remove("agent-expanded");
-        void invoke("set_agent_expanded", { expanded: false });
-        window.setTimeout(() => { skipResizeSync = false; }, 700);
+        const agentArea = document.getElementById("agent-area");
+        if (agentArea) agentArea.classList.add("collapsing");
+        window.setTimeout(() => {
+          capsule.classList.remove("agent-expanded");
+          void invoke("set_agent_expanded", { expanded: false });
+          window.setTimeout(() => {
+            if (agentArea) agentArea.classList.remove("collapsing");
+            skipResizeSync = false;
+          }, 500);
+        }, 100);
       }
     }, 250);
     return;

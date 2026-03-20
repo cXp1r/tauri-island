@@ -90,8 +90,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     backface-visibility: hidden;
-    perspective: 1000px;
-    transition: padding 0.2s ease, flex-direction 0s ease, align-items 0s ease, justify-content 0s ease, background 0.2s ease;
+    transition: padding 0.2s ease, background 0.2s ease;
 }
 
 /* ===== 状态栏 — 主角：模型名 ===== */
@@ -509,10 +508,23 @@
     transition: padding 0.2s ease, background 0.2s ease;
 }
 
+/* 展开时内容从透明淡入，避免尺寸变化时文字抨动 */
 #island-capsule.agent-expanded #agent-status-bar,
 #island-capsule.agent-expanded #agent-messages,
 #island-capsule.agent-expanded #agent-input-area {
     display: flex;
+    animation: agent-content-in 0.25s cubic-bezier(0.25, 1, 0.5, 1) 0.15s both;
+}
+
+@keyframes agent-content-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 #island-capsule.agent-expanded #agent-area::before {
@@ -602,10 +614,11 @@
     box-shadow: 0 3px 12px rgba(239, 68, 68, 0.4);
 }
 
-/* ===== 收起过渡：隐藏内容避免闪现 ===== */
+/* ===== 收起过渡：先淡出内容再缩小尺寸 ===== */
 #agent-area.collapsing {
     opacity: 0 !important;
     pointer-events: none;
+    transition: opacity 0.1s ease !important;
 }
 
 #agent-area.collapsing::before {
