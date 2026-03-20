@@ -5,4 +5,6 @@ target/
 *.msi
 .vscode/
 .kiro/
+.claude/
+claude-psmux-team/
 debug-run.bat

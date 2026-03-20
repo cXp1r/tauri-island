@@ -135,6 +135,8 @@ struct SettingsData {
     indicator_color: String,
     #[serde(default = "default_agent_window_size")]
     agent_window_size: String,
+    #[serde(default = "get_default_link_handlers")]
+    link_handlers: Vec<LinkHandler>,
 }
 
 fn default_shortcut() -> String {
@@ -151,6 +153,54 @@ fn default_indicator_color() -> String {
 
 fn default_agent_window_size() -> String {
     "medium".to_string()
+}
+
+/// 链接处理器配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkHandler {
+    /// 处理器唯一标识
+    pub id: String,
+    /// 处理器名称（显示用，如"夸克网盘"）
+    pub name: String,
+    /// URL 匹配正则表达式
+    pub pattern: String,
+    /// 应用启动路径
+    pub app_path: String,
+    /// 是否启用
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool { true }
+
+fn get_default_link_handlers() -> Vec<LinkHandler> {
+    vec![
+        LinkHandler {
+            id: "quark-default".to_string(),
+            name: "夸克网盘".to_string(),
+            pattern: r"https://pan\.quark\.cn/s/[a-zA-Z0-9]+".to_string(),
+            app_path: String::new(),
+            enabled: false,
+        },
+    ]
+}
+
+impl LinkHandler {
+    /// 检查 URL 是否匹配此处理器
+    pub fn matches(&self, url: &str) -> bool {
+        if !self.enabled || self.app_path.is_empty() {
+            return false;
+        }
+        match regex::Regex::new(&self.pattern) {
+            Ok(re) => re.is_match(url),
+            Err(_) => false,
+        }
+    }
+}
+
+/// 在所有处理器中查找匹配项
+fn find_matching_handler(url: &str, handlers: &[LinkHandler]) -> Option<LinkHandler> {
+    handlers.iter().find(|h| h.matches(url)).cloned()
 }
 
 fn get_agent_window_size(size: &str) -> (f64, f64) {
@@ -178,6 +228,7 @@ fn load_settings_from_file() -> SettingsData {
         is_reasoning_model: false,
         indicator_color: default_indicator_color(),
         agent_window_size: default_agent_window_size(),
+        link_handlers: get_default_link_handlers(),
     }
 }
 
@@ -347,9 +398,65 @@ fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
     }
 }
 
+/// 验证 URL 是否安全（协议白名单 + 可选域名白名单）
+fn validate_url(url: &str, allowed_domains: &[String]) -> Result<String, String> {
+    // 解析 URL
+    let parsed = url::Url::parse(url)
+        .map_err(|e| format!("无效的 URL: {}", e))?;
+
+    // 协议白名单：只允许 http 和 https
+    let scheme = parsed.scheme().to_lowercase();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return Err(format!("不允许的协议: {}", scheme));
+    }
+
+    // 获取域名
+    let host = parsed.host_str()
+        .ok_or_else(|| "URL 缺少域名".to_string())?;
+
+    // 域名白名单验证（如果配置了白名单）
+    if !allowed_domains.is_empty() {
+        let host_lower = host.to_lowercase();
+        let is_allowed = allowed_domains.iter().any(|domain| {
+            let domain_lower = domain.to_lowercase();
+            // 支持通配符：*.example.com 匹配 sub.example.com
+            if domain_lower.starts_with("*.") {
+                let suffix = &domain_lower[2..];
+                host_lower.ends_with(&format!(".{}", suffix)) || host_lower == suffix
+            } else {
+                host_lower == domain_lower
+            }
+        });
+        if !is_allowed {
+            return Err(format!("域名不在白名单中: {}", host));
+        }
+    }
+
+    Ok(url.to_string())
+}
+
 #[tauri::command]
 fn open_url(url: String) {
-    let _ = open::that(&url);
+    // 默认允许所有 http/https URL（无域名白名单）
+    match validate_url(&url, &[]) {
+        Ok(valid_url) => {
+            let _ = open::that(&valid_url);
+        }
+        Err(e) => {
+            eprintln!("[open_url] URL 验证失败: {}", e);
+        }
+    }
+}
+
+#[tauri::command]
+fn open_url_with_whitelist(
+    state: tauri::State<'_, IslandState>,
+    url: String,
+) -> Result<(), String> {
+    let allowed_domains = state.url_whitelist.lock().unwrap().clone();
+    let valid_url = validate_url(&url, &allowed_domains)?;
+    let _ = open::that(&valid_url);
+    Ok(())
 }
 
 #[tauri::command]
@@ -393,6 +500,116 @@ fn sync_window_height(window: tauri::WebviewWindow, height: f64) {
         let cur_w = size.width as f64 / scale;
         let _ = window.set_size(tauri::LogicalSize::new(cur_w, new_h));
     }
+}
+
+/// 位置信息
+#[derive(Debug, Clone, serde::Serialize)]
+struct LocationInfo {
+    latitude: f64,
+    longitude: f64,
+    source: String, // "system" 或 "ip"
+    city: Option<String>,
+}
+
+/// 使用 Windows 系统定位获取位置
+fn get_system_location() -> Option<LocationInfo> {
+    // 使用 PowerShell 调用 WinRT 地理位置 API
+    let ps_script = r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+try {
+    $locator = [Windows.Devices.Geolocation.Geolocator]::new()
+    $locator.DesiredAccuracy = [Windows.Devices.Geolocation.PositionAccuracy]::Default
+    $task = $locator.GetGeopositionAsync().AsTask()
+    $task.Wait(10000)
+    if ($task.IsCompleted -and $task.Result) {
+        $pos = $task.Result.Coordinate.Point.Position
+        Write-Output "$($pos.Latitude),$($pos.Longitude)"
+    }
+} catch {
+    # 忽略错误，返回空
+}
+"#;
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() || !stdout.contains(',') {
+        return None;
+    }
+
+    let parts: Vec<&str> = stdout.split(',').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let lat = parts[0].trim().parse::<f64>().ok()?;
+    let lon = parts[1].trim().parse::<f64>().ok()?;
+
+    Some(LocationInfo {
+        latitude: lat,
+        longitude: lon,
+        source: "system".to_string(),
+        city: None,
+    })
+}
+
+/// 使用 IP 定位获取位置（备用方案）
+fn get_ip_location() -> Option<LocationInfo> {
+    // 使用 ip-api.com 免费API
+    let url = "http://ip-api.com/json?fields=status,lat,lon,city";
+
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; try {{ (Invoke-WebRequest -Uri '{}' -UseBasicParsing -TimeoutSec 5).Content }} catch {{}}"#,
+                url
+            ),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return None;
+    }
+
+    // 解析 JSON
+    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    if json["status"].as_str()? != "success" {
+        return None;
+    }
+
+    Some(LocationInfo {
+        latitude: json["lat"].as_f64()?,
+        longitude: json["lon"].as_f64()?,
+        source: "ip".to_string(),
+        city: json["city"].as_str().map(|s| s.to_string()),
+    })
+}
+
+#[tauri::command]
+fn get_location() -> Option<LocationInfo> {
+    // 优先使用系统定位
+    if let Some(loc) = get_system_location() {
+        println!("[Location] 系统定位成功: {:.4}, {:.4}", loc.latitude, loc.longitude);
+        return Some(loc);
+    }
+
+    // 备用：IP 定位
+    if let Some(loc) = get_ip_location() {
+        println!("[Location] IP定位成功: {:.4}, {:.4} ({})", loc.latitude, loc.longitude, loc.city.as_deref().unwrap_or("未知"));
+        return Some(loc);
+    }
+
+    println!("[Location] 定位失败");
+    None
 }
 
 #[tauri::command]
@@ -655,6 +872,7 @@ fn ai_save_settings(
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
         indicator_color: state.indicator_color.lock().unwrap().clone(),
         agent_window_size: state.agent_window_size.lock().unwrap().clone(),
+        link_handlers: state.link_handlers.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -713,9 +931,148 @@ fn save_settings(
         is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
         indicator_color,
         agent_window_size,
+        link_handlers: state.link_handlers.lock().unwrap().clone(),
     };
 
     let _ = save_settings_to_file(&settings_data);
+}
+
+#[tauri::command]
+fn get_link_handlers(state: tauri::State<'_, IslandState>) -> Vec<LinkHandler> {
+    state.link_handlers.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn save_link_handlers(
+    state: tauri::State<'_, IslandState>,
+    handlers: Vec<LinkHandler>,
+) -> Result<(), String> {
+    *state.link_handlers.lock().unwrap() = handlers.clone();
+
+    // 持久化到文件
+    let settings_data = SettingsData {
+        clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
+        shortcut_key: state.shortcut_key.lock().unwrap().clone(),
+        lyric_mode: state.lyric_mode.lock().unwrap().clone(),
+        ai_api_url: state.ai_api_url.lock().unwrap().clone(),
+        ai_api_key: state.ai_api_key.lock().unwrap().clone(),
+        ai_model: state.ai_model.lock().unwrap().clone(),
+        is_reasoning_model: state.is_reasoning_model.load(Ordering::Relaxed),
+        indicator_color: state.indicator_color.lock().unwrap().clone(),
+        agent_window_size: state.agent_window_size.lock().unwrap().clone(),
+        link_handlers: handlers,
+    };
+    save_settings_to_file(&settings_data)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn open_link_with_handler(
+    state: tauri::State<'_, IslandState>,
+    url: String,
+) -> Result<(), String> {
+    let handlers = state.link_handlers.lock().unwrap();
+
+    if let Some(handler) = find_matching_handler(&url, &handlers) {
+        launch_app_with_url(&handler.app_path, &url)
+    } else {
+        // 没有匹配的处理器，使用系统默认方式打开
+        let _ = open::that(&url);
+        Ok(())
+    }
+}
+
+/// 测试链接处理器（启动应用不传URL）
+#[tauri::command]
+fn test_link_handler(app_path: String) -> Result<(), String> {
+    launch_app_with_url(&app_path, "")
+}
+
+/// 启动应用并传递 URL（通用函数）
+fn launch_app_with_url(app_path: &str, url: &str) -> Result<(), String> {
+    let app_path_buf = Path::new(app_path);
+
+    // 安全检查1: 必须是绝对路径
+    if !app_path_buf.is_absolute() {
+        return Err("应用路径必须是绝对路径".to_string());
+    }
+
+    // 安全检查2: 路径规范化，防止路径遍历攻击
+    let canonical_path = app_path_buf
+        .canonicalize()
+        .map_err(|e| format!("路径规范化失败: {}", e))?;
+
+    // 安全检查3: 确保路径存在
+    if !canonical_path.exists() {
+        return Err(format!("应用不存在: {}", canonical_path.display()));
+    }
+
+    // 获取最终的可执行文件路径（处理 .lnk 快捷方式）
+    let final_path = if canonical_path
+        .extension()
+        .map(|ext| ext.eq_ignore_ascii_case("lnk"))
+        .unwrap_or(false)
+    {
+        // 解析 .lnk 快捷方式获取目标路径
+        resolve_lnk_target(&canonical_path)?
+    } else {
+        // 非 .lnk 文件，验证必须是 .exe
+        let is_valid_executable = canonical_path
+            .extension()
+            .map(|ext| ext.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false);
+        if !is_valid_executable {
+            return Err("仅支持 .exe 可执行文件或 .lnk 快捷方式".to_string());
+        }
+        canonical_path
+    };
+
+    // 安全检查4: 最终路径必须是 .exe
+    if final_path
+        .extension()
+        .map(|ext| !ext.eq_ignore_ascii_case("exe"))
+        .unwrap_or(true)
+    {
+        return Err("快捷方式目标必须是 .exe 可执行文件".to_string());
+    }
+
+    // 启动应用
+    let mut cmd = Command::new(&final_path);
+    if !url.is_empty() {
+        cmd.arg(url);
+    }
+    cmd.creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("启动应用失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 解析 .lnk 快捷方式获取目标路径
+fn resolve_lnk_target(lnk_path: &Path) -> Result<PathBuf, String> {
+    let lnk_path_str = lnk_path.to_string_lossy();
+    let ps_script = format!(
+        r#"(New-Object -ComObject WScript.Shell).CreateShortcut('{}').TargetPath"#,
+        lnk_path_str.replace("'", "''")
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("解析快捷方式失败: {}", e))?;
+
+    if !output.status.success() {
+        return Err("无法解析快捷方式".to_string());
+    }
+
+    let target = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if target.is_empty() {
+        return Err("快捷方式目标路径为空".to_string());
+    }
+
+    Ok(PathBuf::from(target))
 }
 
 #[tauri::command]
@@ -799,6 +1156,7 @@ fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_js
         is_reasoning_model: is_reasoning,
         indicator_color: state.indicator_color.lock().unwrap().clone(),
         agent_window_size: state.agent_window_size.lock().unwrap().clone(),
+        link_handlers: state.link_handlers.lock().unwrap().clone(),
     };
 
     save_settings_to_file(&settings_data)?;
@@ -1767,12 +2125,14 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             start_drag, end_drag, drag_move,
-            open_url, get_pending_urls, set_interacting, dismiss_island, set_current_view,
+            open_url, open_url_with_whitelist, get_pending_urls, set_interacting, dismiss_island, set_current_view,
             set_agent_expanded, sync_window_height, set_minimized, show_context_menu,
             open_settings, get_settings, save_settings, install_betterncm_support,
             media_play_pause, media_next, media_prev,
             ai_get_settings, ai_save_settings, ai_detect_model_type,
-            ai_send_message, ai_stop_generation, ai_clear_history
+            ai_send_message, ai_stop_generation, ai_clear_history,
+            get_link_handlers, save_link_handlers, open_link_with_handler, test_link_handler,
+            get_location
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -1815,6 +2175,8 @@ pub fn run() {
             let is_minimized = Arc::new(AtomicBool::new(false));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
             let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
+            let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
+            let url_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -1838,6 +2200,8 @@ pub fn run() {
                 ai_history: ai_history.clone(),
                 indicator_color: indicator_color.clone(),
                 agent_window_size: agent_window_size.clone(),
+                link_handlers: link_handlers.clone(),
+                url_whitelist: url_whitelist.clone(),
             });
 
             // --- 绯荤粺鎵樼洏 ---
@@ -2324,6 +2688,10 @@ pub struct IslandState {
     pub indicator_color: Arc<Mutex<String>>,
     // AI 窗口大小档位
     pub agent_window_size: Arc<Mutex<String>>,
+    // 自定义链接处理器
+    pub link_handlers: Arc<Mutex<Vec<LinkHandler>>>,
+    // URL 域名白名单（可选）
+    pub url_whitelist: Arc<Mutex<Vec<String>>>,
 }
 
 unsafe impl Send for IslandState {}

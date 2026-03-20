@@ -874,6 +874,7 @@ version = "0.1.3"
 dependencies = [
  "dirs 5.0.1",
  "open",
+ "regex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -881,6 +882,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
+ "url",
  "urlencoding",
  "windows",
  "winreg 0.52.0",

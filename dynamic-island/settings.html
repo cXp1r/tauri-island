@@ -120,6 +120,7 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      position: relative;
     }
 
     .content-header {
@@ -147,10 +148,12 @@
 
     .page {
       display: none;
+      position: relative;
     }
 
     .page.active {
       display: block;
+      height: 100%;
     }
 
     .setting-group {
@@ -480,6 +483,230 @@
         width: 100%;
       }
     }
+
+    .handler-card {
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+
+    .handlers-list {
+      margin-top: 16px;
+    }
+
+    .handler-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .handler-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .handler-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .handler-field {
+      margin-bottom: 8px;
+    }
+
+    .handler-field label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .handler-field input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 13px;
+      padding: 6px 10px;
+      outline: none;
+    }
+
+    .handler-field input:focus {
+      border-color: var(--primary);
+    }
+
+    /* 链接处理器列表样式 */
+    .handler-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      transition: background 0.15s ease;
+    }
+
+    .handler-list-item:hover {
+      background: var(--surface-hover);
+    }
+
+    .handler-list-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .handler-list-name {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .handler-list-name.empty {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .handler-list-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 2px 8px;
+      background: var(--surface-hover);
+      border-radius: 4px;
+    }
+
+    .handler-list-status.active {
+      color: var(--ok);
+      background: rgba(16, 124, 16, 0.1);
+    }
+
+    .handler-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* 二级页面样式 */
+    .handler-detail-page {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 56px; /* 为 footer 留出空间 */
+      background: var(--surface);
+      display: none;
+      flex-direction: column;
+      z-index: 10;
+    }
+
+    .handler-detail-page.active {
+      display: flex;
+    }
+
+    .handler-detail-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .handler-detail-header h3 {
+      flex: 1;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .handler-detail-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    .handler-detail-field {
+      margin-bottom: 20px;
+    }
+
+    .handler-detail-field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .handler-detail-field .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .handler-detail-field input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+    }
+
+    .handler-detail-field input:focus {
+      border-color: var(--primary);
+    }
+
+    .app-path-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .app-path-row input {
+      flex: 1;
+    }
+
+    .app-path-row .btn {
+      white-space: nowrap;
+    }
+
+    .handler-detail-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-success {
+      color: #fff;
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+
+    .btn-success:hover {
+      background: #0e6e0e;
+      border-color: #0e6e0e;
+    }
+
+    .btn-small {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: rgba(209, 52, 56, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -491,6 +718,7 @@
       </div>
       <nav class="nav-list">
         <div class="nav-item active" data-page="basic">基础能力</div>
+        <div class="nav-item" data-page="link-handlers">链接处理</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
       </nav>
@@ -560,6 +788,23 @@
               </div>
               <div class="setting-control">
                 <input id="indicator-color" class="input" type="color" value="#2edb67" style="width: 60px; height: 32px; padding: 2px; cursor: pointer;" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 链接处理页面 -->
+        <div class="page" id="page-link-handlers">
+          <div class="setting-group">
+            <div class="setting-group-title">链接处理器</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>自定义链接处理器</h3>
+                <p>检测到特定链接时，使用指定应用打开。</p>
+              </div>
+              <div id="link-handlers-list" class="handlers-list"></div>
+              <div class="actions" style="margin-top: 16px;">
+                <button id="add-handler-btn" class="btn btn-primary" type="button">添加处理器</button>
               </div>
             </div>
           </div>
@@ -663,6 +908,38 @@
         </div>
       </div>
 
+      <!-- 二级配置页面（链接处理器详情）-->
+      <div class="handler-detail-page" id="handler-detail-page">
+        <div class="handler-detail-header">
+          <button class="btn" id="handler-detail-back" type="button">← 返回</button>
+          <h3 id="handler-detail-title">配置处理器</h3>
+        </div>
+        <div class="handler-detail-body">
+          <div class="handler-detail-field">
+            <label>名称</label>
+            <input id="detail-name" type="text" placeholder="如：夸克网盘" />
+            <div class="hint">处理器的显示名称</div>
+          </div>
+          <div class="handler-detail-field">
+            <label>匹配正则</label>
+            <input id="detail-pattern" type="text" placeholder="如：https://pan\.quark\.cn/s/[a-zA-Z0-9]+" />
+            <div class="hint">匹配 URL 的正则表达式</div>
+          </div>
+          <div class="handler-detail-field">
+            <label>应用路径</label>
+            <div class="app-path-row">
+              <input id="detail-app-path" type="text" placeholder="如：C:\Program Files\Quark\quark.exe" />
+              <button id="test-app-btn" class="btn" type="button">测试打开</button>
+            </div>
+            <div class="hint">支持 .exe 可执行文件或 .lnk 快捷方式</div>
+          </div>
+        </div>
+        <div class="handler-detail-footer">
+          <button id="handler-detail-save" class="btn btn-success" type="button">保存</button>
+          <button id="handler-detail-delete" class="btn btn-danger" type="button">删除处理器</button>
+        </div>
+      </div>
+
       <footer class="footer">
         <button id="save-btn" class="save-btn" type="button">保存设置</button>
         <div id="status" class="status"></div>
@@ -681,6 +958,10 @@
       basic: {
         title: '基础能力',
         desc: '配置快捷键、剪贴板识别和歌词显示。'
+      },
+      'link-handlers': {
+        title: '链接处理',
+        desc: '配置特殊链接的处理器，如夸克网盘。'
       },
       plugins: {
         title: '插件管理',

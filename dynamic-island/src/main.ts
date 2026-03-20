@@ -468,27 +468,122 @@ function updateTimeAndDate() {
   dateText.innerText = formatDateLabel(now);
 }
 
-async function requestWeather(): Promise<WttrResponse> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 5500);
+// 位置信息类型
+type LocationInfo = {
+  latitude: number;
+  longitude: number;
+  source: string;
+  city?: string;
+};
+
+// 缓存的位置信息
+let cachedLocation: LocationInfo | null = null;
+
+// Open-Meteo API 响应类型
+type OpenMeteoResponse = {
+  current?: {
+    temperature_2m?: number;
+    weather_code?: number;
+  };
+};
+
+// Open-Meteo 天气代码映射
+function getOpenMeteoWeatherDesc(code: number): string {
+  const descMap: Record<number, string> = {
+    0: "晴", 1: "晴", 2: "少云", 3: "多云",
+    45: "雾", 48: "雾凇",
+    51: "毛毛雨", 53: "毛毛雨", 55: "毛毛雨",
+    61: "小雨", 63: "中雨", 65: "大雨",
+    71: "小雪", 73: "中雪", 75: "大雪",
+    80: "阵雨", 81: "阵雨", 82: "强阵雨",
+    95: "雷暴", 96: "雷暴", 99: "雷暴",
+  };
+  return descMap[code] || "未知";
+}
+
+// 获取位置（优先系统定位，备用IP定位）
+async function getLocation(): Promise<LocationInfo | null> {
+  try {
+    const loc = await invoke<LocationInfo | null>("get_location");
+    if (loc) {
+      cachedLocation = loc;
+      console.log(`[Location] 获取成功: ${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)} (${loc.source})`);
+    }
+    return loc;
+  } catch (e) {
+    console.warn("[Location] 获取失败:", e);
+    return null;
+  }
+}
+
+// 使用坐标获取天气
+async function requestWeatherByLocation(lat: number, lon: number): Promise<WttrCondition | null> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
 
   try {
-    const resp = await fetch("https://wttr.in/?format=j1", {
+    const resp = await fetch(url, {
       cache: "no-store",
-      signal: controller.signal,
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "DynamicIsland/1.0",
+      },
     });
 
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
 
-    return (await resp.json()) as WttrResponse;
-  } finally {
-    window.clearTimeout(timer);
+    const data = await resp.json() as OpenMeteoResponse;
+    if (data?.current) {
+      const weatherCode = String(data.current.weather_code || 0);
+      const tempC = String(Math.round(data.current.temperature_2m || 0));
+      return {
+        temp_C: tempC,
+        weatherCode: weatherCode,
+        weatherDesc: [{ value: getOpenMeteoWeatherDesc(data.current.weather_code || 0) }],
+      };
+    }
+    return null;
+  } catch (e) {
+    console.warn("[Weather] Open-Meteo 请求失败:", e);
+    return null;
+  }
+}
+
+// 备用：wttr.in 天气（无坐标）
+async function requestWeatherFallback(): Promise<WttrCondition | null> {
+  const url = "https://wttr.in/?format=j1";
+
+  try {
+    const resp = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "DynamicIsland/1.0",
+      },
+    });
+
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json() as WttrResponse;
+    return data?.current_condition?.[0] || null;
+  } catch (e) {
+    console.warn("[Weather] wttr.in 请求失败:", e);
+    return null;
   }
 }
 
 function formatWeather(condition: WttrCondition): string {
+  // 优先使用中文描述（可能是 Open-Meteo 映射的描述）
+  const customDesc = condition.weatherDesc?.[0]?.value;
+  if (customDesc && customDesc !== "未知天气" && customDesc !== "未知") {
+    const temp = condition.temp_C ?? "--";
+    return `${customDesc} ${temp}°C`;
+  }
+
+  // 使用 wttr.in 天气代码映射
   const label =
     (condition.weatherCode && WEATHER_CODE_CN[condition.weatherCode]) ||
     condition.weatherDesc?.[0]?.value ||
@@ -504,23 +599,43 @@ async function refreshWeather(force = false) {
 
   weatherLoading = true;
   if (lastWeatherFetchAt === 0 || force) {
-    weatherText.textContent = "天气获取中...";
+    weatherText.textContent = "获取中...";
   }
 
   try {
-    const data = await requestWeather();
-    const condition = data.current_condition?.[0];
-    if (!condition) {
-      throw new Error("weather response empty");
+    // 1. 先获取位置（如果没有缓存或强制刷新）
+    let location = cachedLocation;
+    if (!location || force) {
+      location = await getLocation();
     }
 
-    weatherText.textContent = formatWeather(condition);
-    lastWeatherFetchAt = Date.now();
-  } catch (e) {
-    if (lastWeatherFetchAt === 0) {
-      weatherText.textContent = "天气不可用";
+    // 2. 获取天气
+    let condition: WttrCondition | null = null;
+
+    if (location) {
+      // 使用定位坐标获取天气
+      console.log(`[Weather] 使用${location.source}定位获取天气...`);
+      condition = await requestWeatherByLocation(location.latitude, location.longitude);
     }
-    console.warn("weather fetch failed:", e);
+
+    if (!condition) {
+      // 备用：无坐标的 wttr.in
+      console.log("[Weather] 使用备用 API...");
+      condition = await requestWeatherFallback();
+    }
+
+    if (condition) {
+      weatherText.textContent = formatWeather(condition);
+      lastWeatherFetchAt = Date.now();
+    } else {
+      throw new Error("无法获取天气数据");
+    }
+  } catch (e) {
+    // 如果之前成功获取过，保留旧数据；否则显示错误
+    if (lastWeatherFetchAt === 0) {
+      weatherText.textContent = "天气暂不可用";
+    }
+    console.warn("[Weather] 刷新失败:", e);
   } finally {
     weatherLoading = false;
   }
@@ -709,7 +824,7 @@ noticeArea.addEventListener("click", (e: MouseEvent) => {
   if (pendingUrls.length === 0) return;
 
   if (pendingUrls.length === 1) {
-    void invoke("open_url", { url: pendingUrls[0] });
+    void invoke("open_link_with_handler", { url: pendingUrls[0] });
     void invoke("dismiss_island");
   } else {
     showUrlList();
@@ -736,7 +851,7 @@ function showUrlList() {
     item.title = url;
     item.addEventListener("click", (e) => {
       e.stopPropagation();
-      void invoke("open_url", { url });
+      void invoke("open_link_with_handler", { url });
       void invoke("set_interacting", { active: false });
       void invoke("dismiss_island");
     });
@@ -918,6 +1033,14 @@ document.addEventListener("mouseup", () => {
   if (dragStarted) {
     void invoke("end_drag");
   }
+});
+
+// 点击天气文本刷新
+weatherText.style.cursor = "pointer";
+weatherText.title = "点击刷新天气";
+weatherText.addEventListener("click", (e) => {
+  e.stopPropagation();
+  void refreshWeather(true);
 });
 
 timeWrapper.addEventListener("mouseenter", () => {

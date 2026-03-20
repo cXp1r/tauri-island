@@ -28,6 +28,8 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 urlencoding = "2"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 dirs = "5"
+regex = "1"
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
