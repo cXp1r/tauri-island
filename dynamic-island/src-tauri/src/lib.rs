@@ -338,6 +338,7 @@ pub fn run() {
             let agent_expanded_m = agent_expanded.clone();
             let agent_window_size_m = agent_window_size.clone();
             let expand_anim_id_m = expand_anim_id.clone();
+            let is_minimized_m = is_minimized.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music = Arc::new(AtomicBool::new(false));
             let is_music_m = is_music.clone();
@@ -357,7 +358,9 @@ pub fn run() {
                         let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
-                        let (cw, ch, cur_win_w) = if agent_exp && view == "agent" {
+                        let (cw, ch, cur_win_w) = if is_minimized_m.load(Ordering::Relaxed) {
+                            (MINIMIZED_W, MINIMIZED_H, MINIMIZED_W)
+                        } else if agent_exp && view == "agent" {
                             let size_setting = agent_window_size_m.lock().unwrap().clone();
                             let (aw, ah) = window::get_agent_window_size(&size_setting);
                             (aw, ah, aw)
@@ -388,7 +391,7 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        if !agent_exp && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                        if !agent_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
