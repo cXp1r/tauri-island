@@ -1,4 +1,4 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
@@ -8,6 +8,9 @@ type SettingsResponse = {
   lyric_mode: string;
   indicator_color: string;
   agent_window_size: string;
+  weather_city: string;
+  weather_lat: number;
+  weather_lon: number;
 };
 
 type AISettingsResponse = {
@@ -29,6 +32,14 @@ type PluginMarketRepairResult = {
   root: string;
   runtime_patched: boolean;
   archive_patched: boolean;
+};
+
+type CityResult = {
+  name: string;
+  country: string;
+  admin1: string;
+  latitude: number;
+  longitude: number;
 };
 
 const INFLINK_URL = "https://github.com/BetterNCM/InfinityLink";
@@ -54,6 +65,14 @@ const agentWindowSizeSelect = document.getElementById("agent-window-size") as HT
 let isRecording = false;
 let statusTimer: number | null = null;
 const shortcutHint = "请按下快捷键...";
+
+// 天气城市搜索相关
+const weatherCitySearch = document.getElementById("weather-city-search") as HTMLInputElement;
+const cityResultsEl = document.getElementById("city-results") as HTMLDivElement;
+const cityCurrent = document.getElementById("city-current") as HTMLDivElement;
+const cityTag = document.getElementById("city-tag") as HTMLSpanElement;
+const clearCityBtn = document.getElementById("clear-city-btn") as HTMLButtonElement;
+let citySearchTimer: number | null = null;
 
 async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
@@ -82,6 +101,14 @@ async function loadSettings() {
     }
   } catch (e) {
     console.error("加载 AI 设置失败:", e);
+  }
+
+  // 加载天气城市
+  if (settings.weather_city) {
+    cityTag.textContent = settings.weather_city;
+    cityCurrent.style.display = "flex";
+  } else {
+    cityCurrent.style.display = "none";
   }
 }
 
@@ -509,3 +536,73 @@ addHandlerBtn.addEventListener("click", () => {
 
 // 页面加载时加载链接处理器
 void loadLinkHandlers();
+
+// ===== 天气城市搜索 =====
+weatherCitySearch.addEventListener("input", () => {
+  if (citySearchTimer) {
+    clearTimeout(citySearchTimer);
+  }
+  const query = weatherCitySearch.value.trim();
+  if (!query) {
+    cityResultsEl.classList.remove("active");
+    cityResultsEl.innerHTML = "";
+    return;
+  }
+  citySearchTimer = window.setTimeout(async () => {
+    try {
+      const results = await invoke<CityResult[]>("search_city", { query });
+      cityResultsEl.innerHTML = "";
+      if (results.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "city-result-item";
+        empty.style.color = "var(--text-muted)";
+        empty.textContent = "未找到匹配城市";
+        cityResultsEl.appendChild(empty);
+      } else {
+        results.forEach((city) => {
+          const item = document.createElement("div");
+          item.className = "city-result-item";
+          const nameDiv = document.createElement("div");
+          nameDiv.className = "city-name";
+          nameDiv.textContent = city.name;
+          item.appendChild(nameDiv);
+          const detailDiv = document.createElement("div");
+          detailDiv.className = "city-detail";
+          detailDiv.textContent = [city.admin1, city.country].filter(Boolean).join(", ");
+          item.appendChild(detailDiv);
+          item.addEventListener("click", async () => {
+            await invoke("save_weather_city", {
+              city: city.name,
+              lat: city.latitude,
+              lon: city.longitude,
+            });
+            cityTag.textContent = city.name;
+            cityCurrent.style.display = "flex";
+            weatherCitySearch.value = "";
+            cityResultsEl.classList.remove("active");
+            cityResultsEl.innerHTML = "";
+            showStatus(`天气位置已设置为 ${city.name}`);
+          });
+          cityResultsEl.appendChild(item);
+        });
+      }
+      cityResultsEl.classList.add("active");
+    } catch (e) {
+      console.error("搜索城市失败:", e);
+    }
+  }, 400);
+});
+
+// 点击外部关闭下拉
+document.addEventListener("click", (e) => {
+  if (!weatherCitySearch.contains(e.target as Node) && !cityResultsEl.contains(e.target as Node)) {
+    cityResultsEl.classList.remove("active");
+  }
+});
+
+clearCityBtn.addEventListener("click", async () => {
+  await invoke("save_weather_city", { city: "", lat: 0.0, lon: 0.0 });
+  cityCurrent.style.display = "none";
+  cityTag.textContent = "";
+  showStatus("已清除天气位置，将使用自动定位");
+});

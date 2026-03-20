@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import { listen } from "@tauri-apps/api/event";
+﻿﻿﻿import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
@@ -72,16 +72,6 @@ const WEATHER_REFRESH_MS = 20 * 60 * 1000;
 let lastWeatherFetchAt = 0;
 let weatherLoading = false;
 
-type WttrCondition = {
-  temp_C?: string;
-  weatherCode?: string;
-  weatherDesc?: Array<{ value?: string }>;
-};
-
-type WttrResponse = {
-  current_condition?: WttrCondition[];
-};
-
 type PrivacyUsagePayload = {
   microphone: boolean;
   camera: boolean;
@@ -92,55 +82,10 @@ let lastPrivacyUsage: PrivacyUsagePayload = {
   camera: false,
 };
 
-const WEATHER_CODE_CN: Record<string, string> = {
-  "113": "晴",
-  "116": "少云",
-  "119": "多云",
-  "122": "阴",
-  "143": "薄雾",
-  "176": "小雨",
-  "179": "雨夹雪",
-  "182": "雨夹雪",
-  "185": "冻雨",
-  "200": "雷雨",
-  "227": "吹雪",
-  "230": "暴雪",
-  "248": "雾",
-  "260": "浓雾",
-  "263": "零星毛毛雨",
-  "266": "毛毛雨",
-  "281": "冻毛毛雨",
-  "284": "强冻毛毛雨",
-  "293": "小雨",
-  "296": "小雨",
-  "299": "中雨",
-  "302": "中雨",
-  "305": "大雨",
-  "308": "暴雨",
-  "311": "小冻雨",
-  "314": "冻雨",
-  "317": "雨夹雪",
-  "320": "雨夹雪",
-  "323": "小雪",
-  "326": "中雪",
-  "329": "大雪",
-  "332": "暴雪",
-  "335": "暴雪",
-  "338": "大雪",
-  "350": "冰粒",
-  "353": "小阵雨",
-  "356": "阵雨",
-  "359": "强阵雨",
-  "362": "阵性雨夹雪",
-  "365": "阵性雨夹雪",
-  "368": "阵雪",
-  "371": "强阵雪",
-  "374": "冰雹",
-  "377": "冰粒",
-  "386": "雷阵雨",
-  "389": "雷暴雨",
-  "392": "雷阵雪",
-  "395": "雷阵雪",
+type WeatherResult = {
+  desc: string;
+  temp: number;
+  city: string;
 };
 
 function getAvailableViews(): ViewMode[] {
@@ -468,130 +413,7 @@ function updateTimeAndDate() {
   dateText.innerText = formatDateLabel(now);
 }
 
-// 位置信息类型
-type LocationInfo = {
-  latitude: number;
-  longitude: number;
-  source: string;
-  city?: string;
-};
-
-// 缓存的位置信息
-let cachedLocation: LocationInfo | null = null;
-
-// Open-Meteo API 响应类型
-type OpenMeteoResponse = {
-  current?: {
-    temperature_2m?: number;
-    weather_code?: number;
-  };
-};
-
-// Open-Meteo 天气代码映射
-function getOpenMeteoWeatherDesc(code: number): string {
-  const descMap: Record<number, string> = {
-    0: "晴", 1: "晴", 2: "少云", 3: "多云",
-    45: "雾", 48: "雾凇",
-    51: "毛毛雨", 53: "毛毛雨", 55: "毛毛雨",
-    61: "小雨", 63: "中雨", 65: "大雨",
-    71: "小雪", 73: "中雪", 75: "大雪",
-    80: "阵雨", 81: "阵雨", 82: "强阵雨",
-    95: "雷暴", 96: "雷暴", 99: "雷暴",
-  };
-  return descMap[code] || "未知";
-}
-
-// 获取位置（优先系统定位，备用IP定位）
-async function getLocation(): Promise<LocationInfo | null> {
-  try {
-    const loc = await invoke<LocationInfo | null>("get_location");
-    if (loc) {
-      cachedLocation = loc;
-      console.log(`[Location] 获取成功: ${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)} (${loc.source})`);
-    }
-    return loc;
-  } catch (e) {
-    console.warn("[Location] 获取失败:", e);
-    return null;
-  }
-}
-
-// 使用坐标获取天气
-async function requestWeatherByLocation(lat: number, lon: number): Promise<WttrCondition | null> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
-
-  try {
-    const resp = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "DynamicIsland/1.0",
-      },
-    });
-
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-
-    const data = await resp.json() as OpenMeteoResponse;
-    if (data?.current) {
-      const weatherCode = String(data.current.weather_code || 0);
-      const tempC = String(Math.round(data.current.temperature_2m || 0));
-      return {
-        temp_C: tempC,
-        weatherCode: weatherCode,
-        weatherDesc: [{ value: getOpenMeteoWeatherDesc(data.current.weather_code || 0) }],
-      };
-    }
-    return null;
-  } catch (e) {
-    console.warn("[Weather] Open-Meteo 请求失败:", e);
-    return null;
-  }
-}
-
-// 备用：wttr.in 天气（无坐标）
-async function requestWeatherFallback(): Promise<WttrCondition | null> {
-  const url = "https://wttr.in/?format=j1";
-
-  try {
-    const resp = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "DynamicIsland/1.0",
-      },
-    });
-
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-
-    const data = await resp.json() as WttrResponse;
-    return data?.current_condition?.[0] || null;
-  } catch (e) {
-    console.warn("[Weather] wttr.in 请求失败:", e);
-    return null;
-  }
-}
-
-function formatWeather(condition: WttrCondition): string {
-  // 优先使用中文描述（可能是 Open-Meteo 映射的描述）
-  const customDesc = condition.weatherDesc?.[0]?.value;
-  if (customDesc && customDesc !== "未知天气" && customDesc !== "未知") {
-    const temp = condition.temp_C ?? "--";
-    return `${customDesc} ${temp}°C`;
-  }
-
-  // 使用 wttr.in 天气代码映射
-  const label =
-    (condition.weatherCode && WEATHER_CODE_CN[condition.weatherCode]) ||
-    condition.weatherDesc?.[0]?.value ||
-    "未知天气";
-  const temp = condition.temp_C ?? "--";
-  return `${label} ${temp}°C`;
-}
-
+// ===== 天气功能（后端统一处理） =====
 async function refreshWeather(force = false) {
   const now = Date.now();
   if (weatherLoading) return;
@@ -603,35 +425,15 @@ async function refreshWeather(force = false) {
   }
 
   try {
-    // 1. 先获取位置（如果没有缓存或强制刷新）
-    let location = cachedLocation;
-    if (!location || force) {
-      location = await getLocation();
-    }
-
-    // 2. 获取天气
-    let condition: WttrCondition | null = null;
-
-    if (location) {
-      // 使用定位坐标获取天气
-      console.log(`[Weather] 使用${location.source}定位获取天气...`);
-      condition = await requestWeatherByLocation(location.latitude, location.longitude);
-    }
-
-    if (!condition) {
-      // 备用：无坐标的 wttr.in
-      console.log("[Weather] 使用备用 API...");
-      condition = await requestWeatherFallback();
-    }
-
-    if (condition) {
-      weatherText.textContent = formatWeather(condition);
-      lastWeatherFetchAt = Date.now();
+    const result = await invoke<WeatherResult>("get_weather");
+    // 格式：城市 天气 温度 或 天气 温度
+    if (result.city) {
+      weatherText.textContent = `${result.city} ${result.desc} ${result.temp}°C`;
     } else {
-      throw new Error("无法获取天气数据");
+      weatherText.textContent = `${result.desc} ${result.temp}°C`;
     }
+    lastWeatherFetchAt = Date.now();
   } catch (e) {
-    // 如果之前成功获取过，保留旧数据；否则显示错误
     if (lastWeatherFetchAt === 0) {
       weatherText.textContent = "天气暂不可用";
     }

@@ -137,29 +137,18 @@ try {
 
 /// 使用 IP 定位获取位置（备用方案）
 fn get_ip_location() -> Option<LocationInfo> {
-    // 使用 ip-api.com 免费API
-    let url = "http://ip-api.com/json?fields=status,lat,lon,city";
+    let url = "http://ip-api.com/json?fields=status,lat,lon,city&lang=zh-CN";
 
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            &format!(
-                r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; try {{ (Invoke-WebRequest -Uri '{}' -UseBasicParsing -TimeoutSec 5).Content }} catch {{}}"#,
-                url
-            ),
-        ])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
+    let resp = shared_http_client()
+        .get(url)
+        .send()
         .ok()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if stdout.is_empty() {
+    if !resp.status().is_success() {
         return None;
     }
 
-    // 解析 JSON
-    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    let json: serde_json::Value = resp.json().ok()?;
     if json["status"].as_str()? != "success" {
         return None;
     }
@@ -190,6 +179,93 @@ fn get_location() -> Option<LocationInfo> {
     None
 }
 
+// ===== Open-Meteo 天气代码映射 =====
+fn weather_code_to_cn(code: i64) -> &'static str {
+    match code {
+        0 | 1 => "晴",
+        2 => "少云",
+        3 => "多云",
+        45 => "雾",
+        48 => "雾凇",
+        51 | 53 | 55 => "毛毛雨",
+        56 | 57 => "冻雨",
+        61 => "小雨",
+        63 => "中雨",
+        65 => "大雨",
+        66 | 67 => "冰雨",
+        71 => "小雪",
+        73 => "中雪",
+        75 | 77 => "大雪",
+        80 | 81 => "阵雨",
+        82 => "强阵雨",
+        85 | 86 => "阵雪",
+        95 => "雷暴",
+        96 | 99 => "雷暴雨",
+        _ => "未知",
+    }
+}
+
+#[derive(serde::Serialize)]
+struct WeatherResult {
+    desc: String,
+    temp: i64,
+    city: String,
+}
+
+#[tauri::command]
+fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, String> {
+    // 1. 确定坐标来源：手动城市 > 系统定位 > IP定位
+    let manual_city = state.weather_city.lock().unwrap().clone();
+    let manual_lat = *state.weather_lat.lock().unwrap();
+    let manual_lon = *state.weather_lon.lock().unwrap();
+
+    let (lat, lon, city_name) = if !manual_city.is_empty() && (manual_lat != 0.0 || manual_lon != 0.0) {
+        // 手动设置的城市
+        println!("[Weather] 使用手动设置城市: {}", manual_city);
+        (manual_lat, manual_lon, manual_city)
+    } else {
+        // 自动定位
+        let loc = get_location().ok_or("无法获取位置信息".to_string())?;
+        let city = loc.city.clone().unwrap_or_default();
+        (loc.latitude, loc.longitude, city)
+    };
+
+    // 2. 调用 Open-Meteo API
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,weather_code&timezone=auto",
+        lat, lon
+    );
+
+    let resp = shared_http_client()
+        .get(&url)
+        .send()
+        .map_err(|e| format!("天气请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {}", e))?;
+
+    let current = &json["current"];
+    let weather_code = current["weather_code"].as_i64().unwrap_or(0);
+    let temp = current["temperature_2m"].as_f64().unwrap_or(0.0).round() as i64;
+    let desc = weather_code_to_cn(weather_code).to_string();
+
+    Ok(WeatherResult { desc, temp, city: city_name })
+}
+
+#[tauri::command]
+fn save_weather_city(state: tauri::State<'_, IslandState>, city: String, lat: f64, lon: f64) {
+    *state.weather_city.lock().unwrap() = city;
+    *state.weather_lat.lock().unwrap() = lat;
+    *state.weather_lon.lock().unwrap() = lon;
+
+    // 持久化
+    let settings_data = settings::build_settings_data(&state);
+    let _ = settings::save_settings_to_file(&settings_data);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -207,7 +283,7 @@ pub fn run() {
             ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
-            get_location
+            get_location, get_weather, save_weather_city, settings::search_city
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -280,6 +356,9 @@ pub fn run() {
                 agent_window_size: agent_window_size.clone(),
                 link_handlers: link_handlers.clone(),
                 url_whitelist: url_whitelist.clone(),
+                weather_city: Arc::new(Mutex::new(settings.weather_city.clone())),
+                weather_lat: Arc::new(Mutex::new(settings.weather_lat)),
+                weather_lon: Arc::new(Mutex::new(settings.weather_lon)),
             });
 
             // --- 系统托盘 ---
@@ -782,6 +861,10 @@ pub struct IslandState {
     pub link_handlers: Arc<Mutex<Vec<LinkHandler>>>,
     // URL 域名白名单（可选）
     pub url_whitelist: Arc<Mutex<Vec<String>>>,
+    // 天气城市设置
+    pub weather_city: Arc<Mutex<String>>,
+    pub weather_lat: Arc<Mutex<f64>>,
+    pub weather_lon: Arc<Mutex<f64>>,
 }
 
 unsafe impl Send for IslandState {}

@@ -707,6 +707,90 @@
     .btn-danger:hover {
       background: rgba(209, 52, 56, 0.1);
     }
+
+    /* 城市搜索下拉列表 */
+    .city-search-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .city-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .city-results.active {
+      display: block;
+    }
+
+    .city-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+      transition: background 0.1s ease;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .city-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .city-result-item:hover {
+      background: var(--surface-hover);
+    }
+
+    .city-result-item .city-name {
+      font-weight: 500;
+    }
+
+    .city-result-item .city-detail {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .city-current {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .city-current .city-tag {
+      background: rgba(0, 120, 212, 0.1);
+      color: var(--primary);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .city-current .clear-city {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 6px;
+    }
+
+    .city-current .clear-city:hover {
+      color: var(--danger);
+    }
   </style>
 </head>
 <body>
@@ -788,6 +872,25 @@
               </div>
               <div class="setting-control">
                 <input id="indicator-color" class="input" type="color" value="#2edb67" style="width: 60px; height: 32px; padding: 2px; cursor: pointer;" />
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">天气</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>天气位置</h3>
+                <p>手动设置城市以获取更准确的天气。留空则自动定位。</p>
+              </div>
+              <div class="city-search-wrapper" style="margin-top: 8px;">
+                <input id="weather-city-search" class="input" type="text" placeholder="搜索城市，如：北京、上海、Tokyo..." style="width: 100%;" />
+                <div id="city-results" class="city-results"></div>
+              </div>
+              <div id="city-current" class="city-current" style="display: none;">
+                <span>当前：</span>
+                <span id="city-tag" class="city-tag"></span>
+                <button id="clear-city-btn" class="clear-city" type="button">× 清除</button>
               </div>
             </div>
           </div>

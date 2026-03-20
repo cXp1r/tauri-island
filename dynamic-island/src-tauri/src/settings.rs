@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use crate::IslandState;
 use crate::link_handler::LinkHandler;
+use crate::shared_http_client;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
@@ -28,6 +29,12 @@ pub(crate) struct SettingsData {
     pub agent_window_size: String,
     #[serde(default = "crate::link_handler::get_default_link_handlers")]
     pub link_handlers: Vec<LinkHandler>,
+    #[serde(default)]
+    pub weather_city: String,
+    #[serde(default)]
+    pub weather_lat: f64,
+    #[serde(default)]
+    pub weather_lon: f64,
 }
 
 fn default_shortcut() -> String {
@@ -72,6 +79,9 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         indicator_color: default_indicator_color(),
         agent_window_size: default_agent_window_size(),
         link_handlers: crate::link_handler::get_default_link_handlers(),
+        weather_city: String::new(),
+        weather_lat: 0.0,
+        weather_lon: 0.0,
     }
 }
 
@@ -95,6 +105,9 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         indicator_color: state.indicator_color.lock().unwrap().clone(),
         agent_window_size: state.agent_window_size.lock().unwrap().clone(),
         link_handlers: state.link_handlers.lock().unwrap().clone(),
+        weather_city: state.weather_city.lock().unwrap().clone(),
+        weather_lat: *state.weather_lat.lock().unwrap(),
+        weather_lon: *state.weather_lon.lock().unwrap(),
     }
 }
 
@@ -121,12 +134,18 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let lyric_mode = state.lyric_mode.lock().unwrap().clone();
     let indicator_color = state.indicator_color.lock().unwrap().clone();
     let agent_window_size = state.agent_window_size.lock().unwrap().clone();
+    let weather_city = state.weather_city.lock().unwrap().clone();
+    let weather_lat = *state.weather_lat.lock().unwrap();
+    let weather_lon = *state.weather_lon.lock().unwrap();
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
         "lyric_mode": lyric_mode,
         "indicator_color": indicator_color,
-        "agent_window_size": agent_window_size
+        "agent_window_size": agent_window_size,
+        "weather_city": weather_city,
+        "weather_lat": weather_lat,
+        "weather_lon": weather_lon
     })
 }
 
@@ -139,12 +158,24 @@ pub fn save_settings(
     lyric_mode: String,
     indicator_color: String,
     agent_window_size: String,
+    weather_city: Option<String>,
+    weather_lat: Option<f64>,
+    weather_lon: Option<f64>,
 ) {
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
     *state.indicator_color.lock().unwrap() = indicator_color.clone();
     *state.agent_window_size.lock().unwrap() = agent_window_size.clone();
+    if let Some(ref city) = weather_city {
+        *state.weather_city.lock().unwrap() = city.clone();
+    }
+    if let Some(lat) = weather_lat {
+        *state.weather_lat.lock().unwrap() = lat;
+    }
+    if let Some(lon) = weather_lon {
+        *state.weather_lon.lock().unwrap() = lon;
+    }
 
     // 通知前端指示器颜色变更
     if let Some(win) = app.get_webview_window("main") {
@@ -178,6 +209,15 @@ pub fn save_settings(
     settings_data.lyric_mode = lyric_mode;
     settings_data.indicator_color = indicator_color;
     settings_data.agent_window_size = agent_window_size;
+    if let Some(city) = weather_city {
+        settings_data.weather_city = city;
+    }
+    if let Some(lat) = weather_lat {
+        settings_data.weather_lat = lat;
+    }
+    if let Some(lon) = weather_lon {
+        settings_data.weather_lon = lon;
+    }
     let _ = save_settings_to_file(&settings_data);
 }
 
@@ -198,4 +238,57 @@ pub fn save_link_handlers(
     save_settings_to_file(&settings_data)?;
 
     Ok(())
+}
+
+// ===== 城市搜索 =====
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CityResult {
+    pub name: String,
+    pub country: String,
+    pub admin1: String, // 省/州
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[tauri::command]
+pub fn search_city(query: String) -> Result<Vec<CityResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=8&language=zh&format=json",
+        urlencoding::encode(query.trim())
+    );
+
+    let resp = shared_http_client()
+        .get(&url)
+        .send()
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {}", e))?;
+
+    let results = json["results"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    Some(CityResult {
+                        name: item["name"].as_str()?.to_string(),
+                        country: item["country"].as_str().unwrap_or("").to_string(),
+                        admin1: item["admin1"].as_str().unwrap_or("").to_string(),
+                        latitude: item["latitude"].as_f64()?,
+                        longitude: item["longitude"].as_f64()?,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
 }
