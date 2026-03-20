@@ -2,7 +2,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -99,6 +99,39 @@ fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64,
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
+}
+
+fn animate_window_height(
+    hwnd: HWND,
+    scale: f64,
+    from_h: f64,
+    to_h: f64,
+    win_w: f64,
+    duration_ms: f64,
+    anim_id: Arc<AtomicU64>,
+    my_gen: u64,
+) {
+    let phys_w = (win_w * scale).round() as i32;
+    let start = Instant::now();
+    loop {
+        if anim_id.load(Ordering::Relaxed) != my_gen { return; }
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        let p = (elapsed / duration_ms).min(1.0);
+        let t = ease_out_cubic(p);
+        let cur_h = from_h + (to_h - from_h) * t;
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd, None,
+                0, 0,
+                phys_w,
+                (cur_h * scale).round() as i32,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE,
+            );
+        }
+        if p >= 1.0 { break; }
+        thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
+    }
+    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
 }
 
 fn check_internet() -> bool {
@@ -492,10 +525,11 @@ fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 }
 
 #[tauri::command]
-fn sync_window_height(window: tauri::WebviewWindow, height: f64) {
-    // 前端传来胶囊实际高度 + padding，动态调整窗口高度
+fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64) {
+    // 展开/收起动画进行中，跳过 ResizeObserver 驱动的同步
+    if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
     let new_h = height.max(60.0).min(600.0);
-    if let Ok(size) = window.outer_size() {
+    if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;
         let _ = window.set_size(tauri::LogicalSize::new(cur_w, new_h));
@@ -631,8 +665,9 @@ fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let from_w = WIN_W;
-            let from_h = WIN_H_DEFAULT;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, WIN_H_DEFAULT));
             let target_y = from_y;
 
             let w = window.clone();
@@ -647,8 +682,9 @@ fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let from_w = agent_w;
-            let from_h = agent_h + 10.0;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((agent_w, agent_h + 10.0));
             // 缩小后保持中心不变
             let center_x = from_x + from_w / 2.0;
             let target_x = center_x - WIN_W / 2.0;
@@ -680,8 +716,9 @@ fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandSta
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let from_w = WIN_W;
-            let from_h = WIN_H_DEFAULT;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, WIN_H_DEFAULT));
 
             // 绿条居中在屏幕顶部
             let target_x = (screen_w - MINIMIZED_W) / 2.0;
@@ -699,8 +736,9 @@ fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandSta
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let from_w = MINIMIZED_W;
-            let from_h = MINIMIZED_H;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((MINIMIZED_W, MINIMIZED_H));
 
             // 恢复到屏幕顶部居中
             let target_x = (screen_w - WIN_W) / 2.0;
@@ -771,6 +809,8 @@ fn animate_resize(
     to_x: f64, to_y: f64, to_w: f64, to_h: f64,
     duration_ms: f64,
 ) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let hwnd = HWND(window.hwnd().unwrap().0);
     let start = Instant::now();
     loop {
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -782,8 +822,16 @@ fn animate_resize(
         let cur_x = from_x + (to_x - from_x) * t;
         let cur_y = from_y + (to_y - from_y) * t;
 
-        let _ = window.set_size(tauri::LogicalSize::new(cur_w, cur_h));
-        let _ = window.set_position(tauri::LogicalPosition::new(cur_x, cur_y));
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd, None,
+                (cur_x * scale).round() as i32,
+                (cur_y * scale).round() as i32,
+                (cur_w * scale).round() as i32,
+                (cur_h * scale).round() as i32,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
 
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
@@ -2144,6 +2192,7 @@ pub fn run() {
 
             let home_x = (screen_w - WIN_W) / 2.0;
             let _ = window.set_position(tauri::LogicalPosition::new(home_x, TOP_MARGIN));
+            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
 
             let hwnd = HWND(window.hwnd().unwrap().0);
             set_click_through(hwnd, true);
@@ -2173,6 +2222,7 @@ pub fn run() {
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
+            let expand_anim_id = Arc::new(AtomicU64::new(0));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
             let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
             let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
@@ -2190,6 +2240,7 @@ pub fn run() {
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
                 is_minimized: is_minimized.clone(),
+                expand_anim_id: expand_anim_id.clone(),
                 screen_w, home_x, hwnd, scale,
                 ai_api_url: ai_api_url.clone(),
                 ai_api_key: ai_api_key.clone(),
@@ -2259,6 +2310,7 @@ pub fn run() {
             let current_view_m = current_view.clone();
             let agent_expanded_m = agent_expanded.clone();
             let agent_window_size_m = agent_window_size.clone();
+            let expand_anim_id_m = expand_anim_id.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music = Arc::new(AtomicBool::new(false));
             let is_music_m = is_music.clone();
@@ -2314,9 +2366,24 @@ pub fn run() {
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
+                                let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
+                                let from_h = get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(60.0);
+                                let anim_id = expand_anim_id_m.clone();
+                                let h_raw = hwnd.0 as usize;
+                                thread::spawn(move || {
+                                    animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
+                                });
                             } else if my > zone_bottom && exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
+                                let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
+                                let from_h = get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(WIN_H_DEFAULT);
+                                let collapsed_h = CAPSULE_COLLAPSED_H + 10.0;
+                                let anim_id = expand_anim_id_m.clone();
+                                let h_raw = hwnd.0 as usize;
+                                thread::spawn(move || {
+                                    animate_window_height(HWND(h_raw as *mut _), scale, from_h, collapsed_h, WIN_W, 350.0, anim_id, gen);
+                                });
                             }
                         }
                     }
@@ -2672,6 +2739,7 @@ pub struct IslandState {
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
     pub agent_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,
+    pub expand_anim_id: Arc<AtomicU64>,
     pub screen_w: f64,
     pub home_x: f64,
     pub hwnd: HWND,
