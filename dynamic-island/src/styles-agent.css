@@ -312,15 +312,32 @@
 
 /* ===== 思考区域 ===== */
 .thinking-section {
-    margin-top: 4px;
-    padding: 8px 12px;
-    background: #15121F;
+    margin-bottom: 4px;
+    padding: 10px 14px;
+    background: #13111D;
     border-radius: 12px;
     border: 1px solid #2A2540;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background 0.2s ease, border-color 0.3s ease;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 思考进行中 — 呼吸灯左边框 */
+.thinking-section.active {
+    animation: thinking-border-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-border-pulse {
+    0%, 100% { border-color: rgba(42, 37, 64, 0.6); }
+    50% { border-color: rgba(124, 58, 237, 0.3); }
+}
+
+/* 思考完成 */
+.thinking-section:not(.active) {
+    border-color: #2A2540;
 }
 
 .thinking-section:hover {
@@ -329,10 +346,37 @@
 
 .thinking-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
     font-weight: 500;
+}
+
+.thinking-label {
     color: #A78BFA;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+/* 思考进行中标签呼吸 */
+.thinking-section.active .thinking-label {
+    animation: thinking-label-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-label-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+.thinking-time {
+    color: #8B7FAA;
+    font-size: 10px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+}
+
+.thinking-section.active .thinking-time {
+    color: #C4B5FD;
 }
 
 .thinking-content {
@@ -341,6 +385,11 @@
     line-height: 1.5;
     white-space: pre-wrap;
     color: #8B7FAA;
+    font-size: 11px;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 58, 237, 0.15) transparent;
 }
 
 .thinking-section.expanded .thinking-content {
@@ -349,8 +398,160 @@
 
 .thinking-toggle {
     font-size: 9px;
-    opacity: 0.5;
+    opacity: 0.4;
     color: #A78BFA;
+    margin-left: auto;
+    transition: opacity 0.2s ease;
+}
+
+.thinking-section:hover .thinking-toggle {
+    opacity: 0.7;
+}
+
+/* ===== 代码块 & 高亮 ===== */
+.message-content pre {
+    background: #0D0B14;
+    border: 1px solid #1E1A2E;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 8px 0;
+    overflow-x: auto;
+    position: relative;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 58, 237, 0.15) transparent;
+}
+
+.message-content pre code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #E0DDF0;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+}
+
+.message-content code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    background: #1A1625;
+    color: #C4B5FD;
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+.message-content pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+/* 复制按钮 */
+.code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(124, 58, 237, 0.15);
+    color: #A78BFA;
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease;
+    z-index: 2;
+    font-family: inherit;
+}
+
+.message-content pre:hover .code-copy-btn {
+    opacity: 1;
+}
+
+.code-copy-btn:hover {
+    background: rgba(124, 58, 237, 0.3);
+}
+
+.code-copy-btn.copied {
+    background: rgba(57, 217, 138, 0.15);
+    color: #39d98a;
+    border-color: rgba(57, 217, 138, 0.2);
+    opacity: 1;
+}
+
+/* ===== highlight.js 暗色主题 ===== */
+.hljs { color: #E0DDF0; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name { color: #C792EA; }
+.hljs-string,
+.hljs-attr { color: #C3E88D; }
+.hljs-number,
+.hljs-literal { color: #F78C6C; }
+.hljs-comment,
+.hljs-quote { color: #676E95; font-style: italic; }
+.hljs-function .hljs-title,
+.hljs-title.function_ { color: #82AAFF; }
+.hljs-type,
+.hljs-class .hljs-title { color: #FFCB6B; }
+.hljs-variable,
+.hljs-template-variable { color: #F07178; }
+.hljs-params { color: #E0DDF0; }
+.hljs-regexp { color: #89DDFF; }
+.hljs-meta { color: #89DDFF; }
+.hljs-tag { color: #F07178; }
+.hljs-attribute { color: #C792EA; }
+.hljs-symbol,
+.hljs-bullet { color: #89DDFF; }
+.hljs-addition { color: #C3E88D; background: rgba(195, 232, 141, 0.1); }
+.hljs-deletion { color: #F07178; background: rgba(240, 113, 120, 0.1); }
+.hljs-selector-class { color: #FFCB6B; }
+.hljs-selector-id { color: #F78C6C; }
+
+/* ===== 文字输出平滑动画 ===== */
+.message-content.token-fade {
+    animation: token-appear 0.3s ease forwards;
+}
+
+@keyframes token-appear {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-content.token-fresh {
+    animation: token-pulse 0.15s ease;
+}
+
+@keyframes token-pulse {
+    0% { opacity: 0.85; }
+    100% { opacity: 1; }
+}
+
+/* ===== KaTeX 数学公式暗色适配 ===== */
+.message-content .katex {
+    color: #E8E0F8;
+    font-size: 1.05em;
+}
+
+.message-content .katex-display {
+    margin: 10px 0;
+    padding: 8px 12px;
+    background: rgba(13, 11, 20, 0.5);
+    border-radius: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 58, 237, 0.15) transparent;
+}
+
+.message-content .katex-display > .katex {
+    font-size: 1.1em;
 }
 
 /* ===== 输入区域 ===== */

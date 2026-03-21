@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
-use crate::{IslandState, shared_http_client};
+use crate::IslandState;
 use crate::settings::{build_settings_data, save_settings_to_file};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +63,27 @@ pub fn ai_save_settings(
     Ok(())
 }
 
+/// 模型名称启发式检测：已知的思考模型关键字
+fn is_reasoning_model_by_name(model: &str) -> bool {
+    let lower = model.to_lowercase();
+    // DeepSeek R1 系列
+    if lower.contains("deepseek-r1") || lower.contains("deepseek_r1") || lower.contains("deepseek-reasoner") {
+        return true;
+    }
+    // OpenAI o 系列
+    if lower.contains("o1") || lower.contains("o3") || lower.contains("o4") {
+        // 排除 "model-v01" 之类的误匹配
+        for pat in ["o1-", "o1", "-o1", "o3-", "o3", "-o3", "o4-", "o4", "-o4"] {
+            if lower.contains(pat) { return true; }
+        }
+    }
+    // QwQ 系列
+    if lower.contains("qwq") {
+        return true;
+    }
+    false
+}
+
 #[tauri::command]
 pub fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_json::Value, String> {
     let api_url = state.ai_api_url.lock().unwrap().clone();
@@ -72,6 +93,9 @@ pub fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serd
     if api_url.is_empty() || api_key.is_empty() || model.is_empty() {
         return Err("AI 配置不完整".to_string());
     }
+
+    // 先通过模型名称启发式检测
+    let name_detected = is_reasoning_model_by_name(&model);
 
     // 构建测试请求
     let request_body = serde_json::json!({
@@ -86,49 +110,73 @@ pub fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serd
         "max_tokens": 10
     });
 
-    let client = shared_http_client();
+    // 使用独立客户端，超时 60 秒（思考模型响应较慢）
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
     let url = if api_url.ends_with("/chat/completions") {
         api_url.clone()
+    } else if api_url.ends_with("/v1") || api_url.ends_with("/v1/") {
+        let base = api_url.trim_end_matches('/');
+        format!("{}/chat/completions", base)
     } else if api_url.ends_with('/') {
-        format!("{}chat/completions", api_url)
+        format!("{}v1/chat/completions", api_url)
     } else {
-        format!("{}/chat/completions", api_url)
+        format!("{}/v1/chat/completions", api_url)
     };
 
-    let response = client
+    println!("[AI Detect] URL: {}, Model: {}", url, model);
+
+    let is_reasoning = match client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .map_err(|e| format!("请求失败: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response.text().unwrap_or_default();
-        return Err(format!("API 返回错误 {}: {}", status, error_text));
-    }
-
-    let response_json: serde_json::Value = response
-        .json()
-        .map_err(|e| format!("解析响应失败: {}", e))?;
-
-    // 检测是否为思考模型
-    let is_reasoning = response_json
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| {
-            // 检查是否有 reasoning_content 或 thinking 字段
-            if m.get("reasoning_content").is_some() {
-                Some(true)
-            } else if m.get("thinking").is_some() {
-                Some(true)
+    {
+        Ok(response) => {
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().unwrap_or_default();
+                println!("[AI Detect] API error {}: {}", status, error_text);
+                // API 请求失败，回退到名称检测
+                name_detected
             } else {
-                None
+                let response_json: serde_json::Value = response
+                    .json()
+                    .unwrap_or(serde_json::Value::Null);
+
+                // 检测 API 响应中是否有 reasoning_content
+                let api_detected = response_json
+                    .get("choices")
+                    .and_then(|c| c.get(0))
+                    .and_then(|c| c.get("message"))
+                    .map(|m| {
+                        // 检查 reasoning_content 是否存在且非空
+                        let has_reasoning = m.get("reasoning_content")
+                            .map(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(true))
+                            .unwrap_or(false);
+                        let has_thinking = m.get("thinking")
+                            .map(|v| !v.is_null())
+                            .unwrap_or(false);
+                        has_reasoning || has_thinking
+                    })
+                    .unwrap_or(false);
+
+                println!("[AI Detect] API detected: {}, Name detected: {}", api_detected, name_detected);
+                // 任何一种方式检测到即认定为思考模型
+                api_detected || name_detected
             }
-        })
-        .unwrap_or(false);
+        }
+        Err(e) => {
+            println!("[AI Detect] Request failed: {}, falling back to name detection", e);
+            // 请求失败，回退到名称检测
+            name_detected
+        }
+    };
 
     // 更新状态
     state.is_reasoning_model.store(is_reasoning, Ordering::Relaxed);
@@ -137,6 +185,8 @@ pub fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serd
     let mut settings_data = build_settings_data(&state);
     settings_data.is_reasoning_model = is_reasoning;
     save_settings_to_file(&settings_data)?;
+
+    println!("[AI Detect] Final result: is_reasoning={}", is_reasoning);
 
     Ok(serde_json::json!({
         "is_reasoning_model": is_reasoning
@@ -199,6 +249,7 @@ pub fn ai_send_message(
             return;
         };
 
+        // 已知思考模型先进入 thinking，否则进入 generating（稍后流中自动检测）
         let _ = window.emit("ai-status", serde_json::json!({
             "status": if is_reasoning { "thinking" } else { "generating" }
         }));
@@ -281,6 +332,7 @@ pub fn ai_send_message(
         let mut assistant_content = String::new();
         let mut reasoning_content = String::new();
         let mut in_thinking_phase = is_reasoning;
+        let mut ever_had_reasoning = false; // 流中是否出现过 reasoning_content
 
         use std::io::BufRead;
         let reader = std::io::BufReader::new(response);
@@ -323,10 +375,20 @@ pub fn ai_send_message(
                     if let Some(delta) = choice.get("delta") {
                         // 检查思考内容
                         if let Some(reasoning) = delta.get("reasoning_content").and_then(|r| r.as_str()) {
-                            reasoning_content.push_str(reasoning);
-                            let _ = window.emit("ai-thinking-token", serde_json::json!({
-                                "text": reasoning
-                            }));
+                            if !reasoning.is_empty() {
+                                // 自动检测：首次收到 reasoning_content 时，切换到 thinking 状态
+                                if !ever_had_reasoning {
+                                    ever_had_reasoning = true;
+                                    in_thinking_phase = true;
+                                    let _ = window.emit("ai-status", serde_json::json!({
+                                        "status": "thinking"
+                                    }));
+                                }
+                                reasoning_content.push_str(reasoning);
+                                let _ = window.emit("ai-thinking-token", serde_json::json!({
+                                    "text": reasoning
+                                }));
+                            }
                         }
 
                         // 检查普通内容
