@@ -191,6 +191,28 @@ saveBtn.addEventListener("click", async () => {
 
       // 通知主窗口更新 AI 状态
       await emit("ai-settings-changed", {});
+
+      // 自动检测模型类型（后台执行，不阻塞保存）
+      if (apiUrl && apiKey && model) {
+        aiModelTypeResult.textContent = "检测中...";
+        aiModelTypeResult.style.color = "#93a4c8";
+        invoke<{ is_reasoning_model: boolean }>("ai_detect_model_type")
+          .then((result) => {
+            if (result.is_reasoning_model) {
+              aiModelTypeResult.textContent = "✅ 思考模型";
+              aiModelTypeResult.style.color = "#39d98a";
+            } else {
+              aiModelTypeResult.textContent = "普通模型";
+              aiModelTypeResult.style.color = "#93a4c8";
+            }
+            // 通知主窗口更新
+            void emit("ai-settings-changed", {});
+          })
+          .catch(() => {
+            aiModelTypeResult.textContent = "检测失败";
+            aiModelTypeResult.style.color = "#ff6f7f";
+          });
+      }
     }
 
     // 保存链接处理器

@@ -1,5 +1,6 @@
-﻿import { listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { marked } from "marked";
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
 const timeWrapper = document.getElementById("time-wrapper") as HTMLDivElement;
@@ -55,6 +56,7 @@ let isMinimized = false;
 let aiEnabled = false;
 let aiGenerating = false;
 let currentAssistantMessage: HTMLDivElement | null = null;
+let currentAssistantRawText = "";
 let currentThinkingSection: HTMLDivElement | null = null;
 let thinkingStartTime = 0;
 
@@ -532,7 +534,9 @@ listen<string>("indicator-color-changed", (event) => {
   applyIndicatorColor(event.payload);
 });
 
-listen<string>("agent-window-size-changed", async () => {
+listen<string>("agent-window-size-changed", async (event) => {
+  // 更新 CSS 变量
+  updateAgentCSSSize(event.payload);
   // 如果当前 AI 窗口已展开，应用新的窗口大小
   if (capsule.classList.contains("agent-expanded")) {
     await invoke("set_agent_expanded", { expanded: false });
@@ -887,39 +891,43 @@ const capsuleObserver = new ResizeObserver((entries) => {
   }
 });
 capsuleObserver.observe(capsule);
-invoke<{ lyric_mode: string; indicator_color: string }>("get_settings").then((s) => {
+invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {
   lyricMode = s.lyric_mode || "lyric";
   if (s.indicator_color) {
     applyIndicatorColor(s.indicator_color);
   }
+  if (s.agent_window_size) {
+    updateAgentCSSSize(s.agent_window_size);
+  }
 });
+
+// 根据窗口大小档位更新 CSS 变量
+function updateAgentCSSSize(size: string) {
+  let w: number, h: number;
+  switch (size) {
+    case "small":  w = 380; h = 400; break;
+    case "large":  w = 620; h = 640; break;
+    default:       w = 520; h = 540; break; // medium
+  }
+  capsule.style.setProperty("--agent-w", `${w}px`);
+  capsule.style.setProperty("--agent-h", `${h}px`);
+}
 
 // ==================== AI Agent 功能 ====================
 
-// 简易 Markdown 渲染
+// Markdown 渲染（使用 marked 库）
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+});
+
 function renderMarkdown(text: string): string {
-  let html = text;
-
-  // 代码块
-  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-
-  // 行内代码
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // 加粗
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // 无序列表
-  html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-
-  // 有序列表
-  html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>');
-
-  // 换行
-  html = html.replace(/\n/g, '<br>');
-
-  return html;
+  try {
+    return marked.parse(text, { async: false }) as string;
+  } catch {
+    // fallback: 简单转义
+    return text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+  }
 }
 
 // 滚动消息到底部
@@ -1095,10 +1103,11 @@ listen<{ text: string }>("ai-token", (event) => {
   if (!currentAssistantMessage) {
     const messageDiv = addAssistantMessage();
     currentAssistantMessage = messageDiv.querySelector(".message-content") as HTMLDivElement;
+    currentAssistantRawText = "";
   }
 
-  const currentText = currentAssistantMessage.textContent || "";
-  currentAssistantMessage.innerHTML = renderMarkdown(currentText + event.payload.text);
+  currentAssistantRawText += event.payload.text;
+  currentAssistantMessage.innerHTML = renderMarkdown(currentAssistantRawText);
   scrollMessagesToBottom();
 });
 
@@ -1142,6 +1151,7 @@ listen<{ status: string; error?: string }>("ai-status", (event) => {
     agentStopBtn.style.display = "none";
     aiGenerating = false;
     currentAssistantMessage = null;
+    currentAssistantRawText = "";
     currentThinkingSection = null;
     thinkingStartTime = 0;
   } else if (status === "error") {

@@ -1,10 +1,10 @@
-/* ==================== AI Agent 模式样式 ==================== */
+/* ==================== AI Agent 模式样式 · A2 纯色紫罗兰 ==================== */
 
-/* 七彩流光边框 */
-@property --rainbow-angle {
-    syntax: '<angle>';
+/* 紫色描边边框 */
+@property --border-opacity {
+    syntax: '<number>';
     inherits: false;
-    initial-value: 0deg;
+    initial-value: 0.2;
 }
 
 #island-capsule.agent-active {
@@ -14,57 +14,54 @@
 #island-capsule.agent-active::before {
     content: "";
     position: absolute;
-    inset: -2px;
+    inset: -1.5px;
     border-radius: inherit;
-    padding: 2px;
-    background: conic-gradient(
-        from var(--rainbow-angle),
-        #6366f1,
-        #a855f7,
-        #ec4899,
-        #f43f5e,
-        #f97316,
-        #eab308,
-        #22c55e,
-        #06b6d4,
-        #6366f1
-    );
+    padding: 1.5px;
+    background: #7C3AED;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     pointer-events: none;
     z-index: -1;
-    opacity: 0.7;
+    opacity: var(--border-opacity);
+    transition: opacity 0.3s ease;
 }
 
 #island-capsule.agent-idle::before {
-    animation: rainbow-rotate 6s linear infinite;
-    opacity: 0.5;
+    --border-opacity: 0.25;
+    animation: idle-pulse 4s ease-in-out infinite;
 }
 
 #island-capsule.agent-thinking::before {
-    animation: rainbow-rotate 1.5s linear infinite, rainbow-pulse 2s ease-in-out infinite;
-    opacity: 0.85;
+    --border-opacity: 0.6;
+    animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
 #island-capsule.agent-generating::before {
-    animation: rainbow-rotate 0.8s linear infinite;
-    opacity: 1;
+    --border-opacity: 0.8;
+    animation: generating-pulse 0.8s ease-in-out infinite;
 }
 
 #island-capsule.agent-error::before {
+    background: #EF4444;
+    --border-opacity: 0.9;
     animation: error-flash 0.5s ease-in-out 3;
-    background: conic-gradient(from var(--rainbow-angle), #ef4444, #dc2626, #ef4444);
-    opacity: 1;
 }
 
-@keyframes rainbow-rotate {
-    to { --rainbow-angle: 360deg; }
+@keyframes idle-pulse {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.35; }
 }
 
-@keyframes rainbow-pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.9; }
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+}
+
+@keyframes generating-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
 }
 
 @keyframes error-flash {
@@ -80,7 +77,7 @@
     flex-direction: column;
     padding: 8px 12px;
     gap: 0;
-    background: linear-gradient(180deg, rgba(15, 15, 26, 0.95) 0%, rgba(10, 10, 18, 0.98) 100%);
+    background: #0C0C14;
     border-radius: inherit;
     box-sizing: border-box;
     overflow: hidden;
@@ -90,101 +87,135 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     backface-visibility: hidden;
-    transition: padding 0.2s ease, background 0.2s ease;
+    transition: padding 0.2s ease;
 }
 
-/* ===== 状态栏 — 主角：模型名 ===== */
+/* ===== 状态栏 ===== */
 #agent-status-bar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.5);
-    height: 28px;
+    height: 36px;
     flex-shrink: 0;
     cursor: grab;
     user-select: none;
-    padding: 0 2px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    margin-bottom: 8px;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    padding: 0 4px;
+    border-bottom: 1px solid #1E1E2E;
+    margin-bottom: 0;
     gap: 8px;
+}
+
+/* 模型图标 */
+#agent-model-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    background: #7C3AED;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #FFFFFF;
+    flex-shrink: 0;
+    line-height: 1;
 }
 
 #agent-model-name {
     font-weight: 600;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #E8E0F0;
     letter-spacing: 0.3px;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     white-space: nowrap;
     flex-shrink: 0;
     line-height: 1.2;
-    height: 16px;
     display: flex;
     align-items: center;
 }
+
+
 
 #agent-status-label {
     font-size: 10px;
-    padding: 2px 8px;
+    padding: 2px 10px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.5);
+    background: #1C1528;
+    color: #C4B5FD;
     font-weight: 500;
     letter-spacing: 0.2px;
     transition: background 0.3s ease, color 0.3s ease;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     white-space: nowrap;
-    display: inline-block;
-    line-height: 1.2;
-    height: 16px;
     display: flex;
     align-items: center;
     flex-shrink: 0;
+    height: 20px;
+    gap: 5px;
+    margin-left: auto;
+}
+
+#agent-status-label::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #A78BFA;
+    flex-shrink: 0;
+    transition: background 0.3s ease;
 }
 
 #agent-status-label.thinking {
-    background: rgba(168, 85, 247, 0.2);
-    color: rgba(216, 180, 254, 0.95);
+    background: rgba(124, 58, 237, 0.15);
+    color: #C4B5FD;
+}
+
+#agent-status-label.thinking::before {
+    background: #A78BFA;
+    animation: dot-blink 1.2s ease-in-out infinite;
 }
 
 #agent-status-label.generating {
-    background: rgba(99, 102, 241, 0.2);
-    color: rgba(165, 180, 252, 0.95);
+    background: rgba(124, 58, 237, 0.2);
+    color: #C4B5FD;
+}
+
+#agent-status-label.generating::before {
+    background: #7C3AED;
+    animation: dot-blink 0.8s ease-in-out infinite;
 }
 
 #agent-status-label.error {
-    background: rgba(239, 68, 68, 0.2);
-    color: rgba(252, 165, 165, 0.95);
+    background: rgba(239, 68, 68, 0.15);
+    color: #FCA5A5;
+}
+
+#agent-status-label.error::before {
+    background: #EF4444;
+}
+
+@keyframes dot-blink {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
 }
 
 /* 清空按钮 */
 #agent-clear-btn {
-    background: none;
+    background: #16161E;
     border: none;
-    color: rgba(255, 255, 255, 0.35);
+    color: #555566;
     cursor: pointer;
     font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 6px;
+    padding: 2px 8px;
+    border-radius: 10px;
     transition: color 0.2s ease, background 0.2s ease;
     font-family: var(--font-main);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     white-space: nowrap;
     flex-shrink: 0;
-    height: 16px;
+    height: 20px;
     display: flex;
     align-items: center;
 }
 
 #agent-clear-btn:hover {
-    color: rgba(252, 165, 165, 0.9);
-    background: rgba(239, 68, 68, 0.1);
+    color: #FCA5A5;
+    background: rgba(239, 68, 68, 0.12);
 }
 
 /* ===== 消息区域 ===== */
@@ -197,13 +228,11 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    gap: 10px;
-    padding: 6px 2px;
+    gap: 12px;
+    padding: 10px 2px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+    scrollbar-color: rgba(124, 58, 237, 0.15) transparent;
     will-change: scroll-position;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
 }
 
 #agent-messages::-webkit-scrollbar {
@@ -215,12 +244,12 @@
 }
 
 #agent-messages::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(124, 58, 237, 0.2);
     border-radius: 3px;
 }
 
 #agent-messages::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(124, 58, 237, 0.35);
 }
 
 /* ===== 消息气泡 ===== */
@@ -228,13 +257,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-width: 82%;
+    max-width: 85%;
     width: fit-content;
     flex-shrink: 0;
     animation: msg-in 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
     will-change: opacity, transform;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
 }
 
 @keyframes msg-in {
@@ -265,44 +292,39 @@
     line-height: 1.6;
     word-wrap: break-word;
     word-break: break-word;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
 }
 
-/* 用户消息 — 渐变蓝紫，主角感 */
+/* 用户消息 — 纯色紫 */
 .agent-message.user .message-content {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
+    background: #7C3AED;
+    color: #FFFFFF;
     border-bottom-right-radius: 6px;
-    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.25);
 }
 
-/* 助手消息 — 玻璃态，退后一步 */
+/* 助手消息 — 深色底 + 描边 */
 .agent-message.assistant .message-content {
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(8px);
-    color: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #14141E;
+    color: #E0DDF0;
+    border: 1px solid #1E1E30;
     border-bottom-left-radius: 6px;
 }
 
 /* ===== 思考区域 ===== */
 .thinking-section {
-    margin-top: 6px;
+    margin-top: 4px;
     padding: 8px 12px;
-    background: rgba(168, 85, 247, 0.08);
+    background: #15121F;
     border-radius: 12px;
-    border-left: 2px solid rgba(168, 85, 247, 0.4);
+    border: 1px solid #2A2540;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
     transition: background 0.2s ease;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
 }
 
 .thinking-section:hover {
-    background: rgba(168, 85, 247, 0.12);
+    background: #1A1530;
 }
 
 .thinking-header {
@@ -310,6 +332,7 @@
     justify-content: space-between;
     align-items: center;
     font-weight: 500;
+    color: #A78BFA;
 }
 
 .thinking-content {
@@ -317,9 +340,7 @@
     display: none;
     line-height: 1.5;
     white-space: pre-wrap;
-    color: rgba(255, 255, 255, 0.55);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    color: #8B7FAA;
 }
 
 .thinking-section.expanded .thinking-content {
@@ -329,50 +350,47 @@
 .thinking-toggle {
     font-size: 9px;
     opacity: 0.5;
+    color: #A78BFA;
 }
 
-/* ===== 输入区域 — 玻璃态 ===== */
+/* ===== 输入区域 ===== */
 #agent-input-area {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
-    padding: 6px 6px 6px 14px;
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(12px);
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 10px 4px;
     flex-shrink: 0;
-    margin-top: 8px;
-    transition: border-color 0.2s ease;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-#agent-input-area:focus-within {
-    border-color: rgba(99, 102, 241, 0.4);
+    margin-top: 0;
+    border-top: 1px solid #1E1E2E;
 }
 
 #agent-input {
     flex: 1;
-    background: transparent;
-    border: none;
+    background: #14141E;
+    border: 1px solid #22223A;
+    border-radius: 18px;
     outline: none;
-    color: white;
+    color: #E0DDF0;
     font-size: 13px;
     font-family: var(--font-main);
-    padding: 4px 0;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    padding: 8px 14px;
+    height: 36px;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease;
+}
+
+#agent-input:focus {
+    border-color: rgba(124, 58, 237, 0.4);
 }
 
 #agent-input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: #44445A;
 }
 
 #agent-send-btn,
 #agent-stop-btn {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     color: white;
@@ -382,18 +400,18 @@
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     flex-shrink: 0;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    font-size: 18px;
+    font-weight: 600;
 }
 
 #agent-send-btn {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    background: #7C3AED;
+    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.35);
 }
 
 #agent-send-btn:hover {
     transform: scale(1.08);
-    box-shadow: 0 3px 12px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 3px 16px rgba(124, 58, 237, 0.5);
 }
 
 #agent-send-btn:active {
@@ -401,7 +419,7 @@
 }
 
 #agent-stop-btn {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
+    background: #EF4444;
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
 }
 
@@ -414,47 +432,160 @@
     transform: scale(0.94);
 }
 
-/* ===== Markdown 渲染 ===== */
+/* ===== Markdown 渲染样式 ===== */
+
+/* 行内代码 */
 .message-content code {
-    background: rgba(0, 0, 0, 0.35);
-    padding: 2px 6px;
-    border-radius: 5px;
-    font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+    background: rgba(124, 58, 237, 0.12);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
     font-size: 12px;
-    color: rgba(165, 180, 252, 0.95);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    color: #C4B5FD;
 }
 
+/* 代码块 */
 .message-content pre {
-    background: rgba(0, 0, 0, 0.4);
-    padding: 12px;
+    background: #0A0A12;
+    padding: 12px 14px;
     border-radius: 10px;
     overflow-x: auto;
     margin: 8px 0;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid #1C1C2E;
 }
 
 .message-content pre code {
     background: transparent;
     padding: 0;
-    color: rgba(255, 255, 255, 0.85);
+    color: #E0DDF0;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
+/* 标题 */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+    margin: 12px 0 6px 0;
+    color: #F0ECF8;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.message-content h1 { font-size: 18px; }
+.message-content h2 { font-size: 16px; }
+.message-content h3 { font-size: 14px; }
+.message-content h4,
+.message-content h5,
+.message-content h6 { font-size: 13px; }
+
+.message-content h1:first-child,
+.message-content h2:first-child,
+.message-content h3:first-child {
+    margin-top: 0;
+}
+
+/* 加粗和斜体 */
 .message-content strong {
     font-weight: 600;
-    color: white;
+    color: #F0ECF8;
 }
 
+.message-content em {
+    color: #C4B5FD;
+    font-style: italic;
+}
+
+/* 列表 */
 .message-content ul,
 .message-content ol {
-    margin-left: 18px;
-    margin-top: 4px;
-    margin-bottom: 4px;
+    margin: 6px 0;
+    padding-left: 20px;
 }
 
 .message-content li {
     margin: 3px 0;
+    line-height: 1.5;
+}
+
+.message-content li::marker {
+    color: #7C3AED;
+}
+
+/* 表格 */
+.message-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.message-content th {
+    background: #1C1528;
+    color: #C4B5FD;
+    font-weight: 600;
+    padding: 6px 10px;
+    text-align: left;
+    border: 1px solid #2A2540;
+}
+
+.message-content td {
+    padding: 5px 10px;
+    border: 1px solid #1E1E30;
+    color: #D0CCE0;
+}
+
+.message-content tr:nth-child(even) td {
+    background: rgba(124, 58, 237, 0.03);
+}
+
+/* 引用 */
+.message-content blockquote {
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-left: 3px solid #7C3AED;
+    background: rgba(124, 58, 237, 0.06);
+    border-radius: 0 8px 8px 0;
+    color: #B0A8C8;
+}
+
+.message-content blockquote p {
+    margin: 0;
+}
+
+/* 水平线 */
+.message-content hr {
+    border: none;
+    border-top: 1px solid #2A2540;
+    margin: 10px 0;
+}
+
+/* 链接 */
+.message-content a {
+    color: #A78BFA;
+    text-decoration: none;
+}
+
+.message-content a:hover {
+    text-decoration: underline;
+    color: #C4B5FD;
+}
+
+/* 删除线 */
+.message-content del {
+    color: #666680;
+}
+
+/* 段落间距 */
+.message-content p {
+    margin: 0 0 6px 0;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
 }
 
 /* ===== 收起态 ===== */
@@ -463,7 +594,7 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.85);
+    background: #0A0A0A;
     will-change: auto;
     transition: padding 0.2s ease, background 0.2s ease;
 }
@@ -484,8 +615,6 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
     will-change: auto;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     display: block;
     line-height: 1;
     height: 1em;
@@ -494,8 +623,8 @@
 
 /* ===== 展开态 ===== */
 #island-capsule.agent-expanded {
-    width: 520px;
-    height: 540px;
+    width: var(--agent-w, 520px);
+    height: var(--agent-h, 540px);
     border-radius: 24px;
 }
 
@@ -505,10 +634,10 @@
     align-items: stretch;
     justify-content: flex-start;
     will-change: auto;
-    transition: padding 0.2s ease, background 0.2s ease;
+    transition: padding 0.2s ease;
 }
 
-/* 展开时内容从透明淡入，避免尺寸变化时文字抨动 */
+/* 展开时内容淡入 */
 #island-capsule.agent-expanded #agent-status-bar,
 #island-capsule.agent-expanded #agent-messages,
 #island-capsule.agent-expanded #agent-input-area {
@@ -548,21 +677,20 @@
 #agent-confirm-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.7);
     border-radius: inherit;
     backdrop-filter: blur(4px);
 }
 
 #agent-confirm-box {
     position: relative;
-    background: rgba(30, 30, 45, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #16161E;
+    border: 1px solid #2A2540;
     border-radius: 16px;
     padding: 22px 24px 16px;
     width: 250px;
-    backdrop-filter: blur(20px);
     animation: confirm-pop 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes confirm-pop {
@@ -572,7 +700,7 @@
 
 #agent-confirm-text {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #E0DDF0;
     text-align: center;
     margin-bottom: 18px;
     line-height: 1.5;
@@ -598,14 +726,14 @@
 #agent-confirm-buttons button:active { transform: scale(0.96); }
 
 #agent-confirm-cancel {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.8);
+    background: #1E1E2E;
+    color: #AAA8C0;
 }
 
-#agent-confirm-cancel:hover { background: rgba(255, 255, 255, 0.12); }
+#agent-confirm-cancel:hover { background: #252535; }
 
 #agent-confirm-ok {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
+    background: #EF4444;
     color: white;
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
 }
@@ -614,7 +742,7 @@
     box-shadow: 0 3px 12px rgba(239, 68, 68, 0.4);
 }
 
-/* ===== 收起过渡：先淡出内容再缩小尺寸 ===== */
+/* ===== 收起过渡 ===== */
 #agent-area.collapsing {
     opacity: 0 !important;
     pointer-events: none;
@@ -624,6 +752,7 @@
 #agent-area.collapsing::before {
     display: none !important;
 }
+
 #island-capsule.privacy-active #agent-area {
     pointer-events: none;
 }
