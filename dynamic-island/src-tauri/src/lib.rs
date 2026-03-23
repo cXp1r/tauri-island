@@ -281,6 +281,7 @@ pub fn run() {
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
             window::set_agent_expanded, window::sync_window_height, window::set_minimized, window::show_context_menu,
+            window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             betterncm::install_betterncm_support,
             media::media_play_pause, media::media_next, media::media_prev,
@@ -288,7 +289,8 @@ pub fn run() {
             ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
-            get_location, get_weather, save_weather_city, settings::search_city
+            get_location, get_weather, save_weather_city, settings::search_city,
+            media::media_seek
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -329,6 +331,7 @@ pub fn run() {
             let ai_generating = Arc::new(AtomicBool::new(false));
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
+            let music_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
@@ -347,6 +350,7 @@ pub fn run() {
                 lyric_mode: lyric_mode.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
+                music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
                 screen_w, home_x, hwnd, scale,
@@ -703,8 +707,24 @@ pub fn run() {
 
                         let _ = win_media.emit("media-changed", serde_json::json!({
                             "title": media_info.title,
-                            "artist": media_info.artist
+                            "artist": media_info.artist,
+                            "thumbnail": null,
+                            "duration_ms": media_info.duration_ms
                         }));
+
+                        // 异步获取封面（独立线程，不阻塞轮询）
+                        {
+                            let win_thumb = win_media.clone();
+                            thread::Builder::new()
+                                .name("thumb-fetch".into())
+                                .spawn(move || {
+                                    if let Some(thumb) = media::get_smtc_thumbnail() {
+                                        let _ = win_thumb.emit("media-thumbnail", serde_json::json!({
+                                            "thumbnail": thumb
+                                        }));
+                                    }
+                                }).ok();
+                        }
 
                         // 异步获取歌词（不阻塞主循环）
                         if mode == "lyric" {
@@ -747,7 +767,9 @@ pub fn run() {
                                 let _ = win_media.emit("lyric-update", serde_json::json!({
                                     "text": "♪",
                                     "title": media_info.title,
-                                    "artist": media_info.artist
+                                    "artist": media_info.artist,
+                                    "position_ms": position_ms,
+                                    "duration_ms": media_info.duration_ms
                                 }));
                             }
                         } else if lyrics_not_found || (!fetch_pending && current_lyrics.is_empty()) {
@@ -756,7 +778,9 @@ pub fn run() {
                                 let _ = win_media.emit("lyric-update", serde_json::json!({
                                     "text": null,
                                     "title": media_info.title,
-                                    "artist": media_info.artist
+                                    "artist": media_info.artist,
+                                    "position_ms": position_ms,
+                                    "duration_ms": media_info.duration_ms
                                 }));
                             }
                         } else if let Some(line) = lyrics::get_current_lyric(&current_lyrics, position_ms) {
@@ -765,7 +789,9 @@ pub fn run() {
                                 let _ = win_media.emit("lyric-update", serde_json::json!({
                                     "text": line.text,
                                     "title": media_info.title,
-                                    "artist": media_info.artist
+                                    "artist": media_info.artist,
+                                    "position_ms": position_ms,
+                                    "duration_ms": media_info.duration_ms
                                 }));
                             }
                         } else if last_lyric_text != "..." {
@@ -773,7 +799,9 @@ pub fn run() {
                             let _ = win_media.emit("lyric-update", serde_json::json!({
                                 "text": "♪",
                                 "title": media_info.title,
-                                "artist": media_info.artist
+                                "artist": media_info.artist,
+                                "position_ms": position_ms,
+                                "duration_ms": media_info.duration_ms
                             }));
                         }
                     } else {
@@ -783,7 +811,9 @@ pub fn run() {
                             let _ = win_media.emit("lyric-update", serde_json::json!({
                                 "text": null,
                                 "title": media_info.title,
-                                "artist": media_info.artist
+                                "artist": media_info.artist,
+                                "position_ms": position_ms,
+                                "duration_ms": media_info.duration_ms
                             }));
                         }
                     }
@@ -844,6 +874,7 @@ pub struct IslandState {
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
     pub agent_expanded: Arc<AtomicBool>,
+    pub music_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,
     pub expand_anim_id: Arc<AtomicU64>,
     pub screen_w: f64,

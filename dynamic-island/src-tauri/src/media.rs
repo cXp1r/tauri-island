@@ -6,6 +6,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub(crate) struct MediaInfo {
     pub title: String,
     pub artist: String,
+    pub duration_ms: i64,
 }
 
 pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
@@ -179,6 +180,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
             return Some(MediaInfo {
                 title: track_title.trim().to_string(),
                 artist,
+                duration_ms: 0,
             });
         }
     }
@@ -186,6 +188,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
     Some(MediaInfo {
         title,
         artist: String::new(),
+        duration_ms: 0,
     })
 }
 
@@ -203,6 +206,38 @@ fn get_cloudmusic_fallback_info() -> Option<(MediaInfo, i64, bool)> {
 
     let media = parse_cloudmusic_window_title(&title)?;
     Some((media, 0, true))
+}
+
+/// 从 SMTC 媒体属性中提取封面图片并编码为 base64
+fn extract_thumbnail(
+    props: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
+) -> Option<String> {
+    use windows::Storage::Streams::DataReader;
+
+    let thumbnail_ref = props.Thumbnail().ok()?;
+    let stream = thumbnail_ref.OpenReadAsync().ok()?.get().ok()?;
+    let size = stream.Size().ok()? as u32;
+    if size == 0 || size > 10_000_000 {
+        // 无效或过大，跳过
+        return None;
+    }
+    let input_stream = stream.GetInputStreamAt(0).ok()?;
+    let reader = DataReader::CreateDataReader(&input_stream).ok()?;
+    reader.LoadAsync(size).ok()?.get().ok()?;
+    let mut buf = vec![0u8; size as usize];
+    reader.ReadBytes(&mut buf).ok()?;
+    let _ = reader.Close();
+    let _ = stream.Close();
+
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    // 尝试检测图片格式
+    let mime = if buf.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        "image/png"
+    } else {
+        "image/jpeg" // 大多数情况是 JPEG
+    };
+    Some(format!("data:{};base64,{}", mime, b64))
 }
 
 pub(crate) fn send_media_virtual_key(vk: u8) {
@@ -225,11 +260,16 @@ fn read_smtc_session_info(
         .map(|status| status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
         .unwrap_or(false);
 
-    let position_ms = session
-        .GetTimelineProperties()
-        .ok()
+    let timeline = session.GetTimelineProperties().ok();
+
+    let position_ms = timeline.as_ref()
         .and_then(|t| t.Position().ok())
         .map(|p| p.Duration / 10_000) // 100ns ticks -> ms
+        .unwrap_or(0);
+
+    let duration_ms = timeline.as_ref()
+        .and_then(|t| t.EndTime().ok())
+        .map(|p| p.Duration / 10_000)
         .unwrap_or(0);
 
     let (title, artist) = match session.TryGetMediaPropertiesAsync().ok().and_then(|op| op.get().ok()) {
@@ -241,7 +281,7 @@ fn read_smtc_session_info(
         None => (String::new(), String::new()),
     };
 
-    Some((MediaInfo { title, artist }, position_ms, is_playing))
+    Some((MediaInfo { title, artist, duration_ms }, position_ms, is_playing))
 }
 
 pub(crate) fn select_best_smtc_session(
@@ -358,6 +398,20 @@ pub fn media_prev() {
     }
 }
 
+#[tauri::command]
+pub fn media_seek(position_ms: i64) -> Result<(), String> {
+    let session = get_smtc_session().ok_or("没有活跃的媒体会话".to_string())?;
+    // 将 ms 转换为 100ns ticks (Windows TimeSpan)
+    let ticks = position_ms * 10_000;
+    let timespan = windows::Foundation::TimeSpan { Duration: ticks };
+    session
+        .TryChangePlaybackPositionAsync(timespan.Duration)
+        .map_err(|e| format!("Seek 失败: {}", e))?
+        .get()
+        .map_err(|e| format!("Seek 失败: {}", e))?;
+    Ok(())
+}
+
 pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
     let cloud_fallback = get_cloudmusic_fallback_info();
 
@@ -380,4 +434,11 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
     }
 
     cloud_fallback
+}
+
+/// 仅获取封面（歌曲切换时调用，避免每次轮询都读流）
+pub(crate) fn get_smtc_thumbnail() -> Option<String> {
+    let (session, _, _, _, _) = select_best_smtc_session()?;
+    let props = session.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
+    extract_thumbnail(&props)
 }

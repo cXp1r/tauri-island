@@ -30,6 +30,7 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 dirs = "5"
 regex = "1"
 url = "2"
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
@@ -41,6 +42,7 @@ windows = { version = "0.61", features = [
     "Win32_System_Memory",
     "Win32_System_Threading",
     "Win32_Networking_WinInet",
-    "Media_Control"
+    "Media_Control",
+    "Storage_Streams"
 ] }
 winreg = "0.52"

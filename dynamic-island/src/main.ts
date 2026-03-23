@@ -49,7 +49,11 @@ const lyricArea = document.getElementById("lyric-area") as HTMLDivElement;
 
 const lyricText = document.getElementById("lyric-text") as HTMLDivElement;
 const lyricMeta = document.getElementById("lyric-meta") as HTMLDivElement;
-const musicIndicator = document.getElementById("music-indicator") as HTMLDivElement;
+const vinylDisc = document.getElementById("vinyl-disc") as HTMLDivElement;
+const vinylCover = document.getElementById("vinyl-cover") as HTMLDivElement;
+const progressBar = document.getElementById("progress-bar") as HTMLDivElement;
+const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
+const progressThumb = document.getElementById("progress-thumb") as HTMLDivElement;
 
 const agentArea = document.getElementById("agent-area") as HTMLDivElement;
 const agentMessages = document.getElementById("agent-messages") as HTMLDivElement;
@@ -85,6 +89,8 @@ let lyricMode = "lyric"; // "off" | "info" | "lyric"
 let privacyPopupTimer: number | null = null;
 let privacyPulseCleanupTimer: number | null = null;
 let isMinimized = false;
+let currentDurationMs = 0; // 歌曲总时长
+let isSeeking = false; // 是否正在拖动进度条
 
 // AI Agent 相关状态
 let aiEnabled = false;
@@ -320,9 +326,9 @@ function updatePlayIcon() {
   iconPause.style.display = isPlaying ? "block" : "none";
 
   if (isPlaying) {
-    musicIndicator.classList.remove("paused");
+    vinylDisc.classList.remove("paused");
   } else {
-    musicIndicator.classList.add("paused");
+    vinylDisc.classList.add("paused");
   }
 }
 
@@ -584,7 +590,7 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
-listen<{ text: string | null; title: string; artist: string } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
@@ -602,7 +608,15 @@ listen<{ text: string | null; title: string; artist: string } | null>("lyric-upd
 
   const wasPlaying = isMusicPlaying;
   isMusicPlaying = true;
-  const { text, title, artist } = event.payload;
+  const { text, title, artist, position_ms, duration_ms } = event.payload;
+
+  // 更新进度条
+  if (!isSeeking && duration_ms && duration_ms > 0 && position_ms !== undefined) {
+    currentDurationMs = duration_ms;
+    const pct = Math.min(100, Math.max(0, (position_ms / duration_ms) * 100));
+    progressFill.style.width = `${pct}%`;
+    progressThumb.style.left = `${pct}%`;
+  }
 
   if (lyricMode === "info" || text === null) {
     lyricText.textContent = "";
@@ -630,17 +644,43 @@ listen<{ text: string | null; title: string; artist: string } | null>("lyric-upd
   updateSwitcherUI();
 });
 
-listen<{ title: string; artist: string }>("media-changed", (event) => {
+listen<{ title: string; artist: string; thumbnail?: string | null; duration_ms?: number }>("media-changed", (event) => {
   isMusicPlaying = true;
   lyricText.textContent = "♪";
   lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
   lyricMeta.style.fontSize = "";
   lyricMeta.style.color = "";
+
+  // 更新封面
+  if (event.payload.thumbnail) {
+    vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
+  } else {
+    vinylCover.style.backgroundImage = "";
+  }
+
+  // 更新时长
+  if (event.payload.duration_ms) {
+    currentDurationMs = event.payload.duration_ms;
+  } else {
+    currentDurationMs = 0;
+  }
+
+  // 重置进度条
+  progressFill.style.width = "0%";
+  progressThumb.style.left = "0%";
+
   updateSwitcherUI();
 });
 
 listen<{ title: string; artist: string }>("media-paused", () => {
   isMusicPlaying = true;
+});
+
+// 异步封面加载完成
+listen<{ thumbnail: string }>("media-thumbnail", (event) => {
+  if (event.payload.thumbnail) {
+    vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
+  }
 });
 
 function showNotice(msg: string) {
@@ -722,6 +762,39 @@ btnPlay.addEventListener("click", (e) => {
 btnNext.addEventListener("click", (e) => {
   e.stopPropagation();
   void invoke("media_next");
+});
+
+// ===== 进度条拖动（Seek）=====
+progressBar.addEventListener("mousedown", (e: MouseEvent) => {
+  if (currentDurationMs <= 0) return;
+  e.stopPropagation();
+  isSeeking = true;
+  progressBar.classList.add("seeking");
+  updateProgressFromMouse(e);
+});
+
+function updateProgressFromMouse(e: MouseEvent) {
+  const rect = progressBar.getBoundingClientRect();
+  const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  progressFill.style.width = `${pct * 100}%`;
+  progressThumb.style.left = `${pct * 100}%`;
+  return pct;
+}
+
+document.addEventListener("mousemove", (e: MouseEvent) => {
+  if (!isSeeking) return;
+  updateProgressFromMouse(e);
+});
+
+document.addEventListener("mouseup", (e: MouseEvent) => {
+  if (!isSeeking) return;
+  isSeeking = false;
+  progressBar.classList.remove("seeking");
+  const pct = updateProgressFromMouse(e);
+  const seekMs = Math.round(pct * currentDurationMs);
+  void invoke("media_seek", { positionMs: seekMs }).catch((err: unknown) => {
+    console.warn("Seek failed:", err);
+  });
 });
 
 let isDragging = false;
