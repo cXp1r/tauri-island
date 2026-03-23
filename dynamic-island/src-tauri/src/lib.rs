@@ -292,7 +292,8 @@ pub fn run() {
             get_location, get_weather, save_weather_city, settings::search_city,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
-            media::media_get_volume, media::media_set_volume
+            media::media_get_volume, media::media_set_volume,
+            settings::get_auto_start, settings::set_auto_start
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -340,6 +341,7 @@ pub fn run() {
             let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
             let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
             let url_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+            let auto_start = Arc::new(AtomicBool::new(settings.auto_start));
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -370,6 +372,7 @@ pub fn run() {
                 weather_city: Arc::new(Mutex::new(settings.weather_city.clone())),
                 weather_lat: Arc::new(Mutex::new(settings.weather_lat)),
                 weather_lon: Arc::new(Mutex::new(settings.weather_lon)),
+                auto_start: auto_start.clone(),
             });
 
             // --- 系统托盘 ---
@@ -919,6 +922,8 @@ pub struct IslandState {
     pub weather_city: Arc<Mutex<String>>,
     pub weather_lat: Arc<Mutex<f64>>,
     pub weather_lon: Arc<Mutex<f64>>,
+    // 开机自启
+    pub auto_start: Arc<AtomicBool>,
 }
 
 unsafe impl Send for IslandState {}

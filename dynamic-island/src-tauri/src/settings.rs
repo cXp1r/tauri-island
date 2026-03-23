@@ -7,6 +7,11 @@ use crate::IslandState;
 use crate::link_handler::LinkHandler;
 use crate::shared_http_client;
 
+#[cfg(windows)]
+use winreg::enums::*;
+#[cfg(windows)]
+use winreg::RegKey;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
     #[serde(default)]
@@ -35,6 +40,8 @@ pub(crate) struct SettingsData {
     pub weather_lat: f64,
     #[serde(default)]
     pub weather_lon: f64,
+    #[serde(default)]
+    pub auto_start: bool,
 }
 
 fn default_shortcut() -> String {
@@ -82,6 +89,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         weather_city: String::new(),
         weather_lat: 0.0,
         weather_lon: 0.0,
+        auto_start: false,
     }
 }
 
@@ -108,6 +116,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         weather_city: state.weather_city.lock().unwrap().clone(),
         weather_lat: *state.weather_lat.lock().unwrap(),
         weather_lon: *state.weather_lon.lock().unwrap(),
+        auto_start: state.auto_start.load(Ordering::Relaxed),
     }
 }
 
@@ -137,6 +146,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let weather_city = state.weather_city.lock().unwrap().clone();
     let weather_lat = *state.weather_lat.lock().unwrap();
     let weather_lon = *state.weather_lon.lock().unwrap();
+    let auto_start = state.auto_start.load(Ordering::Relaxed);
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
@@ -145,7 +155,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "agent_window_size": agent_window_size,
         "weather_city": weather_city,
         "weather_lat": weather_lat,
-        "weather_lon": weather_lon
+        "weather_lon": weather_lon,
+        "auto_start": auto_start
     })
 }
 
@@ -161,6 +172,7 @@ pub fn save_settings(
     weather_city: Option<String>,
     weather_lat: Option<f64>,
     weather_lon: Option<f64>,
+    auto_start: Option<bool>,
 ) {
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
@@ -217,6 +229,11 @@ pub fn save_settings(
     }
     if let Some(lon) = weather_lon {
         settings_data.weather_lon = lon;
+    }
+    if let Some(auto) = auto_start {
+        settings_data.auto_start = auto;
+        state.auto_start.store(auto, Ordering::Relaxed);
+        let _ = apply_auto_start(auto);
     }
     let _ = save_settings_to_file(&settings_data);
 }
@@ -291,4 +308,71 @@ pub fn search_city(query: String) -> Result<Vec<CityResult>, String> {
         .unwrap_or_default();
 
     Ok(results)
+}
+
+// ===== 开机自启 (Windows Registry) =====
+
+const AUTOSTART_REG_KEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+const AUTOSTART_REG_NAME: &str = "DynamicIsland";
+
+/// 读取注册表判断当前是否设置了自启
+#[tauri::command]
+pub fn get_auto_start() -> bool {
+    #[cfg(windows)]
+    {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if let Ok(run_key) = hkcu.open_subkey(AUTOSTART_REG_KEY) {
+            return run_key.get_value::<String, _>(AUTOSTART_REG_NAME).is_ok();
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// 设置或取消开机自启
+pub(crate) fn apply_auto_start(enabled: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let run_key = hkcu
+            .open_subkey_with_flags(AUTOSTART_REG_KEY, KEY_WRITE)
+            .map_err(|e| format!("打开注册表失败: {}", e))?;
+
+        if enabled {
+            let exe_path = std::env::current_exe()
+                .map_err(|e| format!("获取程序路径失败: {}", e))?
+                .to_string_lossy()
+                .to_string();
+            run_key
+                .set_value(AUTOSTART_REG_NAME, &exe_path)
+                .map_err(|e| format!("写入注册表失败: {}", e))?;
+        } else {
+            let _ = run_key.delete_value(AUTOSTART_REG_NAME);
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        Ok(())
+    }
+}
+
+/// Tauri command: 设置开机自启
+#[tauri::command]
+pub fn set_auto_start(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    apply_auto_start(enabled)?;
+    state.auto_start.store(enabled, Ordering::Relaxed);
+
+    let mut settings_data = build_settings_data(&state);
+    settings_data.auto_start = enabled;
+    save_settings_to_file(&settings_data)?;
+
+    Ok(())
 }

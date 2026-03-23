@@ -11,6 +11,7 @@ type SettingsResponse = {
   weather_city: string;
   weather_lat: number;
   weather_lon: number;
+  auto_start: boolean;
 };
 
 type AISettingsResponse = {
@@ -50,6 +51,7 @@ const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectEleme
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
+const autoStartToggle = document.getElementById("auto-start-toggle") as HTMLInputElement;
 
 const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInputElement;
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
@@ -81,6 +83,7 @@ async function loadSettings() {
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
+  autoStartToggle.checked = settings.auto_start || false;
 
   // 加载 AI 设置
   try {
@@ -175,6 +178,7 @@ saveBtn.addEventListener("click", async () => {
       lyricMode: lyricModeSelect.value,
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,
+      autoStart: autoStartToggle.checked,
     });
 
     // 保存 AI 设置
