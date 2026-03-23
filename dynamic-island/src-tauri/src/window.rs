@@ -137,7 +137,7 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
     state.is_dragging.store(false, Ordering::Relaxed);
 
     // Agent 展开态时不自动吸附回顶部
-    if state.agent_expanded.load(Ordering::Relaxed) {
+    if state.agent_expanded.load(Ordering::Relaxed) || state.music_expanded.load(Ordering::Relaxed) {
         return;
     }
 
@@ -229,6 +229,56 @@ pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, 
             thread::spawn(move || {
                 animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
                 // 缩小完成后吸附回顶部
+                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+        }
+    }
+}
+
+#[tauri::command]
+pub fn set_music_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
+    state.music_expanded.store(expanded, Ordering::Relaxed);
+    let screen_w = state.screen_w;
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    if expanded {
+        let target_w = width;
+        let target_h = height;
+        let target_x = (screen_w - target_w) / 2.0;
+
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, WIN_H_DEFAULT));
+            let target_y = from_y;
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
+        }
+    } else {
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((width, height));
+            let center_x = from_x + from_w / 2.0;
+            let target_x = center_x - WIN_W / 2.0;
+            let target_y = from_y;
+            let target_w = WIN_W;
+            let target_h = WIN_H_DEFAULT;
+
+            let home_x = (screen_w - WIN_W) / 2.0;
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
                 snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
             });
         } else {

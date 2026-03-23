@@ -55,6 +55,25 @@ const progressBar = document.getElementById("progress-bar") as HTMLDivElement;
 const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
 const progressThumb = document.getElementById("progress-thumb") as HTMLDivElement;
 
+// 音乐展开面板
+const musicPanelCoverImg = document.getElementById("music-panel-cover-img") as HTMLDivElement;
+const musicPanelSong = document.getElementById("music-panel-song") as HTMLDivElement;
+const musicPanelArtist = document.getElementById("music-panel-artist") as HTMLDivElement;
+const mpProgressBar = document.getElementById("mp-progress-bar") as HTMLDivElement;
+const mpProgressFill = document.getElementById("mp-progress-fill") as HTMLDivElement;
+const mpProgressThumb = document.getElementById("mp-progress-thumb") as HTMLDivElement;
+const mpTimeCurrent = document.getElementById("mp-time-current") as HTMLSpanElement;
+const mpTimeTotal = document.getElementById("mp-time-total") as HTMLSpanElement;
+const mpPrev = document.getElementById("mp-prev") as HTMLButtonElement;
+const mpPlay = document.getElementById("mp-play") as HTMLButtonElement;
+const mpNext = document.getElementById("mp-next") as HTMLButtonElement;
+const mpIconPlay = mpPlay.querySelector(".mp-icon-play") as SVGElement;
+const mpIconPause = mpPlay.querySelector(".mp-icon-pause") as SVGElement;
+const mpVolumeBar = document.getElementById("mp-volume-bar") as HTMLDivElement;
+const mpVolumeFill = document.getElementById("mp-volume-fill") as HTMLDivElement;
+const mpVolumeThumb = document.getElementById("mp-volume-thumb") as HTMLDivElement;
+const mpLyricText = document.getElementById("mp-lyric-text") as HTMLDivElement;
+
 const agentArea = document.getElementById("agent-area") as HTMLDivElement;
 const agentMessages = document.getElementById("agent-messages") as HTMLDivElement;
 const agentInput = document.getElementById("agent-input") as HTMLInputElement;
@@ -91,6 +110,11 @@ let privacyPulseCleanupTimer: number | null = null;
 let isMinimized = false;
 let currentDurationMs = 0; // 歌曲总时长
 let isSeeking = false; // 是否正在拖动进度条
+let isMpSeeking = false; // 面板进度条拖动
+let isMpVolSeeking = false; // 面板音量条拖动
+let musicClickTimer: number | null = null; // 音乐单击延时
+let currentSongTitle = "";
+let currentArtistName = "";
 
 // AI Agent 相关状态
 let aiEnabled = false;
@@ -275,6 +299,13 @@ function setView(mode: ViewMode, animated = true) {
     }, 380);
   }
 
+  // 如果从 lyric 展开态切走，收起
+  if (previous === "lyric" && mode !== "lyric" && capsule.classList.contains("music-expanded")) {
+    const sz = getCapsuleExpandedSize();
+    capsule.classList.remove("music-expanded");
+    void invoke("set_music_expanded", { expanded: false, width: sz.w, height: sz.h });
+  }
+
   if (animated) {
     animateViewSwitch(previous, mode);
   } else {
@@ -306,12 +337,12 @@ function updateCapsuleSize() {
 
   // 其他视图的展开态
   if (capsule.classList.contains("expanded")) {
-    capsule.classList.remove("lyric-collapsed", "agent-expanded");
+    capsule.classList.remove("lyric-collapsed", "agent-expanded", "music-expanded");
     return;
   }
 
   // 收起态
-  capsule.classList.remove("agent-expanded");
+  capsule.classList.remove("agent-expanded", "music-expanded");
 
   if (currentView === "lyric" && isMusicPlaying) {
     capsule.classList.add("lyric-collapsed");
@@ -320,16 +351,34 @@ function updateCapsuleSize() {
   }
 }
 
+/** 测量胶囊实际渲染尺寸（含 body padding），用于告诉后端窗口应该多大 */
+function getCapsuleExpandedSize(): { w: number; h: number } {
+  const rect = capsule.getBoundingClientRect();
+  const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+  return { w: Math.ceil(rect.width), h: Math.ceil(rect.height + bodyPad + 5) };
+}
+
 
 function updatePlayIcon() {
   iconPlay.style.display = isPlaying ? "none" : "block";
   iconPause.style.display = isPlaying ? "block" : "none";
+
+  // 面板播放图标同步
+  mpIconPlay.style.display = isPlaying ? "none" : "block";
+  mpIconPause.style.display = isPlaying ? "block" : "none";
 
   if (isPlaying) {
     vinylDisc.classList.remove("paused");
   } else {
     vinylDisc.classList.add("paused");
   }
+}
+
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function hidePrivacyPopup() {
@@ -590,7 +639,7 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
-listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
@@ -610,12 +659,20 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
   isMusicPlaying = true;
   const { text, title, artist, position_ms, duration_ms } = event.payload;
 
-  // 更新进度条
-  if (!isSeeking && duration_ms && duration_ms > 0 && position_ms !== undefined) {
+  // 更新进度条（收起态 + 面板）
+  if (duration_ms && duration_ms > 0 && position_ms !== undefined) {
     currentDurationMs = duration_ms;
     const pct = Math.min(100, Math.max(0, (position_ms / duration_ms) * 100));
-    progressFill.style.width = `${pct}%`;
-    progressThumb.style.left = `${pct}%`;
+    if (!isSeeking) {
+      progressFill.style.width = `${pct}%`;
+      progressThumb.style.left = `${pct}%`;
+    }
+    if (!isMpSeeking) {
+      mpProgressFill.style.width = `${pct}%`;
+      mpProgressThumb.style.left = `${pct}%`;
+      mpTimeCurrent.textContent = formatTime(position_ms);
+      mpTimeTotal.textContent = formatTime(duration_ms);
+    }
   }
 
   if (lyricMode === "info" || text === null) {
@@ -641,33 +698,84 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
     setView("lyric", true);
   }
 
+  // 同步歌词到展开面板（多行）— 使用固定槽位，平滑过渡
+  const nearby = event.payload.nearby_lyrics;
+  if (nearby && nearby.length > 0) {
+    const slots = mpLyricText.children;
+    // 首次从文本节点切换到槽位时，清除残留文本节点（如 "♪"）
+    if (slots.length === 0 && mpLyricText.childNodes.length > 0) {
+      mpLyricText.textContent = "";
+    }
+    // 确保槽位数量匹配
+    while (slots.length < nearby.length) {
+      const div = document.createElement("div");
+      div.className = "mp-lyric-line";
+      mpLyricText.appendChild(div);
+    }
+    while (slots.length > nearby.length) {
+      mpLyricText.removeChild(mpLyricText.lastChild!);
+    }
+    // 更新每个槽位的文字和样式
+    for (let i = 0; i < nearby.length; i++) {
+      const el = slots[i] as HTMLElement;
+      const line = nearby[i];
+      if (el.textContent !== line.text) {
+        // 文字变化时做微淡入
+        el.style.opacity = "0";
+        setTimeout(() => {
+          el.textContent = line.text;
+          el.style.opacity = "";
+        }, 120);
+      }
+      el.className = line.is_current ? "mp-lyric-line mp-lyric-current" : "mp-lyric-line";
+    }
+  } else if (text !== null && text !== undefined) {
+    mpLyricText.textContent = text;
+  } else {
+    mpLyricText.textContent = title;
+  }
+
   updateSwitcherUI();
 });
 
 listen<{ title: string; artist: string; thumbnail?: string | null; duration_ms?: number }>("media-changed", (event) => {
   isMusicPlaying = true;
+  currentSongTitle = event.payload.title;
+  currentArtistName = event.payload.artist;
   lyricText.textContent = "♪";
   lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
+  mpLyricText.textContent = "♪";
   lyricMeta.style.fontSize = "";
   lyricMeta.style.color = "";
+
+  // 同步面板信息
+  musicPanelSong.textContent = event.payload.title;
+  musicPanelArtist.textContent = event.payload.artist;
 
   // 更新封面
   if (event.payload.thumbnail) {
     vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
+    musicPanelCoverImg.style.backgroundImage = `url(${event.payload.thumbnail})`;
   } else {
     vinylCover.style.backgroundImage = "";
+    musicPanelCoverImg.style.backgroundImage = "";
   }
 
   // 更新时长
   if (event.payload.duration_ms) {
     currentDurationMs = event.payload.duration_ms;
+    mpTimeTotal.textContent = formatTime(event.payload.duration_ms);
   } else {
     currentDurationMs = 0;
+    mpTimeTotal.textContent = "0:00";
   }
 
   // 重置进度条
   progressFill.style.width = "0%";
   progressThumb.style.left = "0%";
+  mpProgressFill.style.width = "0%";
+  mpProgressThumb.style.left = "0%";
+  mpTimeCurrent.textContent = "0:00";
 
   updateSwitcherUI();
 });
@@ -680,6 +788,7 @@ listen<{ title: string; artist: string }>("media-paused", () => {
 listen<{ thumbnail: string }>("media-thumbnail", (event) => {
   if (event.payload.thumbnail) {
     vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
+    musicPanelCoverImg.style.backgroundImage = `url(${event.payload.thumbnail})`;
   }
 });
 
@@ -764,6 +873,56 @@ btnNext.addEventListener("click", (e) => {
   void invoke("media_next");
 });
 
+// ===== 面板音量滑块 =====
+// 展开面板时获取当前音量
+function fetchAndUpdateVolume() {
+  invoke<number>("media_get_volume").then((vol) => {
+    const pct = Math.min(100, Math.max(0, vol * 100));
+    mpVolumeFill.style.width = `${pct}%`;
+    mpVolumeThumb.style.left = `${pct}%`;
+  }).catch(() => {});
+}
+
+mpVolumeBar.addEventListener("mousedown", (e: MouseEvent) => {
+  e.stopPropagation();
+  isMpVolSeeking = true;
+  mpVolumeBar.classList.add("seeking");
+  const pct = updateMpVolumeFromMouse(e);
+  void invoke("media_set_volume", { volume: pct }).catch(() => {});
+});
+
+let volThrottleTimer: number | null = null;
+
+function updateMpVolumeFromMouse(e: MouseEvent) {
+  const rect = mpVolumeBar.getBoundingClientRect();
+  const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  mpVolumeFill.style.width = `${pct * 100}%`;
+  mpVolumeThumb.style.left = `${pct * 100}%`;
+  return pct;
+}
+
+document.addEventListener("mousemove", (e: MouseEvent) => {
+  if (!isMpVolSeeking) return;
+  const pct = updateMpVolumeFromMouse(e);
+  // 节流：拖动时每50ms更新一次音量
+  if (!volThrottleTimer) {
+    volThrottleTimer = window.setTimeout(() => {
+      volThrottleTimer = null;
+    }, 50);
+    void invoke("media_set_volume", { volume: pct }).catch(() => {});
+  }
+});
+
+document.addEventListener("mouseup", (e: MouseEvent) => {
+  if (!isMpVolSeeking) return;
+  isMpVolSeeking = false;
+  mpVolumeBar.classList.remove("seeking");
+  const pct = updateMpVolumeFromMouse(e);
+  void invoke("media_set_volume", { volume: pct }).catch((err: unknown) => {
+    console.warn("Set volume failed:", err);
+  });
+});
+
 // ===== 进度条拖动（Seek）=====
 progressBar.addEventListener("mousedown", (e: MouseEvent) => {
   if (currentDurationMs <= 0) return;
@@ -796,6 +955,56 @@ document.addEventListener("mouseup", (e: MouseEvent) => {
     console.warn("Seek failed:", err);
   });
 });
+
+// ===== 面板播放控制 =====
+mpPrev.addEventListener("click", (e) => {
+  e.stopPropagation();
+  void invoke("media_prev");
+});
+mpPlay.addEventListener("click", (e) => {
+  e.stopPropagation();
+  void invoke("media_play_pause");
+});
+mpNext.addEventListener("click", (e) => {
+  e.stopPropagation();
+  void invoke("media_next");
+});
+
+// ===== 面板进度条拖动（Seek）=====
+mpProgressBar.addEventListener("mousedown", (e: MouseEvent) => {
+  if (currentDurationMs <= 0) return;
+  e.stopPropagation();
+  isMpSeeking = true;
+  mpProgressBar.classList.add("seeking");
+  updateMpProgressFromMouse(e);
+});
+
+function updateMpProgressFromMouse(e: MouseEvent) {
+  const rect = mpProgressBar.getBoundingClientRect();
+  const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  mpProgressFill.style.width = `${pct * 100}%`;
+  mpProgressThumb.style.left = `${pct * 100}%`;
+  mpTimeCurrent.textContent = formatTime(pct * currentDurationMs);
+  return pct;
+}
+
+document.addEventListener("mousemove", (e: MouseEvent) => {
+  if (!isMpSeeking) return;
+  updateMpProgressFromMouse(e);
+});
+
+document.addEventListener("mouseup", (e: MouseEvent) => {
+  if (!isMpSeeking) return;
+  isMpSeeking = false;
+  mpProgressBar.classList.remove("seeking");
+  const pct = updateMpProgressFromMouse(e);
+  const seekMs = Math.round(pct * currentDurationMs);
+  void invoke("media_seek", { positionMs: seekMs }).catch((err: unknown) => {
+    console.warn("Seek failed:", err);
+  });
+});
+
+
 
 let isDragging = false;
 let dragStarted = false;
@@ -832,7 +1041,7 @@ capsule.addEventListener("contextmenu", (e: MouseEvent) => {
   e.preventDefault();
 
   // Agent 展开态时不显示菜单
-  if (capsule.classList.contains("agent-expanded")) return;
+  if (capsule.classList.contains("agent-expanded") || capsule.classList.contains("music-expanded")) return;
 
   // 隐私弹窗显示时不显示菜单
   if (capsule.classList.contains("privacy-active")) return;
@@ -855,6 +1064,53 @@ capsule.addEventListener("click", (e: MouseEvent) => {
   // 如果刚刚发生了拖动，不触发点击
   if (dragStarted) {
     dragStarted = false;
+    return;
+  }
+
+  // 音乐视图：单击展开/收起
+  if (currentView === "lyric") {
+    // 展开态：点击头部收起，排除交互元素
+    if (capsule.classList.contains("music-expanded")) {
+      if (!target.closest("#music-panel-header")) {
+        return;
+      }
+    } else {
+      // 收起态：排除播放控制
+      if (target.closest(".media-btn") || target.closest(".progress-bar") || target.closest(".vol-btn")) {
+        return;
+      }
+    }
+
+    e.stopPropagation();
+
+    if (musicClickTimer) {
+      clearTimeout(musicClickTimer);
+      musicClickTimer = null;
+      return;
+    }
+
+    musicClickTimer = window.setTimeout(() => {
+      musicClickTimer = null;
+      const willExpand = !capsule.classList.contains("music-expanded");
+      if (willExpand) {
+        skipResizeSync = true;
+        capsule.classList.add("music-expanded");
+        // 同步面板内容
+        musicPanelSong.textContent = currentSongTitle || "";
+        musicPanelArtist.textContent = currentArtistName || "";
+        fetchAndUpdateVolume();
+        // 直接传入 CSS 中定义的目标尺寸，不依赖过渡中间帧测量
+        const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+        void invoke("set_music_expanded", { expanded: true, width: 380, height: 420 + bodyPad + 5 });
+        window.setTimeout(() => { skipResizeSync = false; }, 400);
+      } else {
+        const sz = getCapsuleExpandedSize();
+        skipResizeSync = true;
+        capsule.classList.remove("music-expanded");
+        void invoke("set_music_expanded", { expanded: false, width: sz.w, height: sz.h });
+        window.setTimeout(() => { skipResizeSync = false; }, 500);
+      }
+    }, 250);
     return;
   }
 

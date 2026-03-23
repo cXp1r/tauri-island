@@ -473,7 +473,7 @@ html, body {
     transition: max-width 0.01s ease, opacity 0.01s ease;
 }
 #island-capsule.expanded .media-controls {
-    max-width: 120px;
+    max-width: 200px;
     opacity: 1;
     pointer-events: auto;
     transition: max-width 0.25s cubic-bezier(0.25, 1, 0.5, 1) 0.1s,
@@ -667,4 +667,348 @@ body.minimized {
 body.minimized #collapsed-indicator {
     display: block;
 }
+
+/* ============================================================
+   音乐展开面板
+   ============================================================ */
+
+/* 展开态胶囊尺寸 */
+#island-capsule.music-expanded {
+    width: 380px;
+    height: 420px;
+    border-radius: 24px;
+}
+
+/* 展开时 lyric-area 变为纵向布局 */
+#island-capsule.music-expanded #lyric-area {
+    flex-direction: column;
+    padding: 0;
+    background: #0C0C14;
+    border-radius: inherit;
+}
+
+/* 展开时隐藏收起态元素 */
+#island-capsule.music-expanded .vinyl-disc,
+#island-capsule.music-expanded #lyric-text-wrap,
+#island-capsule.music-expanded .media-controls {
+    display: none !important;
+}
+
+/* 展开时显示音乐面板 */
+#music-panel {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 10px 20px 12px;
+    box-sizing: border-box;
+    gap: 4px;
+}
+#island-capsule.music-expanded #music-panel {
+    display: flex;
+    animation: mp-content-in 0.22s cubic-bezier(0.25, 1, 0.5, 1) 0.2s both;
+}
+
+@keyframes mp-content-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- 头部 --- */
+#music-panel-header {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+}
+
+#music-panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* --- 封面 + 信息 --- */
+#music-panel-body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+#music-panel-cover {
+    width: 90px;
+    height: 90px;
+    border-radius: 14px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #1a1a2e;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+#music-panel-cover-img {
+    width: 100%;
+    height: 100%;
+    background: #222;
+    background-size: cover;
+    background-position: center;
+    transition: background-image 0.3s ease;
+}
+
+#music-panel-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#music-panel-song {
+    font-size: 15px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.95);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+#music-panel-artist {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- 进度条 --- */
+#music-panel-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.mp-progress-bar {
+    width: 100%;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+}
+.mp-progress-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1.5px;
+}
+.mp-progress-fill {
+    position: absolute;
+    left: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.55);
+    border-radius: 1.5px;
+    width: 0%;
+    transition: width 0.15s linear;
+}
+.mp-progress-thumb {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    left: 0%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+    z-index: 1;
+    pointer-events: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.mp-progress-bar:hover .mp-progress-thumb {
+    opacity: 1;
+}
+.mp-progress-bar:hover .mp-progress-fill {
+    background: #1ed760;
+}
+.mp-progress-bar.seeking .mp-progress-thumb {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.2);
+}
+.mp-progress-bar.seeking .mp-progress-fill {
+    background: #1ed760;
+    transition: none;
+}
+
+.mp-time {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+    font-variant-numeric: tabular-nums;
+    padding: 0 2px;
+}
+
+/* --- 播放控制 --- */
+#music-panel-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-shrink: 0;
+    padding: 2px 0;
+}
+
+.mp-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.1s ease, background 0.15s ease;
+    fill: currentColor;
+}
+.mp-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+}
+.mp-btn:active {
+    transform: scale(0.9);
+}
+.mp-btn svg {
+    fill: currentColor;
+}
+
+.mp-play-btn {
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.1);
+}
+.mp-play-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- 音量滑块 --- */
+#music-panel-volume {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 0 2px;
+}
+
+.mp-volume-bar {
+    flex: 1;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+}
+.mp-volume-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1.5px;
+}
+.mp-volume-fill {
+    position: absolute;
+    left: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.55);
+    border-radius: 1.5px;
+    width: 50%;
+    transition: width 0.1s linear;
+}
+.mp-volume-thumb {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+    z-index: 1;
+    pointer-events: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.mp-volume-bar:hover .mp-volume-thumb {
+    opacity: 1;
+}
+.mp-volume-bar:hover .mp-volume-fill {
+    background: #1ed760;
+}
+.mp-volume-bar.seeking .mp-volume-thumb {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.2);
+}
+.mp-volume-bar.seeking .mp-volume-fill {
+    background: #1ed760;
+    transition: none;
+}
+
+/* --- 歌词显示区域 --- */
+#music-panel-lyrics {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+#music-panel-lyrics::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/WebView */
+}
+
+#mp-lyric-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    text-align: center;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.mp-lyric-line {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.3);
+    transition: color 0.35s ease, font-size 0.35s ease,
+                opacity 0.15s ease, transform 0.35s ease, font-weight 0.35s ease;
+    line-height: 1.5;
+    transform: scale(1);
+}
+
+.mp-lyric-current {
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.95);
+    transform: scale(1.05);
+}
+
 

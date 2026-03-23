@@ -796,38 +796,24 @@
         <p>设置</p>
       </div>
       <nav class="nav-list">
-        <div class="nav-item active" data-page="basic">基础能力</div>
-        <div class="nav-item" data-page="link-handlers">链接处理</div>
-        <div class="nav-item" data-page="plugins">插件管理</div>
+        <div class="nav-item active" data-page="general">常规设置</div>
+        <div class="nav-item" data-page="music">音乐</div>
+        <div class="nav-item" data-page="weather">天气</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
+        <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
+        <div class="nav-item" data-page="plugins">插件管理</div>
       </nav>
     </aside>
 
     <div class="content">
       <header class="content-header">
-        <h2 id="page-title">基础能力</h2>
-        <p id="page-desc">配置快捷键、剪贴板识别和歌词显示。</p>
+        <h2 id="page-title">常规设置</h2>
+        <p id="page-desc">配置快捷键和外观选项。</p>
       </header>
 
       <div class="content-body">
-        <!-- 基础能力页面 -->
-        <div class="page active" id="page-basic">
-          <div class="setting-group">
-            <div class="setting-group-title">剪贴板</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>监听剪贴板链接</h3>
-                <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="clipboard-toggle" checked />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-          </div>
-
+        <!-- 常规设置页面 -->
+        <div class="page active" id="page-general">
           <div class="setting-group">
             <div class="setting-group-title">快捷键</div>
             <div class="setting-item">
@@ -837,23 +823,6 @@
               </div>
               <div class="setting-control">
                 <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">音乐</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>歌词显示模式</h3>
-                <p>控制收起状态下的音乐展示策略。</p>
-              </div>
-              <div class="setting-control">
-                <select id="lyric-mode" class="select">
-                  <option value="lyric">显示歌词</option>
-                  <option value="info">仅歌曲信息</option>
-                  <option value="off">关闭</option>
-                </select>
               </div>
             </div>
           </div>
@@ -870,9 +839,32 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <!-- 音乐页面 -->
+        <div class="page" id="page-music">
           <div class="setting-group">
-            <div class="setting-group-title">天气</div>
+            <div class="setting-group-title">歌词</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>歌词显示模式</h3>
+                <p>控制收起状态下的音乐展示策略。</p>
+              </div>
+              <div class="setting-control">
+                <select id="lyric-mode" class="select">
+                  <option value="lyric">显示歌词</option>
+                  <option value="info">仅歌曲信息</option>
+                  <option value="off">关闭</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 天气页面 -->
+        <div class="page" id="page-weather">
+          <div class="setting-group">
+            <div class="setting-group-title">天气位置</div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
               <div class="setting-label">
                 <h3>天气位置</h3>
@@ -891,8 +883,24 @@
           </div>
         </div>
 
-        <!-- 链接处理页面 -->
-        <div class="page" id="page-link-handlers">
+        <!-- 剪贴板与链接页面 -->
+        <div class="page" id="page-clipboard-links">
+          <div class="setting-group">
+            <div class="setting-group-title">剪贴板</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>监听剪贴板链接</h3>
+                <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="clipboard-toggle" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="setting-group">
             <div class="setting-group-title">链接处理器</div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
@@ -907,6 +915,7 @@
             </div>
           </div>
         </div>
+
 
         <!-- 插件管理页面 -->
         <div class="page" id="page-plugins">
@@ -1053,21 +1062,29 @@
     const pageDesc = document.getElementById('page-desc');
 
     const pageInfo = {
-      basic: {
-        title: '基础能力',
-        desc: '配置快捷键、剪贴板识别和歌词显示。'
+      general: {
+        title: '常规设置',
+        desc: '配置快捷键和外观选项。'
       },
-      'link-handlers': {
-        title: '链接处理',
-        desc: '配置特殊链接的处理器，如夸克网盘。'
+      music: {
+        title: '音乐',
+        desc: '配置音乐歌词显示策略。'
       },
-      plugins: {
-        title: '插件管理',
-        desc: '管理 InfLink 和 PluginMarket 相关设置。'
+      weather: {
+        title: '天气',
+        desc: '配置天气显示位置。'
       },
       ai: {
         title: 'AI Agent',
         desc: '配置 OpenAI 兼容的 API 和模型参数。'
+      },
+      'clipboard-links': {
+        title: '剪贴板与链接',
+        desc: '配置剪贴板监听和链接处理器。'
+      },
+      plugins: {
+        title: '插件管理',
+        desc: '管理 InfLink 和 PluginMarket 相关设置。'
       }
     };
 

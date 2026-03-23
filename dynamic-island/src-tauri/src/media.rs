@@ -399,6 +399,18 @@ pub fn media_prev() {
 }
 
 #[tauri::command]
+pub fn media_volume_up() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_VOLUME_UP;
+    send_media_virtual_key(VK_VOLUME_UP.0 as u8);
+}
+
+#[tauri::command]
+pub fn media_volume_down() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_VOLUME_DOWN;
+    send_media_virtual_key(VK_VOLUME_DOWN.0 as u8);
+}
+
+#[tauri::command]
 pub fn media_seek(position_ms: i64) -> Result<(), String> {
     let session = get_smtc_session().ok_or("没有活跃的媒体会话".to_string())?;
     // 将 ms 转换为 100ns ticks (Windows TimeSpan)
@@ -419,15 +431,26 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
         let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
         let is_preferred = is_preferred_music_app(&app_id);
 
-        // SMTC 明确有效：直接使用
-        if has_meta && is_playing && is_preferred {
+        // SMTC 有元数据且来自首选音乐应用：信任 SMTC 的播放状态
+        if has_meta && is_preferred {
             return Some((media, position_ms, is_playing));
         }
 
-        // SMTC 不可靠时，优先用网易云窗口标题回退
-        if (!has_meta || !is_playing || !is_preferred) && cloud_fallback.is_some() {
-            let (fallback_media, fallback_pos, fallback_playing) = cloud_fallback.unwrap();
-            return Some((fallback_media, fallback_pos, fallback_playing));
+        // SMTC 缺少元数据，但来自首选应用：用网易云窗口标题补充元数据，但保留 SMTC 的播放状态
+        if !has_meta && is_preferred {
+            if let Some((fallback_media, _, _)) = cloud_fallback {
+                return Some((fallback_media, position_ms, is_playing));
+            }
+        }
+
+        // SMTC 有元数据但非首选应用：使用 SMTC 数据
+        if has_meta {
+            return Some((media, position_ms, is_playing));
+        }
+
+        // SMTC 完全没有有用数据：回退到网易云窗口标题
+        if let Some(fb) = cloud_fallback {
+            return Some(fb);
         }
 
         return Some((media, position_ms, is_playing));
@@ -442,3 +465,77 @@ pub(crate) fn get_smtc_thumbnail() -> Option<String> {
     let props = session.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
     extract_thumbnail(&props)
 }
+
+/// 获取系统默认音频输出设备的音量 (0.0 ~ 1.0)
+fn get_system_volume_internal() -> Result<f32, String> {
+    use windows::Win32::Media::Audio::{
+        eRender, eConsole,
+        IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoCreateInstance,
+        CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|e| format!("CoCreateInstance failed: {}", e))?;
+        let device = enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| format!("GetDefaultAudioEndpoint failed: {}", e))?;
+        let volume: IAudioEndpointVolume = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("Activate IAudioEndpointVolume failed: {}", e))?;
+        let level = volume
+            .GetMasterVolumeLevelScalar()
+            .map_err(|e| format!("GetMasterVolumeLevelScalar failed: {}", e))?;
+        Ok(level)
+    }
+}
+
+/// 设置系统默认音频输出设备的音量 (0.0 ~ 1.0)
+fn set_system_volume_internal(vol: f32) -> Result<(), String> {
+    use windows::Win32::Media::Audio::{
+        eRender, eConsole,
+        IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoCreateInstance,
+        CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+    use windows::core::GUID;
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|e| format!("CoCreateInstance failed: {}", e))?;
+        let device = enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| format!("GetDefaultAudioEndpoint failed: {}", e))?;
+        let volume: IAudioEndpointVolume = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("Activate IAudioEndpointVolume failed: {}", e))?;
+        let clamped = vol.clamp(0.0, 1.0);
+        volume
+            .SetMasterVolumeLevelScalar(clamped, &GUID::zeroed())
+            .map_err(|e| format!("SetMasterVolumeLevelScalar failed: {}", e))?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn media_get_volume() -> Result<f32, String> {
+    get_system_volume_internal()
+}
+
+#[tauri::command]
+pub fn media_set_volume(volume: f32) -> Result<(), String> {
+    set_system_volume_internal(volume)
+}
+

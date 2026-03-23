@@ -290,7 +290,9 @@ pub fn run() {
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
             get_location, get_weather, save_weather_city, settings::search_city,
-            media::media_seek
+            media::media_seek,
+            media::media_volume_up, media::media_volume_down,
+            media::media_get_volume, media::media_set_volume
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -424,6 +426,7 @@ pub fn run() {
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
             let agent_expanded_m = agent_expanded.clone();
+            let music_expanded_m = music_expanded.clone();
             let agent_window_size_m = agent_window_size.clone();
             let expand_anim_id_m = expand_anim_id.clone();
             let is_minimized_m = is_minimized.clone();
@@ -444,10 +447,20 @@ pub fn run() {
                         // 根据当前状态确定胶囊宽度
                         let expanded = exp_m.load(Ordering::Relaxed);
                         let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
+                        let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
                         let (cw, ch, cur_win_w) = if is_minimized_m.load(Ordering::Relaxed) {
                             (MINIMIZED_W, MINIMIZED_H, MINIMIZED_W)
+                        } else if music_exp && view == "lyric" {
+                            // 音乐面板展开态：使用实际窗口尺寸
+                            if let Some(r) = window::get_window_rect(hwnd) {
+                                let w = (r.right - r.left) as f64 / scale;
+                                let h = (r.bottom - r.top) as f64 / scale;
+                                (w, h, w)
+                            } else {
+                                (380.0, 360.0, 380.0)
+                            }
                         } else if agent_exp && view == "agent" {
                             let size_setting = agent_window_size_m.lock().unwrap().clone();
                             let (aw, ah) = window::get_agent_window_size(&size_setting);
@@ -479,7 +492,7 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        if !agent_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                        if !agent_exp && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -786,12 +799,17 @@ pub fn run() {
                         } else if let Some(line) = lyrics::get_current_lyric(&current_lyrics, position_ms) {
                             if line.text != last_lyric_text {
                                 last_lyric_text = line.text.clone();
+                                let nearby = lyrics::get_nearby_lyrics(&current_lyrics, position_ms);
+                                let nearby_json: Vec<serde_json::Value> = nearby.iter().map(|(text, is_current)| {
+                                    serde_json::json!({"text": text, "is_current": is_current})
+                                }).collect();
                                 let _ = win_media.emit("lyric-update", serde_json::json!({
                                     "text": line.text,
                                     "title": media_info.title,
                                     "artist": media_info.artist,
                                     "position_ms": position_ms,
-                                    "duration_ms": media_info.duration_ms
+                                    "duration_ms": media_info.duration_ms,
+                                    "nearby_lyrics": nearby_json
                                 }));
                             }
                         } else if last_lyric_text != "..." {

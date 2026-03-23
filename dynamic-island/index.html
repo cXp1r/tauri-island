@@ -29,7 +29,7 @@
         <div id="url-list" class="overlay-popup"></div>
 
         <div id="lyric-area" class="content-wrapper">
-            <!-- 唱片封面 -->
+            <!-- 收起态：唱片 + 歌词 + 控制按钮 -->
             <div class="vinyl-disc" id="vinyl-disc">
                 <div class="vinyl-grooves"></div>
                 <div class="vinyl-cover" id="vinyl-cover"></div>
@@ -55,6 +55,55 @@
                 <button class="media-btn" id="btn-next" title="下一曲">
                     <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
                 </button>
+            </div>
+
+            <!-- 展开态：音乐面板 -->
+            <div id="music-panel">
+                <div id="music-panel-header">
+                    <span id="music-panel-title">正在播放</span>
+                </div>
+                <div id="music-panel-body">
+                    <div id="music-panel-cover">
+                        <div id="music-panel-cover-img"></div>
+                    </div>
+                    <div id="music-panel-info">
+                        <div id="music-panel-song"></div>
+                        <div id="music-panel-artist"></div>
+                    </div>
+                </div>
+                <div id="music-panel-lyrics">
+                    <div id="mp-lyric-text">♪</div>
+                </div>
+                <div id="music-panel-progress">
+                    <div class="mp-progress-bar" id="mp-progress-bar">
+                        <div class="mp-progress-fill" id="mp-progress-fill"></div>
+                        <div class="mp-progress-thumb" id="mp-progress-thumb"></div>
+                    </div>
+                    <div class="mp-time">
+                        <span id="mp-time-current">0:00</span>
+                        <span id="mp-time-total">0:00</span>
+                    </div>
+                </div>
+                <div id="music-panel-controls">
+                    <button class="mp-btn" id="mp-prev" title="上一曲">
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                    <button class="mp-btn mp-play-btn" id="mp-play" title="播放/暂停">
+                        <svg class="mp-icon-play" width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        <svg class="mp-icon-pause" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+                    </button>
+                    <button class="mp-btn" id="mp-next" title="下一曲">
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
+                    </button>
+                </div>
+                <div id="music-panel-volume">
+                    <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z" fill="rgba(255,255,255,0.35)"/></svg>
+                    <div class="mp-volume-bar" id="mp-volume-bar">
+                        <div class="mp-volume-fill" id="mp-volume-fill"></div>
+                        <div class="mp-volume-thumb" id="mp-volume-thumb"></div>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05A4.48 4.48 0 0016.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="rgba(255,255,255,0.35)"/></svg>
+                </div>
             </div>
         </div>
 

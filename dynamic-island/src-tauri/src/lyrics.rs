@@ -202,3 +202,29 @@ pub(crate) fn get_current_lyric(lyrics: &[LyricLine], position_ms: i64) -> Optio
     }
     result
 }
+
+/// 获取当前播放位置周围的歌词行（前2行、当前行、后2行）
+pub(crate) fn get_nearby_lyrics(lyrics: &[LyricLine], position_ms: i64) -> Vec<(String, bool)> {
+    if lyrics.is_empty() { return Vec::new(); }
+    // 找到当前行索引
+    let mut current_idx: Option<usize> = None;
+    for (i, line) in lyrics.iter().enumerate() {
+        if line.time_ms <= position_ms {
+            current_idx = Some(i);
+        } else {
+            break;
+        }
+    }
+    let current_idx = match current_idx {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let start = current_idx.saturating_sub(2);
+    let end = (current_idx + 3).min(lyrics.len());
+    let mut result = Vec::new();
+    for i in start..end {
+        result.push((lyrics[i].text.clone(), i == current_idx));
+    }
+    result
+}
+
