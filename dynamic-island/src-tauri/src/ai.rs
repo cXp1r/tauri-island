@@ -46,17 +46,24 @@ pub fn ai_save_settings(
     model: String,
 ) -> Result<(), String> {
     *state.ai_api_url.lock().unwrap() = api_url.clone();
-    *state.ai_api_key.lock().unwrap() = api_key.clone();
     *state.ai_model.lock().unwrap() = model.clone();
 
+    // 如果前端传回的是掩码 key（包含 "..."），不覆盖真实 key
+    let real_key = if api_key.contains("...") || api_key == "****" {
+        state.ai_api_key.lock().unwrap().clone()
+    } else {
+        *state.ai_api_key.lock().unwrap() = api_key.clone();
+        api_key.clone()
+    };
+
     // 检查是否已配置
-    let enabled = !api_url.is_empty() && !api_key.is_empty() && !model.is_empty();
+    let enabled = !api_url.is_empty() && !real_key.is_empty() && !model.is_empty();
     state.ai_enabled.store(enabled, Ordering::Relaxed);
 
     // 持久化到文件
     let mut settings_data = build_settings_data(&state);
     settings_data.ai_api_url = api_url;
-    settings_data.ai_api_key = api_key;
+    settings_data.ai_api_key = real_key;
     settings_data.ai_model = model;
 
     save_settings_to_file(&settings_data)?;
@@ -85,112 +92,99 @@ fn is_reasoning_model_by_name(model: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn ai_detect_model_type(state: tauri::State<'_, IslandState>) -> Result<serde_json::Value, String> {
+pub fn ai_detect_model_type(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, IslandState>,
+) -> Result<(), String> {
     let api_url = state.ai_api_url.lock().unwrap().clone();
     let api_key = state.ai_api_key.lock().unwrap().clone();
     let model = state.ai_model.lock().unwrap().clone();
+    let is_reasoning_model = state.is_reasoning_model.clone();
 
     if api_url.is_empty() || api_key.is_empty() || model.is_empty() {
         return Err("AI 配置不完整".to_string());
     }
 
-    // 先通过模型名称启发式检测
-    let name_detected = is_reasoning_model_by_name(&model);
+    // 在新线程中执行检测，不阻塞 command
+    thread::spawn(move || {
+        let name_detected = is_reasoning_model_by_name(&model);
 
-    // 构建测试请求
-    let request_body = serde_json::json!({
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Hi"
+        let request_body = serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stream": false,
+            "max_tokens": 10
+        });
+
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+        let url = if api_url.ends_with("/chat/completions") {
+            api_url.clone()
+        } else if api_url.ends_with("/v1") || api_url.ends_with("/v1/") {
+            let base = api_url.trim_end_matches('/');
+            format!("{}/chat/completions", base)
+        } else if api_url.ends_with('/') {
+            format!("{}v1/chat/completions", api_url)
+        } else {
+            format!("{}/v1/chat/completions", api_url)
+        };
+
+        println!("[AI Detect] URL: {}, Model: {}", url, model);
+
+        let is_reasoning = match client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+        {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    name_detected
+                } else {
+                    let response_json: serde_json::Value = response.json().unwrap_or(serde_json::Value::Null);
+                    let api_detected = response_json
+                        .get("choices")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("message"))
+                        .map(|m| {
+                            let has_reasoning = m.get("reasoning_content")
+                                .map(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(true))
+                                .unwrap_or(false);
+                            let has_thinking = m.get("thinking")
+                                .map(|v| !v.is_null())
+                                .unwrap_or(false);
+                            has_reasoning || has_thinking
+                        })
+                        .unwrap_or(false);
+                    api_detected || name_detected
+                }
             }
-        ],
-        "stream": false,
-        "max_tokens": 10
+            Err(_) => name_detected,
+        };
+
+        is_reasoning_model.store(is_reasoning, Ordering::Relaxed);
+        println!("[AI Detect] Final result: is_reasoning={}", is_reasoning);
+
+        // 通过事件通知前端（settings 窗口）
+        if let Some(win) = app.get_webview_window("settings") {
+            let _ = win.emit("ai-model-type-detected", serde_json::json!({
+                "is_reasoning_model": is_reasoning
+            }));
+        }
+
+        // 持久化（在线程内完成）
+        // 注意：无法在线程中访问 tauri::State，所以使用 settings 模块的直接 IO
+        let mut settings_data = crate::settings::load_settings_from_file();
+        settings_data.is_reasoning_model = is_reasoning;
+        let _ = crate::settings::save_settings_to_file(&settings_data);
     });
 
-    // 使用独立客户端，超时 60 秒（思考模型响应较慢）
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-
-    let url = if api_url.ends_with("/chat/completions") {
-        api_url.clone()
-    } else if api_url.ends_with("/v1") || api_url.ends_with("/v1/") {
-        let base = api_url.trim_end_matches('/');
-        format!("{}/chat/completions", base)
-    } else if api_url.ends_with('/') {
-        format!("{}v1/chat/completions", api_url)
-    } else {
-        format!("{}/v1/chat/completions", api_url)
-    };
-
-    println!("[AI Detect] URL: {}, Model: {}", url, model);
-
-    let is_reasoning = match client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-    {
-        Ok(response) => {
-            if !response.status().is_success() {
-                let status = response.status();
-                let error_text = response.text().unwrap_or_default();
-                println!("[AI Detect] API error {}: {}", status, error_text);
-                // API 请求失败，回退到名称检测
-                name_detected
-            } else {
-                let response_json: serde_json::Value = response
-                    .json()
-                    .unwrap_or(serde_json::Value::Null);
-
-                // 检测 API 响应中是否有 reasoning_content
-                let api_detected = response_json
-                    .get("choices")
-                    .and_then(|c| c.get(0))
-                    .and_then(|c| c.get("message"))
-                    .map(|m| {
-                        // 检查 reasoning_content 是否存在且非空
-                        let has_reasoning = m.get("reasoning_content")
-                            .map(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(true))
-                            .unwrap_or(false);
-                        let has_thinking = m.get("thinking")
-                            .map(|v| !v.is_null())
-                            .unwrap_or(false);
-                        has_reasoning || has_thinking
-                    })
-                    .unwrap_or(false);
-
-                println!("[AI Detect] API detected: {}, Name detected: {}", api_detected, name_detected);
-                // 任何一种方式检测到即认定为思考模型
-                api_detected || name_detected
-            }
-        }
-        Err(e) => {
-            println!("[AI Detect] Request failed: {}, falling back to name detection", e);
-            // 请求失败，回退到名称检测
-            name_detected
-        }
-    };
-
-    // 更新状态
-    state.is_reasoning_model.store(is_reasoning, Ordering::Relaxed);
-
-    // 持久化
-    let mut settings_data = build_settings_data(&state);
-    settings_data.is_reasoning_model = is_reasoning;
-    save_settings_to_file(&settings_data)?;
-
-    println!("[AI Detect] Final result: is_reasoning={}", is_reasoning);
-
-    Ok(serde_json::json!({
-        "is_reasoning_model": is_reasoning
-    }))
+    Ok(())
 }
 
 #[tauri::command]

@@ -9,12 +9,12 @@ pub mod ai;
 mod window;
 
 use std::collections::HashSet;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
@@ -63,17 +63,54 @@ fn check_internet() -> bool {
     unsafe { InternetGetConnectedState(&mut flags, None).is_ok() }
 }
 
+/// PowerShell 带超时执行，超时自动 kill 进程
+fn run_powershell_with_timeout(args: &[&str], timeout: Duration) -> Option<String> {
+    use std::io::Read;
+    let mut child = Command::new("powershell")
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                let mut stdout = String::new();
+                if let Some(mut out) = child.stdout.take() {
+                    let _ = out.read_to_string(&mut stdout);
+                }
+                return Some(stdout);
+            }
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                return None;
+            }
+        }
+    }
+}
+
 fn get_bt_devices() -> HashSet<String> {
     let mut devices = HashSet::new();
     let ps = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Object -ExpandProperty FriendlyName"#;
-    if let Ok(output) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).creation_flags(CREATE_NO_WINDOW).output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let name = line.trim().to_string();
-                if !name.is_empty() {
-                    devices.insert(name);
-                }
+    if let Some(stdout) = run_powershell_with_timeout(&["-NoProfile", "-Command", ps], Duration::from_secs(5)) {
+        for line in stdout.lines() {
+            let name = line.trim().to_string();
+            if !name.is_empty() {
+                devices.insert(name);
             }
         }
     }
@@ -108,13 +145,14 @@ try {
 }
 "#;
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", ps_script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let raw = run_powershell_with_timeout(
+        &["-NoProfile", "-Command", ps_script],
+        Duration::from_secs(12),
+    );
+    let stdout = match raw {
+        Some(s) => s.trim().to_string(),
+        None => return None,
+    };
     if stdout.is_empty() || !stdout.contains(',') {
         return None;
     }
@@ -205,32 +243,28 @@ fn weather_code_to_cn(code: i64) -> &'static str {
     }
 }
 
-#[derive(serde::Serialize)]
-struct WeatherResult {
+#[derive(Clone, serde::Serialize)]
+pub struct WeatherResult {
     desc: String,
     temp: i64,
     city: String,
 }
 
-#[tauri::command]
-fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, String> {
-    // 1. 确定坐标来源：手动城市 > 系统定位 > IP定位
-    let manual_city = state.weather_city.lock().unwrap().clone();
-    let manual_lat = *state.weather_lat.lock().unwrap();
-    let manual_lon = *state.weather_lon.lock().unwrap();
-
+/// 内部天气获取逻辑（在后台线程中调用，不阻塞 command）
+fn fetch_weather_internal(
+    manual_city: &str,
+    manual_lat: f64,
+    manual_lon: f64,
+) -> Result<WeatherResult, String> {
     let (lat, lon, city_name) = if !manual_city.is_empty() && (manual_lat != 0.0 || manual_lon != 0.0) {
-        // 手动设置的城市
         println!("[Weather] 使用手动设置城市: {}", manual_city);
-        (manual_lat, manual_lon, manual_city)
+        (manual_lat, manual_lon, manual_city.to_string())
     } else {
-        // 自动定位
         let loc = get_location().ok_or("无法获取位置信息".to_string())?;
         let city = loc.city.clone().unwrap_or_default();
         (loc.latitude, loc.longitude, city)
     };
 
-    // 2. 调用 Open-Meteo API
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,weather_code&timezone=auto",
         lat, lon
@@ -246,7 +280,6 @@ fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, St
     }
 
     let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {}", e))?;
-
     let current = &json["current"];
     let weather_code = current["weather_code"].as_i64().unwrap_or(0);
     let temp = current["temperature_2m"].as_f64().unwrap_or(0.0).round() as i64;
@@ -256,16 +289,34 @@ fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, St
 }
 
 #[tauri::command]
+fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, String> {
+    // 仅读取缓存，零阻塞
+    state.weather_cache.lock().unwrap().clone()
+        .ok_or_else(|| "天气数据尚未获取".to_string())
+}
+
+#[tauri::command]
+fn refresh_weather(state: tauri::State<'_, IslandState>) {
+    state.weather_force_refresh.store(true, Ordering::Relaxed);
+}
+
+#[tauri::command]
 fn save_weather_city(app: tauri::AppHandle, state: tauri::State<'_, IslandState>, city: String, lat: f64, lon: f64) {
     *state.weather_city.lock().unwrap() = city;
     *state.weather_lat.lock().unwrap() = lat;
     *state.weather_lon.lock().unwrap() = lon;
 
+    // 清除旧缓存
+    *state.weather_cache.lock().unwrap() = None;
+
     // 持久化
     let settings_data = settings::build_settings_data(&state);
     let _ = settings::save_settings_to_file(&settings_data);
 
-    // 通知主窗口刷新天气
+    // 触发后台线程立即刷新天气
+    state.weather_force_refresh.store(true, Ordering::Relaxed);
+
+    // 通知前端城市已变更
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.emit("weather-city-changed", ());
     }
@@ -289,7 +340,7 @@ pub fn run() {
             ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
-            get_location, get_weather, save_weather_city, settings::search_city,
+            get_location, get_weather, refresh_weather, save_weather_city, settings::search_city,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
@@ -342,6 +393,11 @@ pub fn run() {
             let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
             let url_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let auto_start = Arc::new(AtomicBool::new(settings.auto_start));
+            let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
+            let weather_lat = Arc::new(Mutex::new(settings.weather_lat));
+            let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
+            let weather_cache: Arc<Mutex<Option<WeatherResult>>> = Arc::new(Mutex::new(None));
+            let weather_force_refresh = Arc::new(AtomicBool::new(true)); // 启动后立即获取
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -369,9 +425,11 @@ pub fn run() {
                 agent_window_size: agent_window_size.clone(),
                 link_handlers: link_handlers.clone(),
                 url_whitelist: url_whitelist.clone(),
-                weather_city: Arc::new(Mutex::new(settings.weather_city.clone())),
-                weather_lat: Arc::new(Mutex::new(settings.weather_lat)),
-                weather_lon: Arc::new(Mutex::new(settings.weather_lon)),
+                weather_city: weather_city.clone(),
+                weather_lat: weather_lat.clone(),
+                weather_lon: weather_lon.clone(),
+                weather_cache: weather_cache.clone(),
+                weather_force_refresh: weather_force_refresh.clone(),
                 auto_start: auto_start.clone(),
             });
 
@@ -535,10 +593,14 @@ pub fn run() {
                 let mut was_online = check_internet();
                 let mut last_bt = get_bt_devices();
                 let mut offline_streak: u32 = 0;
-                const OFFLINE_CONFIRM: u32 = 3; // 连续 3 次失败才判定断网
+                const OFFLINE_CONFIRM: u32 = 3;
+                let mut bt_counter: u32 = 0;
+                const BT_CHECK_EVERY: u32 = 4; // 每 4 轮（~32 秒）检测一次蓝牙
 
                 loop {
                     thread::sleep(Duration::from_secs(8));
+
+                    // 网络状态检测（每轮）
                     let online = check_internet();
                     if !online {
                         offline_streak = offline_streak.saturating_add(1);
@@ -554,16 +616,21 @@ pub fn run() {
                         }
                     }
 
-                    let bt = get_bt_devices();
-                    let new_devs: Vec<_> = bt.difference(&last_bt).cloned().collect();
-                    if let Some(name) = new_devs.first() {
-                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已连接: {}", name));
+                    // 蓝牙检测（每 BT_CHECK_EVERY 轮）
+                    bt_counter += 1;
+                    if bt_counter >= BT_CHECK_EVERY {
+                        bt_counter = 0;
+                        let bt = get_bt_devices();
+                        let new_devs: Vec<_> = bt.difference(&last_bt).cloned().collect();
+                        if let Some(name) = new_devs.first() {
+                            trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已连接: {}", name));
+                        }
+                        let lost_devs: Vec<_> = last_bt.difference(&bt).cloned().collect();
+                        if let Some(name) = lost_devs.first() {
+                            trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已断开: {}", name));
+                        }
+                        last_bt = bt;
                     }
-                    let lost_devs: Vec<_> = last_bt.difference(&bt).cloned().collect();
-                    if let Some(name) = lost_devs.first() {
-                        trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已断开: {}", name));
-                    }
-                    last_bt = bt;
                 }
             });
 
@@ -620,6 +687,52 @@ pub fn run() {
                             }
                         }
                     }
+                }
+            });
+
+            // --- 天气后台线程 ---
+            let win_weather = window.clone();
+            let weather_city_t = weather_city.clone();
+            let weather_lat_t = weather_lat.clone();
+            let weather_lon_t = weather_lon.clone();
+            let weather_cache_t = weather_cache.clone();
+            let weather_refresh_t = weather_force_refresh.clone();
+
+            thread::spawn(move || {
+                const WEATHER_INTERVAL_SECS: u64 = 20 * 60; // 20 分钟
+                let mut last_fetch = Instant::now() - Duration::from_secs(WEATHER_INTERVAL_SECS);
+
+                loop {
+                    let should_fetch = weather_refresh_t.compare_exchange(
+                        true, false, Ordering::SeqCst, Ordering::Relaxed
+                    ).is_ok() || last_fetch.elapsed() >= Duration::from_secs(WEATHER_INTERVAL_SECS);
+
+                    if should_fetch {
+                        let city = weather_city_t.lock().unwrap().clone();
+                        let lat = *weather_lat_t.lock().unwrap();
+                        let lon = *weather_lon_t.lock().unwrap();
+
+                        match fetch_weather_internal(&city, lat, lon) {
+                            Ok(result) => {
+                                *weather_cache_t.lock().unwrap() = Some(result.clone());
+                                let _ = win_weather.emit("weather-updated", serde_json::json!({
+                                    "desc": result.desc,
+                                    "temp": result.temp,
+                                    "city": result.city
+                                }));
+                                last_fetch = Instant::now();
+                                println!("[Weather] 天气更新成功: {} {} {}°C", result.city, result.desc, result.temp);
+                            }
+                            Err(e) => {
+                                println!("[Weather] 天气获取失败: {}", e);
+                                let _ = win_weather.emit("weather-error", serde_json::json!({
+                                    "error": e
+                                }));
+                            }
+                        }
+                    }
+
+                    thread::sleep(Duration::from_secs(5)); // 每 5 秒检查是否需要刷新
                 }
             });
 
@@ -853,19 +966,28 @@ fn trigger_notification(
     is_expanded: &Arc<AtomicBool>,
     message: &str,
 ) {
-    is_notifying.store(true, Ordering::Relaxed);
+    // 防重入：如果已有通知正在显示，跳过
+    if is_notifying.compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed).is_err() {
+        return;
+    }
+
     if !is_expanded.load(Ordering::Relaxed) {
         is_expanded.store(true, Ordering::Relaxed);
         let _ = window.emit("set-expand", true);
     }
     let _ = window.emit("show-notice", message);
-    thread::sleep(Duration::from_millis(3500));
 
-    // 通知结束，但不强制收缩 - 让前端决定何时收缩
-    is_notifying.store(false, Ordering::Relaxed);
-    is_expanded.store(false, Ordering::Relaxed);
-    let _ = window.emit("set-expand", false);
-    let _ = window.emit("notice-timeout", ());
+    // 在独立线程中等待超时，不阻塞调用者
+    let noti = is_notifying.clone();
+    let exp = is_expanded.clone();
+    let win = window.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(3500));
+        noti.store(false, Ordering::Relaxed);
+        exp.store(false, Ordering::Relaxed);
+        let _ = win.emit("set-expand", false);
+        let _ = win.emit("notice-timeout", ());
+    });
 }
 
 fn create_tray_icon() -> Vec<u8> {
@@ -918,10 +1040,12 @@ pub struct IslandState {
     pub link_handlers: Arc<Mutex<Vec<LinkHandler>>>,
     // URL 域名白名单（可选）
     pub url_whitelist: Arc<Mutex<Vec<String>>>,
-    // 天气城市设置
     pub weather_city: Arc<Mutex<String>>,
     pub weather_lat: Arc<Mutex<f64>>,
     pub weather_lon: Arc<Mutex<f64>>,
+    // 天气缓存（后台线程写入，command 读取）
+    pub weather_cache: Arc<Mutex<Option<WeatherResult>>>,
+    pub weather_force_refresh: Arc<AtomicBool>,
     // 开机自启
     pub auto_start: Arc<AtomicBool>,
 }

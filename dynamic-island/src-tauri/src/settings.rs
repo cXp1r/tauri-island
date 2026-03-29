@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use crate::IslandState;
 use crate::link_handler::LinkHandler;
-use crate::shared_http_client;
 
 #[cfg(windows)]
 use winreg::enums::*;
@@ -279,7 +278,12 @@ pub fn search_city(query: String) -> Result<Vec<CityResult>, String> {
         urlencoding::encode(query.trim())
     );
 
-    let resp = shared_http_client()
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client
         .get(&url)
         .send()
         .map_err(|e| format!("请求失败: {}", e))?;

@@ -137,9 +137,7 @@ const viewElements: Record<ViewMode, HTMLElement> = {
   agent: agentArea,
 };
 
-const WEATHER_REFRESH_MS = 20 * 60 * 1000;
-let lastWeatherFetchAt = 0;
-let weatherLoading = false;
+
 
 type PrivacyUsagePayload = {
   microphone: boolean;
@@ -499,33 +497,26 @@ function updateTimeAndDate() {
   dateText.innerText = formatDateLabel(now);
 }
 
-// ===== 天气功能（后端统一处理） =====
+// ===== 天气功能（后端后台线程推送）=====
 async function refreshWeather(force = false) {
-  const now = Date.now();
-  if (weatherLoading) return;
-  if (!force && now - lastWeatherFetchAt < WEATHER_REFRESH_MS) return;
-
-  weatherLoading = true;
-  if (lastWeatherFetchAt === 0 || force) {
+  if (force) {
     weatherText.textContent = "获取中...";
+    void invoke("refresh_weather");
+    return;
   }
-
+  // 非强制刷新：尝试读取缓存
   try {
     const result = await invoke<WeatherResult>("get_weather");
-    // 格式：城市 天气 温度 或 天气 温度
     if (result.city) {
       weatherText.textContent = `${result.city} ${result.desc} ${result.temp}°C`;
     } else {
       weatherText.textContent = `${result.desc} ${result.temp}°C`;
     }
-    lastWeatherFetchAt = Date.now();
-  } catch (e) {
-    if (lastWeatherFetchAt === 0) {
-      weatherText.textContent = "天气暂不可用";
+  } catch {
+    // 缓存尚未就绪，后台线程会自动推送
+    if (weatherText.textContent === "") {
+      weatherText.textContent = "获取中...";
     }
-    console.warn("[Weather] 刷新失败:", e);
-  } finally {
-    weatherLoading = false;
   }
 }
 
@@ -1224,21 +1215,34 @@ weatherText.addEventListener("click", (e) => {
 
 timeWrapper.addEventListener("mouseenter", () => {
   updateTimeAndDate();
-  void refreshWeather();
 });
 
 setInterval(updateTimeAndDate, 1000);
 updateTimeAndDate();
 
-setInterval(() => {
-  void refreshWeather();
-}, WEATHER_REFRESH_MS);
-void refreshWeather(true);
+// 启动时尝试读取缓存（后台线程会自动获取并推送）
+void refreshWeather();
 
-// 监听设置页天气城市变更 → 立即刷新
+// 监听后端天气更新推送
+listen<{ desc: string; temp: number; city: string }>("weather-updated", (event) => {
+  const r = event.payload;
+  if (r.city) {
+    weatherText.textContent = `${r.city} ${r.desc} ${r.temp}°C`;
+  } else {
+    weatherText.textContent = `${r.desc} ${r.temp}°C`;
+  }
+});
+
+listen<{ error: string }>("weather-error", () => {
+  if (weatherText.textContent === "获取中...") {
+    weatherText.textContent = "天气暂不可用";
+  }
+});
+
+// 监听设置页天气城市变更
 listen("weather-city-changed", () => {
-  lastWeatherFetchAt = 0;
-  void refreshWeather(true);
+  weatherText.textContent = "获取中...";
+  // 后端已自动触发 force refresh，等待 weather-updated 事件即可
 });
 
 showOnlyView("time");

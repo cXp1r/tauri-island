@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
 type SettingsResponse = {
@@ -200,22 +200,10 @@ saveBtn.addEventListener("click", async () => {
       if (apiUrl && apiKey && model) {
         aiModelTypeResult.textContent = "检测中...";
         aiModelTypeResult.style.color = "#93a4c8";
-        invoke<{ is_reasoning_model: boolean }>("ai_detect_model_type")
-          .then((result) => {
-            if (result.is_reasoning_model) {
-              aiModelTypeResult.textContent = "✅ 思考模型";
-              aiModelTypeResult.style.color = "#39d98a";
-            } else {
-              aiModelTypeResult.textContent = "普通模型";
-              aiModelTypeResult.style.color = "#93a4c8";
-            }
-            // 通知主窗口更新
-            void emit("ai-settings-changed", {});
-          })
-          .catch(() => {
-            aiModelTypeResult.textContent = "检测失败";
-            aiModelTypeResult.style.color = "#ff6f7f";
-          });
+        void invoke("ai_detect_model_type").catch(() => {
+          aiModelTypeResult.textContent = "检测失败";
+          aiModelTypeResult.style.color = "#ff6f7f";
+        });
       }
     }
 
@@ -267,7 +255,6 @@ aiDetectBtn.addEventListener("click", async () => {
     return;
   }
 
-  const originalText = aiDetectBtn.textContent || "检测模型类型";
   aiDetectBtn.disabled = true;
   aiDetectBtn.textContent = "检测中...";
   aiModelTypeResult.textContent = "检测中...";
@@ -275,35 +262,34 @@ aiDetectBtn.addEventListener("click", async () => {
 
   try {
     // 先保存设置
-    await invoke("ai_save_settings", {
-      apiUrl: apiUrl,
-      apiKey: apiKey,
-      model: model,
-    });
-
-    // 执行检测
-    const result = await invoke<{ is_reasoning_model: boolean }>("ai_detect_model_type");
-
-    if (result.is_reasoning_model) {
-      aiModelTypeResult.textContent = "✅ 思考模型";
-      aiModelTypeResult.style.color = "#39d98a";
-      showStatus("检测完成：这是一个思考模型");
-    } else {
-      aiModelTypeResult.textContent = "普通模型";
-      aiModelTypeResult.style.color = "#93a4c8";
-      showStatus("检测完成：这是一个普通模型");
-    }
-
-    // 通知主窗口更新 AI 状态
-    await emit("ai-settings-changed", {});
+    await invoke("ai_save_settings", { apiUrl, apiKey, model });
+    // 触发后台检测（结果通过 ai-model-type-detected 事件返回）
+    await invoke("ai_detect_model_type");
+    showStatus("模型检测已发起，请稍候...");
   } catch (e) {
     aiModelTypeResult.textContent = "检测失败";
     aiModelTypeResult.style.color = "#ff6f7f";
     showStatus(`检测失败: ${String(e)}`, true, 4500);
   } finally {
     aiDetectBtn.disabled = false;
-    aiDetectBtn.textContent = originalText;
+    aiDetectBtn.textContent = "检测模型类型";
   }
+});
+
+// 监听后端 AI 模型检测结果
+listen<{ is_reasoning_model: boolean }>("ai-model-type-detected", (event) => {
+  const result = event.payload;
+  if (result.is_reasoning_model) {
+    aiModelTypeResult.textContent = "✅ 思考模型";
+    aiModelTypeResult.style.color = "#39d98a";
+    showStatus("检测完成：这是一个思考模型");
+  } else {
+    aiModelTypeResult.textContent = "普通模型";
+    aiModelTypeResult.style.color = "#93a4c8";
+    showStatus("检测完成：这是一个普通模型");
+  }
+  // 通知主窗口更新 AI 状态
+  void emit("ai-settings-changed", {});
 });
 
 // 窗口调整大小功能
