@@ -27,6 +27,25 @@ pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
     .any(|k| id.contains(k))
 }
 
+/// 判断是否为浏览器或视频播放器（非音乐应用）
+fn is_browser_or_video_app(app_id: &str) -> bool {
+    let id = app_id.to_ascii_lowercase();
+    [
+        "chrome",       // Google Chrome
+        "msedge",       // Microsoft Edge
+        "firefox",      // Firefox
+        "opera",        // Opera
+        "brave",        // Brave
+        "vivaldi",      // Vivaldi
+        "potplayer",    // PotPlayer
+        "mpc-hc",       // MPC-HC
+        "mpc-be",       // MPC-BE
+        "kmplayer",     // KMPlayer
+    ]
+    .iter()
+    .any(|k| id.contains(k))
+}
+
 #[derive(Default)]
 struct CloudMusicWindowContext {
     titles: Vec<String>,
@@ -345,6 +364,9 @@ pub(crate) fn select_best_smtc_session(
         if is_preferred_music_app(&app_id_lc) {
             score += 40;
         }
+        if is_browser_or_video_app(&app_id_lc) {
+            score -= 80; // 大幅降低浏览器/视频应用的优先级
+        }
         if current_app_id
             .as_deref()
             .map(|current| current == app_id_lc)
@@ -443,8 +465,14 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
             }
         }
 
-        // SMTC 有元数据但非首选应用：使用 SMTC 数据
+        // SMTC 有元数据但非首选应用：如果是浏览器/视频应用则跳过，不当作音乐
         if has_meta {
+            if is_browser_or_video_app(&app_id) {
+                if let Some(fb) = cloud_fallback {
+                    return Some(fb);
+                }
+                return None;
+            }
             return Some((media, position_ms, is_playing));
         }
 

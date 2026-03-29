@@ -113,6 +113,8 @@ let isSeeking = false; // 是否正在拖动进度条
 let isMpSeeking = false; // 面板进度条拖动
 let isMpVolSeeking = false; // 面板音量条拖动
 let musicClickTimer: number | null = null; // 音乐单击延时
+let isExpandAnimating = false; // 展开/收起动画进行中，防止重复触发
+let isMinimizeAnimating = false; // 最小化/恢复动画进行中
 let currentSongTitle = "";
 let currentArtistName = "";
 
@@ -299,11 +301,13 @@ function setView(mode: ViewMode, animated = true) {
     }, 380);
   }
 
-  // 如果从 lyric 展开态切走，收起
+  // 如果从 lyric 展开态切走，收起（使用 skipResizeSync 避免过渡中 ResizeObserver 干扰）
   if (previous === "lyric" && mode !== "lyric" && capsule.classList.contains("music-expanded")) {
-    const sz = getCapsuleExpandedSize();
+    skipResizeSync = true;
+    isExpandAnimating = false;
     capsule.classList.remove("music-expanded");
-    void invoke("set_music_expanded", { expanded: false, width: sz.w, height: sz.h });
+    void invoke("set_music_expanded", { expanded: false, width: 380, height: 420 });
+    window.setTimeout(() => { skipResizeSync = false; }, 500);
   }
 
   if (animated) {
@@ -351,13 +355,6 @@ function updateCapsuleSize() {
   }
 }
 
-/** 测量胶囊实际渲染尺寸（含 body padding），用于告诉后端窗口应该多大 */
-function getCapsuleExpandedSize(): { w: number; h: number } {
-  const rect = capsule.getBoundingClientRect();
-  const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-  return { w: Math.ceil(rect.width), h: Math.ceil(rect.height + bodyPad + 5) };
-}
-
 
 function updatePlayIcon() {
   iconPlay.style.display = isPlaying ? "none" : "block";
@@ -403,39 +400,36 @@ function applyIndicatorColor(color: string) {
 }
 
 function minimizeIsland() {
-  if (isMinimized) return; // 已经收起了
+  if (isMinimized || isMinimizeAnimating) return;
   isMinimized = true;
+  isMinimizeAnimating = true;
 
-  // 添加缩小动画类
   capsule.classList.add("minimizing");
 
-  // 等待动画完成（与 CSS transform 动画时长 300ms 同步）
   setTimeout(() => {
     capsule.classList.remove("minimizing");
     capsule.classList.add("minimized");
     document.body.classList.add("minimized");
-    // 通知后端缩小窗口
     void invoke("set_minimized", { minimized: true });
+    isMinimizeAnimating = false;
   }, 300);
 }
 
 function expandFromMinimized() {
-  if (!isMinimized) return; // 已经展开了
+  if (!isMinimized || isMinimizeAnimating) return;
   isMinimized = false;
+  isMinimizeAnimating = true;
 
-  // 先通知后端恢复窗口尺寸
   void invoke("set_minimized", { minimized: false });
 
-  // 隐藏绿条
   document.body.classList.remove("minimized");
 
-  // 准备展开动画
   capsule.classList.remove("minimized");
   capsule.classList.add("expanding");
 
-  // 动画完成后移除动画类（与 CSS transform 动画时长 300ms 同步）
   setTimeout(() => {
     capsule.classList.remove("expanding");
+    isMinimizeAnimating = false;
   }, 300);
 }
 
@@ -1091,24 +1085,23 @@ capsule.addEventListener("click", (e: MouseEvent) => {
 
     musicClickTimer = window.setTimeout(() => {
       musicClickTimer = null;
+      if (isExpandAnimating) return;
+      isExpandAnimating = true;
       const willExpand = !capsule.classList.contains("music-expanded");
       if (willExpand) {
         skipResizeSync = true;
         capsule.classList.add("music-expanded");
-        // 同步面板内容
         musicPanelSong.textContent = currentSongTitle || "";
         musicPanelArtist.textContent = currentArtistName || "";
         fetchAndUpdateVolume();
-        // 直接传入 CSS 中定义的目标尺寸，不依赖过渡中间帧测量
         const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
         void invoke("set_music_expanded", { expanded: true, width: 380, height: 420 + bodyPad + 5 });
-        window.setTimeout(() => { skipResizeSync = false; }, 400);
+        window.setTimeout(() => { skipResizeSync = false; isExpandAnimating = false; }, 400);
       } else {
-        const sz = getCapsuleExpandedSize();
         skipResizeSync = true;
         capsule.classList.remove("music-expanded");
-        void invoke("set_music_expanded", { expanded: false, width: sz.w, height: sz.h });
-        window.setTimeout(() => { skipResizeSync = false; }, 500);
+        void invoke("set_music_expanded", { expanded: false, width: 380, height: 420 });
+        window.setTimeout(() => { skipResizeSync = false; isExpandAnimating = false; }, 500);
       }
     }, 250);
     return;
@@ -1139,15 +1132,15 @@ capsule.addEventListener("click", (e: MouseEvent) => {
 
     agentClickTimer = window.setTimeout(() => {
       agentClickTimer = null;
+      if (isExpandAnimating) return;
+      isExpandAnimating = true;
       const willExpand = !capsule.classList.contains("agent-expanded");
       if (willExpand) {
-        // 展开：同时启动后端窗口动画和前端 CSS 过渡
         skipResizeSync = true;
         capsule.classList.add("agent-expanded");
         void invoke("set_agent_expanded", { expanded: true });
-        window.setTimeout(() => { skipResizeSync = false; }, 400);
+        window.setTimeout(() => { skipResizeSync = false; isExpandAnimating = false; }, 400);
       } else {
-        // 收起：先淡出内容，再缩小尺寸，避免文字抖动
         skipResizeSync = true;
         const agentArea = document.getElementById("agent-area");
         if (agentArea) agentArea.classList.add("collapsing");
@@ -1157,6 +1150,7 @@ capsule.addEventListener("click", (e: MouseEvent) => {
           window.setTimeout(() => {
             if (agentArea) agentArea.classList.remove("collapsing");
             skipResizeSync = false;
+            isExpandAnimating = false;
           }, 500);
         }, 100);
       }
@@ -1175,6 +1169,11 @@ capsule.addEventListener("dblclick", (e: MouseEvent) => {
   if (agentClickTimer) {
     clearTimeout(agentClickTimer);
     agentClickTimer = null;
+  }
+  // 取消 music 单击延时
+  if (musicClickTimer) {
+    clearTimeout(musicClickTimer);
+    musicClickTimer = null;
   }
 
   e.stopPropagation();
@@ -1209,6 +1208,9 @@ document.addEventListener("mouseup", () => {
   isDragging = false;
   if (dragStarted) {
     void invoke("end_drag");
+    // 不立即重置 dragStarted，留给 click handler 检测并阻断点击
+    // 安全兜底：如果 click 事件未触发（如焦点丢失），100ms 后自动重置
+    window.setTimeout(() => { dragStarted = false; }, 100);
   }
 });
 
@@ -1514,17 +1516,15 @@ async function sendMessage() {
   const content = agentInput.value.trim();
   if (!content || aiGenerating) return;
 
-  // 清空输入框
+  // 立即标记生成状态，防止快速双击重复发送
+  aiGenerating = true;
+
   agentInput.value = "";
 
-  // 添加用户消息
   addUserMessage(content);
 
-  // 显示停止按钮
   agentSendBtn.style.display = "none";
   agentStopBtn.style.display = "flex";
-
-  aiGenerating = true;
 
   try {
     await invoke("ai_send_message", { content });
