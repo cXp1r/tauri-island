@@ -624,7 +624,7 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
-listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
@@ -643,6 +643,12 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
   const wasPlaying = isMusicPlaying;
   isMusicPlaying = true;
   const { text, title, artist, position_ms, duration_ms } = event.payload;
+
+  // 从 lyric-update 同步播放状态，避免 playback-state 事件丢失
+  if (event.payload.is_playing !== undefined && event.payload.is_playing !== isPlaying) {
+    isPlaying = event.payload.is_playing;
+    updatePlayIcon();
+  }
 
   // 更新进度条（收起态 + 面板）
   if (duration_ms && duration_ms > 0 && position_ms !== undefined) {
@@ -715,7 +721,10 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
       el.className = line.is_current ? "mp-lyric-line mp-lyric-current" : "mp-lyric-line";
     }
   } else if (text !== null && text !== undefined) {
-    mpLyricText.textContent = text;
+    // 如果面板已有多行歌词槽位，不用单行文本覆盖
+    if (mpLyricText.children.length === 0) {
+      mpLyricText.textContent = text;
+    }
   } else {
     mpLyricText.textContent = title;
   }

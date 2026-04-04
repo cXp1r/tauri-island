@@ -447,7 +447,8 @@ pub fn media_seek(position_ms: i64) -> Result<(), String> {
 }
 
 pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
-    let cloud_fallback = get_cloudmusic_fallback_info();
+    // 惰性调用 cloud_fallback，避免每次轮询都枚举窗口
+    let cloud_fallback = || get_cloudmusic_fallback_info();
 
     if let Some((_, media, position_ms, is_playing, app_id)) = select_best_smtc_session() {
         let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
@@ -460,7 +461,7 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
 
         // SMTC 缺少元数据，但来自首选应用：用网易云窗口标题补充元数据，但保留 SMTC 的播放状态
         if !has_meta && is_preferred {
-            if let Some((fallback_media, _, _)) = cloud_fallback {
+            if let Some((fallback_media, _, _)) = cloud_fallback() {
                 return Some((fallback_media, position_ms, is_playing));
             }
         }
@@ -468,7 +469,7 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
         // SMTC 有元数据但非首选应用：如果是浏览器/视频应用则跳过，不当作音乐
         if has_meta {
             if is_browser_or_video_app(&app_id) {
-                if let Some(fb) = cloud_fallback {
+                if let Some(fb) = cloud_fallback() {
                     return Some(fb);
                 }
                 return None;
@@ -477,14 +478,14 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
         }
 
         // SMTC 完全没有有用数据：回退到网易云窗口标题
-        if let Some(fb) = cloud_fallback {
+        if let Some(fb) = cloud_fallback() {
             return Some(fb);
         }
 
         return Some((media, position_ms, is_playing));
     }
 
-    cloud_fallback
+    cloud_fallback()
 }
 
 /// 仅获取封面（歌曲切换时调用，避免每次轮询都读流）

@@ -49,8 +49,9 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .pool_max_idle_per_host(2)
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(4))
+            .pool_max_idle_per_host(4)
             .build()
             .expect("failed to create http client")
     })
@@ -780,7 +781,7 @@ pub fn run() {
                 let mut fetch_pending = false; // 当前代是否还在等待结果
 
                 loop {
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(80));
 
                     // 检查异步歌词获取结果（只接受当前代的结果）
                     {
@@ -802,6 +803,7 @@ pub fn run() {
                     if mode == "off" {
                         if was_playing {
                             was_playing = false;
+                            last_is_playing = false;
                             current_track.clear();
                             is_music_media.store(false, Ordering::Relaxed);
                             let _ = win_media.emit("lyric-update", serde_json::json!(null));
@@ -815,6 +817,7 @@ pub fn run() {
                         None => {
                             if was_playing {
                                 was_playing = false;
+                                last_is_playing = false;
                                 current_track.clear();
                                 is_music_media.store(false, Ordering::Relaxed);
                                 let _ = win_media.emit("lyric-update", serde_json::json!(null));
@@ -876,7 +879,7 @@ pub fn run() {
                                 }).ok();
                         }
 
-                        // 异步获取歌词（不阻塞主循环）
+                        // 异步获取歌词（不阻塞主循环，LRCLIB 和网易云并行）
                         if mode == "lyric" {
                             let title = media_info.title.clone();
                             let artist = media_info.artist.clone();
@@ -886,17 +889,12 @@ pub fn run() {
                             fetch_pending = true;
                             thread::Builder::new()
                                 .name("lyric-fetch".into())
-                                .stack_size(512 * 1024) // 512KB 栈，默认 8MB
+                                .stack_size(512 * 1024)
                                 .spawn(move || {
-                                // 每个策略前检查代数，如果已过期就提前退出
-                                let res = std::panic::catch_unwind(|| {
-                                    if gen_ref.load(Ordering::Relaxed) != gen { return None; }
-                                    let lrclib = lyrics::fetch_lyrics_from_lrclib(&title, &artist);
-                                    if lrclib.is_some() { return lrclib; }
-                                    if gen_ref.load(Ordering::Relaxed) != gen { return None; }
-                                    lyrics::fetch_lyrics_from_netease(&title, &artist)
-                                });
-                                let fetched_lyrics = res.unwrap_or(None);
+                                // 提前检查代数
+                                if gen_ref.load(Ordering::Relaxed) != gen { return; }
+                                // 并行获取 LRCLIB + 网易云
+                                let fetched_lyrics = lyrics::fetch_lyrics_parallel(&title, &artist);
                                 // 只有当前代才写入结果
                                 if gen_ref.load(Ordering::Relaxed) == gen {
                                     let not_found = fetched_lyrics.is_none();
@@ -910,67 +908,52 @@ pub fn run() {
                     was_playing = true;
 
                     if mode == "lyric" {
-                        // 正在获取歌词中，显示加载状态
-                        if fetch_pending && current_lyrics.is_empty() {
-                            if last_lyric_text != "loading" {
-                                last_lyric_text = "loading".to_string();
-                                let _ = win_media.emit("lyric-update", serde_json::json!({
-                                    "text": "♪",
-                                    "title": media_info.title,
-                                    "artist": media_info.artist,
-                                    "position_ms": position_ms,
-                                    "duration_ms": media_info.duration_ms
-                                }));
-                            }
+                        // 构建歌词文本和附近歌词（文本去重，但始终发送位置）
+                        let (text_val, nearby_json) = if fetch_pending && current_lyrics.is_empty() {
+                            // 正在获取歌词中
+                            (serde_json::json!("♪"), None)
                         } else if lyrics_not_found || (!fetch_pending && current_lyrics.is_empty()) {
-                            if last_info_track != track_key {
-                                last_info_track = track_key.clone();
-                                let _ = win_media.emit("lyric-update", serde_json::json!({
-                                    "text": null,
-                                    "title": media_info.title,
-                                    "artist": media_info.artist,
-                                    "position_ms": position_ms,
-                                    "duration_ms": media_info.duration_ms
-                                }));
-                            }
+                            // 歌词未找到
+                            (serde_json::json!(null), None)
                         } else if let Some(line) = lyrics::get_current_lyric(&current_lyrics, position_ms) {
-                            if line.text != last_lyric_text {
+                            // 仅在歌词行变化时计算附近歌词
+                            let nearby = if line.text != last_lyric_text {
                                 last_lyric_text = line.text.clone();
                                 let nearby = lyrics::get_nearby_lyrics(&current_lyrics, position_ms);
-                                let nearby_json: Vec<serde_json::Value> = nearby.iter().map(|(text, is_current)| {
+                                Some(nearby.iter().map(|(text, is_current)| {
                                     serde_json::json!({"text": text, "is_current": is_current})
-                                }).collect();
-                                let _ = win_media.emit("lyric-update", serde_json::json!({
-                                    "text": line.text,
-                                    "title": media_info.title,
-                                    "artist": media_info.artist,
-                                    "position_ms": position_ms,
-                                    "duration_ms": media_info.duration_ms,
-                                    "nearby_lyrics": nearby_json
-                                }));
-                            }
-                        } else if last_lyric_text != "..." {
-                            last_lyric_text = "...".to_string();
-                            let _ = win_media.emit("lyric-update", serde_json::json!({
-                                "text": "♪",
-                                "title": media_info.title,
-                                "artist": media_info.artist,
-                                "position_ms": position_ms,
-                                "duration_ms": media_info.duration_ms
-                            }));
+                                }).collect::<Vec<_>>())
+                            } else {
+                                None
+                            };
+                            (serde_json::json!(line.text), nearby)
+                        } else {
+                            (serde_json::json!("♪"), None)
+                        };
+
+                        // 始终发送，确保进度条持续更新
+                        let mut payload = serde_json::json!({
+                            "text": text_val,
+                            "title": media_info.title,
+                            "artist": media_info.artist,
+                            "position_ms": position_ms,
+                            "duration_ms": media_info.duration_ms,
+                            "is_playing": is_playing
+                        });
+                        if let Some(nearby) = nearby_json {
+                            payload["nearby_lyrics"] = serde_json::json!(nearby);
                         }
+                        let _ = win_media.emit("lyric-update", payload);
                     } else {
-                        // info mode: 只发送歌曲信息（去重）
-                        if last_info_track != track_key {
-                            last_info_track = track_key.clone();
-                            let _ = win_media.emit("lyric-update", serde_json::json!({
-                                "text": null,
-                                "title": media_info.title,
-                                "artist": media_info.artist,
-                                "position_ms": position_ms,
-                                "duration_ms": media_info.duration_ms
-                            }));
-                        }
+                        // info mode: 始终发送位置
+                        let _ = win_media.emit("lyric-update", serde_json::json!({
+                            "text": null,
+                            "title": media_info.title,
+                            "artist": media_info.artist,
+                            "position_ms": position_ms,
+                            "duration_ms": media_info.duration_ms,
+                            "is_playing": is_playing
+                        }));
                     }
                 }
             });

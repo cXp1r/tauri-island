@@ -79,13 +79,6 @@ fn extract_synced_from_array(json: &serde_json::Value) -> Option<Vec<LyricLine>>
     None
 }
 
-/// 从单个结果对象中提取 syncedLyrics
-fn extract_synced_from_object(json: &serde_json::Value) -> Option<Vec<LyricLine>> {
-    let synced = json.get("syncedLyrics").and_then(|v| v.as_str())?;
-    if synced.is_empty() { return None; }
-    let lines = parse_synced_lyrics(synced);
-    if lines.is_empty() { None } else { Some(lines) }
-}
 
 /// 从网易云音乐获取歌词（作为 LRCLIB 的备用源）
 pub(crate) fn fetch_lyrics_from_netease(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
@@ -143,28 +136,13 @@ pub(crate) fn fetch_lyrics_from_lrclib(title: &str, artist: &str) -> Option<Vec<
         }
     }
 
-    // 策略2: /api/search 用清理后的标题和第一个艺术家
-    if cleaned_title != title || cleaned_artist != artist {
-        let url2 = format!(
-            "https://lrclib.net/api/search?track_name={}&artist_name={}",
-            urlencoding::encode(&cleaned_title), urlencoding::encode(cleaned_artist)
-        );
-        if let Ok(resp) = client.get(&url2).header("User-Agent", ua).send() {
-            if let Ok(json) = resp.json::<serde_json::Value>() {
-                if let Some(lines) = extract_synced_from_array(&json) {
-                    return Some(lines);
-                }
-            }
-        }
-    }
-
-    // 策略3: /api/search?q= 自由搜索
+    // 策略2: /api/search?q= 自由搜索（清理后的标题+艺术家）
     let query = format!("{} {}", cleaned_title, cleaned_artist);
-    let url3 = format!(
+    let url2 = format!(
         "https://lrclib.net/api/search?q={}",
         urlencoding::encode(&query)
     );
-    if let Ok(resp) = client.get(&url3).header("User-Agent", ua).send() {
+    if let Ok(resp) = client.get(&url2).header("User-Agent", ua).send() {
         if let Ok(json) = resp.json::<serde_json::Value>() {
             if let Some(lines) = extract_synced_from_array(&json) {
                 return Some(lines);
@@ -172,21 +150,57 @@ pub(crate) fn fetch_lyrics_from_lrclib(title: &str, artist: &str) -> Option<Vec<
         }
     }
 
-    // 策略4: /api/get 精确匹配
-    let url4 = format!(
-        "https://lrclib.net/api/get?track_name={}&artist_name={}&album_name=&duration=0",
-        urlencoding::encode(&cleaned_title), urlencoding::encode(cleaned_artist)
-    );
-    if let Ok(resp) = client.get(&url4).header("User-Agent", ua).send() {
-        if resp.status().is_success() {
-            if let Ok(json) = resp.json::<serde_json::Value>() {
-                if let Some(lines) = extract_synced_from_object(&json) {
-                    return Some(lines);
-                }
+    None
+}
+
+/// 并行从 LRCLIB 和网易云获取歌词，取先完成且有结果的一方
+pub(crate) fn fetch_lyrics_parallel(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
+    use std::sync::mpsc;
+    use std::thread;
+
+    let (tx, rx) = mpsc::channel::<Option<Vec<LyricLine>>>();
+
+    let tx1 = tx.clone();
+    let t1 = title.to_string();
+    let a1 = artist.to_string();
+    thread::Builder::new()
+        .name("lrclib-fetch".into())
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let result = std::panic::catch_unwind(|| {
+                fetch_lyrics_from_lrclib(&t1, &a1)
+            }).unwrap_or(None);
+            let _ = tx1.send(result);
+        }).ok();
+
+    let tx2 = tx.clone();
+    let t2 = title.to_string();
+    let a2 = artist.to_string();
+    thread::Builder::new()
+        .name("netease-fetch".into())
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let result = std::panic::catch_unwind(|| {
+                fetch_lyrics_from_netease(&t2, &a2)
+            }).unwrap_or(None);
+            let _ = tx2.send(result);
+        }).ok();
+
+    drop(tx);
+
+    // 收集两个结果，优先返回有数据的
+    let mut results_received = 0;
+    while let Ok(result) = rx.recv() {
+        results_received += 1;
+        if let Some(lines) = result {
+            if !lines.is_empty() {
+                return Some(lines);
             }
         }
+        if results_received >= 2 {
+            break;
+        }
     }
-
     None
 }
 
