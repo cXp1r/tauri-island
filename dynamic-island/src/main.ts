@@ -570,7 +570,7 @@ listen<string>("show-notice", (event) => {
 });
 
 listen("notice-timeout", () => {
-  if (!isShowingUrlList) dismissOverlays();
+  if (!isShowingUrlList) restoreUserView();
 });
 
 listen("reset-view", () => {
@@ -790,7 +790,7 @@ function showNotice(msg: string) {
   }
 
   noticeTimer = window.setTimeout(() => {
-    if (!isShowingUrlList) dismissOverlays();
+    if (!isShowingUrlList) restoreUserView();
   }, 3000);
 }
 

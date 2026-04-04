@@ -184,6 +184,9 @@ fn do_download_and_install(app: &tauri::AppHandle, url: &str) -> Result<(), Stri
         );
     }
 
+    // 确保文件句柄关闭，否则启动安装程序时会报 OS Error 32
+    drop(file);
+
     let _ = app.emit("update-download-complete", serde_json::json!({}));
 
     println!("[Updater] 下载完成: {:?}", file_path);
