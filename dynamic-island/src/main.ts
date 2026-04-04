@@ -1245,6 +1245,13 @@ listen("weather-city-changed", () => {
   // 后端已自动触发 force refresh，等待 weather-updated 事件即可
 });
 
+// 监听启动时自动检查更新结果
+listen<{ has_update: boolean; latest_version: string }>("update-available", (event) => {
+  if (event.payload.has_update) {
+    showNotice(`发现新版本 v${event.payload.latest_version}，请前往设置更新`);
+  }
+});
+
 showOnlyView("time");
 hidePrivacyPopup();
 void syncCurrentView(currentView);

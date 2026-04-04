@@ -620,3 +620,133 @@ clearCityBtn.addEventListener("click", async () => {
   cityTag.textContent = "";
   showStatus("已清除天气位置，将使用自动定位");
 });
+
+// ==================== 关于与更新 ====================
+
+type UpdateInfo = {
+  has_update: boolean;
+  current_version: string;
+  latest_version: string;
+  release_notes: string;
+  download_url: string;
+  published_at: string;
+  file_size: number;
+};
+
+const currentVersionEl = document.getElementById("current-version") as HTMLSpanElement;
+const updateStatusText = document.getElementById("update-status-text") as HTMLParagraphElement;
+const updateInfoCard = document.getElementById("update-info-card") as HTMLDivElement;
+const updateLatestVersion = document.getElementById("update-latest-version") as HTMLSpanElement;
+const updatePublished = document.getElementById("update-published") as HTMLParagraphElement;
+const updateNotes = document.getElementById("update-notes") as HTMLDivElement;
+const updateProgressWrapper = document.getElementById("update-progress-wrapper") as HTMLDivElement;
+const updateProgressText = document.getElementById("update-progress-text") as HTMLSpanElement;
+const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLSpanElement;
+const updateProgressBar = document.getElementById("update-progress-bar") as HTMLDivElement;
+const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
+const downloadUpdateBtn = document.getElementById("download-update-btn") as HTMLButtonElement;
+const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
+const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
+
+let pendingDownloadUrl = "";
+
+// 加载当前版本号
+invoke<string>("get_app_version").then((ver) => {
+  currentVersionEl.textContent = `v${ver}`;
+}).catch(() => {
+  currentVersionEl.textContent = "未知";
+});
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+checkUpdateBtn.addEventListener("click", async () => {
+  checkUpdateBtn.disabled = true;
+  checkUpdateBtn.textContent = "检查中...";
+  updateStatusText.style.color = "var(--text-secondary)";
+  updateStatusText.textContent = "正在检查更新...";
+  updateInfoCard.style.display = "none";
+  downloadUpdateBtn.style.display = "none";
+  openReleaseBtn.style.display = "none";
+
+  try {
+    const info = await invoke<UpdateInfo>("check_for_updates");
+    currentVersionEl.textContent = `v${info.current_version}`;
+
+    if (info.has_update) {
+      updateStatusText.textContent = "发现新版本！";
+      updateStatusText.style.color = "var(--primary)";
+      updateLatestVersion.textContent = `v${info.latest_version}`;
+      updatePublished.textContent = info.published_at
+        ? `发布于 ${new Date(info.published_at).toLocaleDateString("zh-CN")}`
+        : "";
+      updateNotes.textContent = info.release_notes || "暂无更新说明";
+      updateInfoCard.style.display = "block";
+      downloadUpdateBtn.style.display = "inline-flex";
+      openReleaseBtn.style.display = "inline-flex";
+      pendingDownloadUrl = info.download_url;
+    } else {
+      updateStatusText.textContent = `当前已是最新版本 (v${info.current_version})`;
+      updateStatusText.style.color = "var(--ok)";
+    }
+  } catch (e) {
+    updateStatusText.textContent = `检查更新失败: ${e}`;
+    updateStatusText.style.color = "var(--danger)";
+  } finally {
+    checkUpdateBtn.disabled = false;
+    checkUpdateBtn.textContent = "检查更新";
+  }
+});
+
+downloadUpdateBtn.addEventListener("click", async () => {
+  if (!pendingDownloadUrl) return;
+  downloadUpdateBtn.disabled = true;
+  downloadUpdateBtn.textContent = "下载中...";
+  updateProgressWrapper.style.display = "block";
+  updateProgressBar.style.width = "0%";
+  updateProgressPercent.textContent = "0%";
+  updateProgressText.textContent = "下载中...";
+
+  try {
+    await invoke("download_and_install_update", { url: pendingDownloadUrl });
+  } catch (e) {
+    updateProgressText.textContent = `下载失败: ${e}`;
+    updateProgressText.style.color = "var(--danger)";
+    downloadUpdateBtn.disabled = false;
+    downloadUpdateBtn.textContent = "重试下载";
+  }
+});
+
+// 监听下载进度
+listen<{ downloaded: number; total: number; percent: number }>("update-download-progress", (event) => {
+  const { downloaded, total, percent } = event.payload;
+  updateProgressBar.style.width = `${percent.toFixed(1)}%`;
+  updateProgressPercent.textContent = `${percent.toFixed(1)}%`;
+  updateProgressText.textContent = `${formatFileSize(downloaded)} / ${formatFileSize(total)}`;
+});
+
+// 监听下载完成
+listen("update-download-complete", () => {
+  updateProgressText.textContent = "下载完成，正在启动安装程序...";
+  updateProgressBar.style.width = "100%";
+  updateProgressPercent.textContent = "100%";
+});
+
+// 监听下载错误
+listen<string>("update-error", (event) => {
+  updateProgressText.textContent = `错误: ${event.payload}`;
+  updateProgressText.style.color = "var(--danger)";
+  downloadUpdateBtn.disabled = false;
+  downloadUpdateBtn.textContent = "重试下载";
+});
+
+openReleaseBtn.addEventListener("click", () => {
+  invoke("open_url", { url: "https://github.com/Python-island/Python-island/releases/latest" });
+});
+
+openGithubBtn.addEventListener("click", () => {
+  invoke("open_url", { url: "https://github.com/Python-island/Python-island" });
+});

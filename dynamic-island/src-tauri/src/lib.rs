@@ -7,6 +7,7 @@ mod media;
 pub mod settings;
 pub mod ai;
 mod window;
+mod updater;
 
 use std::collections::HashSet;
 use std::process::{Command, Stdio};
@@ -344,7 +345,8 @@ pub fn run() {
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
-            settings::get_auto_start, settings::set_auto_start
+            settings::get_auto_start, settings::set_auto_start,
+            updater::get_app_version, updater::check_for_updates, updater::download_and_install_update
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -733,6 +735,25 @@ pub fn run() {
                     }
 
                     thread::sleep(Duration::from_secs(5)); // 每 5 秒检查是否需要刷新
+                }
+            });
+
+            // --- 启动时自动检查更新 ---
+            let app_handle_update = app.handle().clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_secs(10));
+                match updater::check_for_updates(app_handle_update.clone()) {
+                    Ok(info) => {
+                        if info.has_update {
+                            println!("[Updater] 发现新版本: v{}", info.latest_version);
+                            let _ = app_handle_update.emit("update-available", info);
+                        } else {
+                            println!("[Updater] 当前已是最新版本");
+                        }
+                    }
+                    Err(e) => {
+                        println!("[Updater] 启动检查更新失败: {}", e);
+                    }
                 }
             });
 
