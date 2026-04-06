@@ -875,6 +875,56 @@
                 </select>
               </div>
             </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>歌词偏移补偿</h3>
+                <p>补偿请求歌词或 SMTC 带来的延迟，默认启用。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="lyric-offset-enabled" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>优先使用本地 WS 歌词</h3>
+                <p>连接 ws://127.0.0.1:11452 获取 lyricUpdate。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="lyric-ws-enabled" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>启用 API 搜索回退</h3>
+                <p>WS 无歌词时使用搜索 -> 接口获取歌词。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="lyric-api-search-enabled" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>补偿时长</h3>
+                <p>范围 0-1500ms，默认 800ms。</p>
+              </div>
+              <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
+                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="800" style="width: 100px; text-align: right;" />
+                <span style="font-size: 12px; color: var(--text-secondary);">ms</span>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -375,6 +375,10 @@ pub fn run() {
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
+            let lyric_ws_enabled = Arc::new(AtomicBool::new(settings.lyric_ws_enabled));
+            let lyric_api_search_enabled = Arc::new(AtomicBool::new(settings.lyric_api_search_enabled));
+            let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
+            let lyric_offset_ms = Arc::new(Mutex::new(settings.lyric_offset_ms.clamp(0, 1500)));
             let current_view = Arc::new(Mutex::new("time".to_string()));
 
             // AI 相关字段
@@ -411,6 +415,10 @@ pub fn run() {
                 pending_url: pending_url.clone(),
                 shortcut_key: shortcut_key.clone(),
                 lyric_mode: lyric_mode.clone(),
+                lyric_ws_enabled: lyric_ws_enabled.clone(),
+                lyric_api_search_enabled: lyric_api_search_enabled.clone(),
+                lyric_offset_enabled: lyric_offset_enabled.clone(),
+                lyric_offset_ms: lyric_offset_ms.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
                 music_expanded: music_expanded.clone(),
@@ -761,6 +769,8 @@ pub fn run() {
             // --- 媒体/歌词监控线程 ---
             let win_media = window.clone();
             let lyric_mode_media = lyric_mode.clone();
+            let lyric_ws_enabled_media = lyric_ws_enabled.clone();
+            let lyric_api_search_enabled_media = lyric_api_search_enabled.clone();
             let is_music_media = is_music.clone();
 
             // 歌词异步获取：用 Arc<Mutex> 共享结果 + 代数计数器防止竞态
@@ -802,6 +812,7 @@ pub fn run() {
                     let mode = lyric_mode_media.lock().unwrap().clone();
                     if mode == "off" {
                         if was_playing {
+                            lyrics::lyric_log_warn("playback state=stopped reason=lyric_mode_off");
                             was_playing = false;
                             last_is_playing = false;
                             current_track.clear();
@@ -812,10 +823,11 @@ pub fn run() {
                     }
 
                     let info = media::get_smtc_media_info();
-                    let (media_info, position_ms, is_playing) = match info {
+                    let (media_info, position_ms_raw, is_playing) = match info {
                         Some(v) => v,
                         None => {
                             if was_playing {
+                                lyrics::lyric_log_warn("playback state=stopped reason=no_smtc_session");
                                 was_playing = false;
                                 last_is_playing = false;
                                 current_track.clear();
@@ -826,9 +838,25 @@ pub fn run() {
                         }
                     };
 
+                    let offset_enabled = lyric_offset_enabled.load(Ordering::Relaxed);
+                    let offset_ms = *lyric_offset_ms.lock().unwrap();
+                    let position_ms = if offset_enabled {
+                        position_ms_raw.saturating_add(offset_ms)
+                    } else {
+                        position_ms_raw
+                    };
+
                     // 播放/暂停状态变化
                     if is_playing != last_is_playing {
                         last_is_playing = is_playing;
+                        lyrics::lyric_log_info(&format!(
+                            "playback state={} title='{}' artist='{}' position_raw_ms={} position_effective_ms={}",
+                            if is_playing { "playing" } else { "paused" },
+                            media_info.title,
+                            media_info.artist,
+                            position_ms_raw,
+                            position_ms
+                        ));
                         let _ = win_media.emit("playback-state", is_playing);
                     }
 
@@ -837,6 +865,10 @@ pub fn run() {
                     if !is_playing {
                         if was_playing {
                             was_playing = false;
+                            lyrics::lyric_log_info(&format!(
+                                "playback paused title='{}' artist='{}'",
+                                media_info.title, media_info.artist
+                            ));
                             let _ = win_media.emit("media-paused", serde_json::json!({
                                 "title": media_info.title,
                                 "artist": media_info.artist
@@ -848,6 +880,10 @@ pub fn run() {
                     // 歌曲切换时重新获取歌词
                     let track_key = format!("{} - {}", media_info.artist, media_info.title);
                     if track_key != current_track {
+                        lyrics::lyric_log_info(&format!(
+                            "track changed title='{}' artist='{}' duration_ms={}",
+                            media_info.title, media_info.artist, media_info.duration_ms
+                        ));
                         current_track = track_key.clone();
                         last_lyric_text.clear();
                         last_info_track.clear();
@@ -883,23 +919,41 @@ pub fn run() {
                         if mode == "lyric" {
                             let title = media_info.title.clone();
                             let artist = media_info.artist.clone();
+                            let ws_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
+                            let api_search_enabled = lyric_api_search_enabled_media.load(Ordering::Relaxed);
                             let gen = current_gen;
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
+                            lyrics::lyric_log_info(&format!(
+                                "lyric fetch start gen={} title='{}' artist='{}' ws_enabled={} api_search_enabled={}",
+                                gen, title, artist, ws_enabled, api_search_enabled
+                            ));
                             thread::Builder::new()
                                 .name("lyric-fetch".into())
                                 .stack_size(512 * 1024)
                                 .spawn(move || {
                                 // 提前检查代数
                                 if gen_ref.load(Ordering::Relaxed) != gen { return; }
-                                // 并行获取 LRCLIB + 网易云
-                                let fetched_lyrics = lyrics::fetch_lyrics_parallel(&title, &artist);
+                                let fetched_lyrics = lyrics::fetch_lyrics_parallel(&title, &artist, ws_enabled, api_search_enabled);
                                 // 只有当前代才写入结果
                                 if gen_ref.load(Ordering::Relaxed) == gen {
                                     let not_found = fetched_lyrics.is_none();
+                                    let line_count = fetched_lyrics.as_ref().map(|v| v.len()).unwrap_or(0);
+                                    lyrics::lyric_log_info(&format!(
+                                        "lyric fetch done gen={} found={} lines={}",
+                                        gen,
+                                        !not_found,
+                                        line_count
+                                    ));
                                     let mut guard = result_ref.lock().unwrap_or_else(|e| e.into_inner());
                                     *guard = Some((gen, fetched_lyrics.unwrap_or_default(), not_found));
+                                } else {
+                                    lyrics::lyric_log_warn(&format!(
+                                        "lyric fetch drop stale gen={} current_gen={}",
+                                        gen,
+                                        gen_ref.load(Ordering::Relaxed)
+                                    ));
                                 }
                             }).ok();
                         }
@@ -1019,6 +1073,10 @@ pub struct IslandState {
     pub pending_url: Arc<Mutex<Vec<String>>>,
     pub shortcut_key: Arc<Mutex<String>>,
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
+    pub lyric_ws_enabled: Arc<AtomicBool>,
+    pub lyric_api_search_enabled: Arc<AtomicBool>,
+    pub lyric_offset_enabled: Arc<AtomicBool>,
+    pub lyric_offset_ms: Arc<Mutex<i64>>,
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
     pub agent_expanded: Arc<AtomicBool>,
     pub music_expanded: Arc<AtomicBool>,

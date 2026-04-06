@@ -6,6 +6,10 @@ type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
   lyric_mode: string;
+  lyric_ws_enabled: boolean;
+  lyric_api_search_enabled: boolean;
+  lyric_offset_enabled: boolean;
+  lyric_offset_ms: number;
   indicator_color: string;
   agent_window_size: string;
   weather_city: string;
@@ -48,6 +52,10 @@ const INFLINK_URL = "https://github.com/BetterNCM/InfinityLink";
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
+const lyricWsEnabledToggle = document.getElementById("lyric-ws-enabled") as HTMLInputElement;
+const lyricApiSearchEnabledToggle = document.getElementById("lyric-api-search-enabled") as HTMLInputElement;
+const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
+const lyricOffsetMsInput = document.getElementById("lyric-offset-ms") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
@@ -76,11 +84,25 @@ const cityTag = document.getElementById("city-tag") as HTMLSpanElement;
 const clearCityBtn = document.getElementById("clear-city-btn") as HTMLButtonElement;
 let citySearchTimer: number | null = null;
 
+function clampLyricOffsetMs(v: number): number {
+  if (!Number.isFinite(v)) return 800;
+  return Math.min(1500, Math.max(0, Math.round(v)));
+}
+
+function syncLyricOffsetInputState() {
+  lyricOffsetMsInput.disabled = !lyricOffsetEnabledToggle.checked;
+}
+
 async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
+  lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
+  lyricApiSearchEnabledToggle.checked = settings.lyric_api_search_enabled ?? true;
+  lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
+  lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 800));
+  syncLyricOffsetInputState();
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   autoStartToggle.checked = settings.auto_start || false;
@@ -164,6 +186,15 @@ shortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
+lyricOffsetEnabledToggle.addEventListener("change", () => {
+  syncLyricOffsetInputState();
+});
+
+lyricOffsetMsInput.addEventListener("change", () => {
+  const next = clampLyricOffsetMs(Number(lyricOffsetMsInput.value));
+  lyricOffsetMsInput.value = String(next);
+});
+
 saveBtn.addEventListener("click", async () => {
   const shortcut = shortcutInput.value.trim();
   if (!shortcut || shortcut === shortcutHint) {
@@ -176,6 +207,10 @@ saveBtn.addEventListener("click", async () => {
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
+      lyricWsEnabled: lyricWsEnabledToggle.checked,
+      lyricApiSearchEnabled: lyricApiSearchEnabledToggle.checked,
+      lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
+      lyricOffsetMs: clampLyricOffsetMs(Number(lyricOffsetMsInput.value)),
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,
