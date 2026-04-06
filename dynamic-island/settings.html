@@ -891,8 +891,8 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <h3>优先使用本地 WS 歌词</h3>
-                <p>连接 ws://127.0.0.1:11452 获取 lyricUpdate。</p>
+                <h3>启用网易云命中（流派提取）</h3>
+                <p>从 SMTC 流派提取 NCM ID，直连网易云歌词接口获取歌词。</p>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -905,7 +905,7 @@
             <div class="setting-item">
               <div class="setting-label">
                 <h3>启用 API 搜索回退</h3>
-                <p>WS 无歌词时使用搜索 -> 接口获取歌词。</p>
+                <p>流派未命中 NCM ID 或接口无歌词时，使用搜索回退。</p>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -918,10 +918,10 @@
             <div class="setting-item">
               <div class="setting-label">
                 <h3>补偿时长</h3>
-                <p>范围 0-1500ms，默认 800ms。</p>
+                <p>范围 0-1500ms，默认 200ms。</p>
               </div>
               <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
-                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="800" style="width: 100px; text-align: right;" />
+                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="200" style="width: 100px; text-align: right;" />
                 <span style="font-size: 12px; color: var(--text-secondary);">ms</span>
               </div>
             </div>

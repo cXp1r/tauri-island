@@ -7,6 +7,7 @@ pub(crate) struct MediaInfo {
     pub title: String,
     pub artist: String,
     pub duration_ms: i64,
+    pub genre: String,
 }
 
 pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
@@ -200,6 +201,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
                 title: track_title.trim().to_string(),
                 artist,
                 duration_ms: 0,
+                genre: String::new(),
             });
         }
     }
@@ -208,6 +210,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
         title,
         artist: String::new(),
         duration_ms: 0,
+        genre: String::new(),
     })
 }
 
@@ -291,16 +294,38 @@ fn read_smtc_session_info(
         .map(|p| p.Duration / 10_000)
         .unwrap_or(0);
 
-    let (title, artist) = match session.TryGetMediaPropertiesAsync().ok().and_then(|op| op.get().ok()) {
+    let (title, artist, genre) = match session.TryGetMediaPropertiesAsync().ok().and_then(|op| op.get().ok()) {
         Some(props) => {
             let title = props.Title().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
             let artist = props.Artist().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
-            (title, artist)
+            let genre = props
+                .Genres()
+                .ok()
+                .and_then(|genres| {
+                    let size = genres.Size().ok()?;
+                    let mut values = Vec::new();
+                    for i in 0..size {
+                        if let Ok(v) = genres.GetAt(i) {
+                            let g = v.to_string_lossy();
+                            let g = g.trim();
+                            if !g.is_empty() {
+                                values.push(g.to_string());
+                            }
+                        }
+                    }
+                    if values.is_empty() {
+                        None
+                    } else {
+                        Some(values.join(" / "))
+                    }
+                })
+                .unwrap_or_default();
+            (title, artist, genre)
         }
-        None => (String::new(), String::new()),
+        None => (String::new(), String::new(), String::new()),
     };
 
-    Some((MediaInfo { title, artist, duration_ms }, position_ms, is_playing))
+    Some((MediaInfo { title, artist, duration_ms, genre }, position_ms, is_playing))
 }
 
 pub(crate) fn select_best_smtc_session(

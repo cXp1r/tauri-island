@@ -72,7 +72,7 @@ fn default_lyric_offset_enabled() -> bool {
 }
 
 fn default_lyric_offset_ms() -> i64 {
-    800
+    200
 }
 
 pub(crate) fn default_indicator_color() -> String {
