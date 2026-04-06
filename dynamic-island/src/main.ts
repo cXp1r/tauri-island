@@ -624,7 +624,7 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
-listen<{ text: string | null; title: string; artist: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
@@ -721,9 +721,14 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
       el.className = line.is_current ? "mp-lyric-line mp-lyric-current" : "mp-lyric-line";
     }
   } else if (text !== null && text !== undefined) {
-    // 如果面板已有多行歌词槽位，不用单行文本覆盖
-    if (mpLyricText.children.length === 0) {
-      mpLyricText.textContent = text;
+    // 前奏/等待歌词阶段：强制显示音乐符号，避免残留多行歌词造成“提前显示后续歌词”
+    if (text === "♪") {
+      mpLyricText.textContent = "♪";
+    } else {
+      // 如果面板已有多行歌词槽位，不用单行文本覆盖
+      if (mpLyricText.children.length === 0) {
+        mpLyricText.textContent = text;
+      }
     }
   } else {
     mpLyricText.textContent = title;
@@ -732,10 +737,11 @@ listen<{ text: string | null; title: string; artist: string; position_ms?: numbe
   updateSwitcherUI();
 });
 
-listen<{ title: string; artist: string; thumbnail?: string | null; duration_ms?: number }>("media-changed", (event) => {
+listen<{ title: string; artist: string; genre?: string; thumbnail?: string | null; duration_ms?: number }>("media-changed", (event) => {
   isMusicPlaying = true;
   currentSongTitle = event.payload.title;
   currentArtistName = event.payload.artist;
+  console.log(`[SMTC] genre='${event.payload.genre ?? ""}' title='${event.payload.title}' artist='${event.payload.artist}'`);
   lyricText.textContent = "♪";
   lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
   mpLyricText.textContent = "♪";

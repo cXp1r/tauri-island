@@ -850,10 +850,11 @@ pub fn run() {
                     if is_playing != last_is_playing {
                         last_is_playing = is_playing;
                         lyrics::lyric_log_info(&format!(
-                            "playback state={} title='{}' artist='{}' position_raw_ms={} position_effective_ms={}",
+                            "playback state={} title='{}' artist='{}' genre='{}' position_raw_ms={} position_effective_ms={}",
                             if is_playing { "playing" } else { "paused" },
                             media_info.title,
                             media_info.artist,
+                            media_info.genre,
                             position_ms_raw,
                             position_ms
                         ));
@@ -881,8 +882,8 @@ pub fn run() {
                     let track_key = format!("{} - {}", media_info.artist, media_info.title);
                     if track_key != current_track {
                         lyrics::lyric_log_info(&format!(
-                            "track changed title='{}' artist='{}' duration_ms={}",
-                            media_info.title, media_info.artist, media_info.duration_ms
+                            "track changed title='{}' artist='{}' genre='{}' duration_ms={}",
+                            media_info.title, media_info.artist, media_info.genre, media_info.duration_ms
                         ));
                         current_track = track_key.clone();
                         last_lyric_text.clear();
@@ -897,6 +898,7 @@ pub fn run() {
                         let _ = win_media.emit("media-changed", serde_json::json!({
                             "title": media_info.title,
                             "artist": media_info.artist,
+                            "genre": media_info.genre,
                             "thumbnail": null,
                             "duration_ms": media_info.duration_ms
                         }));
@@ -919,15 +921,16 @@ pub fn run() {
                         if mode == "lyric" {
                             let title = media_info.title.clone();
                             let artist = media_info.artist.clone();
-                            let ws_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
+                            let genre = media_info.genre.clone();
+                            let ncm_genre_hit_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
                             let api_search_enabled = lyric_api_search_enabled_media.load(Ordering::Relaxed);
                             let gen = current_gen;
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
                             lyrics::lyric_log_info(&format!(
-                                "lyric fetch start gen={} title='{}' artist='{}' ws_enabled={} api_search_enabled={}",
-                                gen, title, artist, ws_enabled, api_search_enabled
+                                "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid ncm_genre_hit_enabled={} api_search_enabled={}",
+                                gen, title, artist, genre, ncm_genre_hit_enabled, api_search_enabled
                             ));
                             thread::Builder::new()
                                 .name("lyric-fetch".into())
@@ -935,7 +938,13 @@ pub fn run() {
                                 .spawn(move || {
                                 // 提前检查代数
                                 if gen_ref.load(Ordering::Relaxed) != gen { return; }
-                                let fetched_lyrics = lyrics::fetch_lyrics_parallel(&title, &artist, ws_enabled, api_search_enabled);
+                                let fetched_lyrics = lyrics::fetch_lyrics_parallel(
+                                    &title,
+                                    &artist,
+                                    &genre,
+                                    ncm_genre_hit_enabled,
+                                    api_search_enabled,
+                                );
                                 // 只有当前代才写入结果
                                 if gen_ref.load(Ordering::Relaxed) == gen {
                                     let not_found = fetched_lyrics.is_none();
@@ -990,6 +999,7 @@ pub fn run() {
                             "text": text_val,
                             "title": media_info.title,
                             "artist": media_info.artist,
+                            "genre": media_info.genre,
                             "position_ms": position_ms,
                             "duration_ms": media_info.duration_ms,
                             "is_playing": is_playing
@@ -1004,6 +1014,7 @@ pub fn run() {
                             "text": null,
                             "title": media_info.title,
                             "artist": media_info.artist,
+                            "genre": media_info.genre,
                             "position_ms": position_ms,
                             "duration_ms": media_info.duration_ms,
                             "is_playing": is_playing

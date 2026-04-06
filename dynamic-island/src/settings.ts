@@ -85,7 +85,7 @@ const clearCityBtn = document.getElementById("clear-city-btn") as HTMLButtonElem
 let citySearchTimer: number | null = null;
 
 function clampLyricOffsetMs(v: number): number {
-  if (!Number.isFinite(v)) return 800;
+  if (!Number.isFinite(v)) return 200;
   return Math.min(1500, Math.max(0, Math.round(v)));
 }
 
@@ -101,7 +101,7 @@ async function loadSettings() {
   lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
   lyricApiSearchEnabledToggle.checked = settings.lyric_api_search_enabled ?? true;
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
-  lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 800));
+  lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 200));
   syncLyricOffsetInputState();
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
