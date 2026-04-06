@@ -770,7 +770,6 @@ pub fn run() {
             let win_media = window.clone();
             let lyric_mode_media = lyric_mode.clone();
             let lyric_ws_enabled_media = lyric_ws_enabled.clone();
-            let lyric_api_search_enabled_media = lyric_api_search_enabled.clone();
             let is_music_media = is_music.clone();
 
             // 歌词异步获取：用 Arc<Mutex> 共享结果 + 代数计数器防止竞态
@@ -923,7 +922,7 @@ pub fn run() {
                             let artist = media_info.artist.clone();
                             let genre = media_info.genre.clone();
                             let ncm_genre_hit_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
-                            let api_search_enabled = lyric_api_search_enabled_media.load(Ordering::Relaxed);
+                            let api_search_enabled = true;
                             let gen = current_gen;
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();

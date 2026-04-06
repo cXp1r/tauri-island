@@ -53,7 +53,6 @@ const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInput
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
 const lyricWsEnabledToggle = document.getElementById("lyric-ws-enabled") as HTMLInputElement;
-const lyricApiSearchEnabledToggle = document.getElementById("lyric-api-search-enabled") as HTMLInputElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
 const lyricOffsetMsInput = document.getElementById("lyric-offset-ms") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
@@ -99,7 +98,6 @@ async function loadSettings() {
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
-  lyricApiSearchEnabledToggle.checked = settings.lyric_api_search_enabled ?? true;
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 200));
   syncLyricOffsetInputState();
@@ -208,7 +206,7 @@ saveBtn.addEventListener("click", async () => {
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
       lyricWsEnabled: lyricWsEnabledToggle.checked,
-      lyricApiSearchEnabled: lyricApiSearchEnabledToggle.checked,
+      lyricApiSearchEnabled: true,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
       lyricOffsetMs: clampLyricOffsetMs(Number(lyricOffsetMsInput.value)),
       indicatorColor: indicatorColorInput.value,
@@ -230,15 +228,17 @@ saveBtn.addEventListener("click", async () => {
 
       // 通知主窗口更新 AI 状态
       await emit("ai-settings-changed", {});
+    }
 
-      // 自动检测模型类型（后台执行，不阻塞保存）
-      if (apiUrl && apiKey && model) {
-        aiModelTypeResult.textContent = "检测中...";
-        aiModelTypeResult.style.color = "#93a4c8";
-        void invoke("ai_detect_model_type").catch(() => {
-          aiModelTypeResult.textContent = "检测失败";
-          aiModelTypeResult.style.color = "#ff6f7f";
-        });
+    // 保存设置时顺带检测模型类型（配置完整时触发）
+    if (apiUrl && apiKey && model) {
+      aiModelTypeResult.textContent = "检测中...";
+      aiModelTypeResult.style.color = "#93a4c8";
+      try {
+        await invoke("ai_detect_model_type");
+      } catch {
+        aiModelTypeResult.textContent = "检测失败";
+        aiModelTypeResult.style.color = "#ff6f7f";
       }
     }
 

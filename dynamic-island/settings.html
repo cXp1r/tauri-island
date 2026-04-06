@@ -891,8 +891,8 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <h3>启用网易云命中（流派提取）</h3>
-                <p>从 SMTC 流派提取 NCM ID，直连网易云歌词接口获取歌词。</p>
+                <h3>SMTC 命中（网易云）</h3>
+                <p>从 SMTC 流派提取 NCM ID，直连网易云歌词接口获取歌词（推荐开启）。</p>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -904,14 +904,8 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <h3>启用 API 搜索回退</h3>
-                <p>流派未命中 NCM ID 或接口无歌词时，使用搜索回退。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="lyric-api-search-enabled" checked />
-                  <span class="slider"></span>
-                </label>
+                <h3>API 搜索保底</h3>
+                <p>无需开关：未命中流派 NCM ID 或直连无歌词时，自动使用 API 搜索保底。</p>
               </div>
             </div>
 

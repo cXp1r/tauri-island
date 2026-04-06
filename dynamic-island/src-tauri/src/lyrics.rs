@@ -27,7 +27,11 @@ fn lyric_log_file() -> Option<&'static Mutex<File>> {
                 .as_millis();
             let file_name = format!("lyrics_{}.log", ts);
             let file_path: PathBuf = match std::env::current_dir() {
-                Ok(dir) => dir.join(file_name),
+                Ok(dir) => {
+                    let log_dir = dir.join("log");
+                    let _ = std::fs::create_dir_all(&log_dir);
+                    log_dir.join(file_name)
+                }
                 Err(_) => return None,
             };
             let file = OpenOptions::new()
@@ -127,7 +131,7 @@ fn extract_ncm_id_from_genre(genre: &str) -> Option<i64> {
         .and_then(|id| id.parse::<i64>().ok())
 }
 
-fn fetch_netease_lyrics_by_song_id(song_id: i64) -> Option<Vec<LyricLine>> {
+fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<LyricLine>> {
     let client = shared_http_client();
     let lyric_urls = [
         format!(
@@ -141,7 +145,8 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64) -> Option<Vec<LyricLine>> {
         lyric_log(
             LogLevel::Info,
             &format!(
-                "lyric source=SMTC-GENRE-NCM step=fetch attempt={} url='{}'",
+                "lyric source={} step=fetch attempt={} url='{}'",
+                source,
                 idx + 1,
                 lyric_url
             ),
@@ -175,7 +180,8 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64) -> Option<Vec<LyricLine>> {
                 lyric_log(
                     LogLevel::Info,
                     &format!(
-                        "lyric source=SMTC-GENRE-NCM step=parse lines={} song_id={}",
+                        "lyric source={} step=parse lines={} song_id={}",
+                        source,
                         lines.len(),
                         song_id
                     ),
@@ -188,11 +194,124 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64) -> Option<Vec<LyricLine>> {
     lyric_log(
         LogLevel::Warn,
         &format!(
-            "lyric source=SMTC-GENRE-NCM empty song_id={} both_urls_failed",
+            "lyric source={} empty song_id={} both_urls_failed",
+            source,
             song_id
         ),
     );
     None
+}
+
+fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
+    let keyword = if artist.trim().is_empty() {
+        title.trim().to_string()
+    } else {
+        format!("{} {}", title.trim(), artist.trim())
+    };
+    if keyword.is_empty() {
+        lyric_log(LogLevel::Warn, "lyric source=API-SEARCH empty_keyword");
+        return None;
+    }
+
+    let encoded = urlencoding::encode(&keyword);
+    let search_url = format!(
+        "https://music.163.com/api/search/get/web?csrf_token=&s={}&type=1&offset=0&total=true&limit=8",
+        encoded
+    );
+    lyric_log(
+        LogLevel::Info,
+        &format!("lyric source=API-SEARCH step=search keyword='{}'", keyword),
+    );
+
+    let client = shared_http_client();
+    let resp = match client
+        .get(&search_url)
+        .header("Referer", "https://music.163.com")
+        .header("User-Agent", "Mozilla/5.0")
+        .send()
+    {
+        Ok(v) => v,
+        Err(_) => {
+            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search request_failed");
+            return None;
+        }
+    };
+
+    let search_json: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(_) => {
+            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search invalid_json");
+            return None;
+        }
+    };
+
+    let songs = match search_json
+        .get("result")
+        .and_then(|v| v.get("songs"))
+        .and_then(|v| v.as_array())
+    {
+        Some(v) if !v.is_empty() => v,
+        _ => {
+            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search no_song_results");
+            return None;
+        }
+    };
+
+    let title_lc = title.to_lowercase();
+    let artist_lc = artist.to_lowercase();
+
+    let mut fallback_id: Option<i64> = None;
+    for song in songs {
+        let id = match song.get("id").and_then(|v| v.as_i64()) {
+            Some(v) => v,
+            None => continue,
+        };
+        if fallback_id.is_none() {
+            fallback_id = Some(id);
+        }
+
+        let name = song
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        let artists_joined = song
+            .get("artists")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("/")
+                    .to_lowercase()
+            })
+            .unwrap_or_default();
+
+        let title_ok = !title_lc.is_empty() && name.contains(&title_lc);
+        let artist_ok = artist_lc.is_empty() || artists_joined.contains(&artist_lc);
+        if title_ok && artist_ok {
+            lyric_log(
+                LogLevel::Info,
+                &format!(
+                    "lyric source=API-SEARCH step=search matched_song_id={} name='{}' artists='{}'",
+                    id, name, artists_joined
+                ),
+            );
+            return Some(id);
+        }
+    }
+
+    if let Some(id) = fallback_id {
+        lyric_log(
+            LogLevel::Info,
+            &format!(
+                "lyric source=API-SEARCH step=search use_first_song_id={} total_candidates={}",
+                id,
+                songs.len()
+            ),
+        );
+    }
+    fallback_id
 }
 
 /// 使用 SMTC genre 中的 NCM ID 直连网易云歌词接口获取歌词
@@ -211,42 +330,58 @@ pub(crate) fn fetch_lyrics_parallel(
         ),
     );
 
+    if ncm_genre_hit_enabled {
+        if let Some(song_id) = extract_ncm_id_from_genre(genre) {
+            lyric_log(
+                LogLevel::Info,
+                &format!(
+                    "lyric source=SMTC-GENRE-NCM extracted_song_id={} genre='{}'",
+                    song_id, genre
+                ),
+            );
+            if let Some(lines) = fetch_netease_lyrics_by_song_id(song_id, "SMTC-GENRE-NCM") {
+                return Some(lines);
+            }
+            lyric_log(
+                LogLevel::Warn,
+                &format!(
+                    "lyric source=SMTC-GENRE-NCM fallback_to_search song_id={} reason=empty_or_failed",
+                    song_id
+                ),
+            );
+        } else {
+            lyric_log(
+                LogLevel::Warn,
+                &format!(
+                    "lyric source=SMTC-GENRE-NCM invalid_genre genre='{}' no_ncmid fallback_to_search",
+                    genre
+                ),
+            );
+        }
+    } else {
+        lyric_log(
+            LogLevel::Info,
+            "lyric source=SMTC-GENRE-NCM disabled by setting fallback_to_search",
+        );
+    }
+
     if !api_search_enabled {
         lyric_log(LogLevel::Info, "lyric source=API disabled");
         return None;
     }
 
-    if !ncm_genre_hit_enabled {
-        lyric_log(
-            LogLevel::Info,
-            "lyric source=SMTC-GENRE-NCM disabled by setting",
-        );
-        return None;
-    }
-
-    let song_id = match extract_ncm_id_from_genre(genre) {
+    let search_song_id = match fetch_netease_song_id_by_search(title, artist) {
         Some(id) => id,
-        None => {
-            lyric_log(
-                LogLevel::Warn,
-                &format!(
-                    "lyric source=SMTC-GENRE-NCM invalid_genre genre='{}' no_ncmid",
-                    genre
-                ),
-            );
-            return None;
-        }
+        None => return None,
     };
-
     lyric_log(
         LogLevel::Info,
         &format!(
-            "lyric source=SMTC-GENRE-NCM extracted_song_id={} genre='{}'",
-            song_id, genre
+            "lyric source=API-SEARCH step=fetch_lyrics song_id={} title='{}' artist='{}'",
+            search_song_id, title, artist
         ),
     );
-
-    fetch_netease_lyrics_by_song_id(song_id)
+    fetch_netease_lyrics_by_song_id(search_song_id, "API-SEARCH")
 }
 
 pub(crate) fn get_current_lyric(lyrics: &[LyricLine], position_ms: i64) -> Option<&LyricLine> {
