@@ -904,8 +904,21 @@
 
             <div class="setting-item">
               <div class="setting-label">
+                <h3>Rust API</h3>
+                <p>使用 Lyricify Lyrics Helper 库搜索网易云歌词，作为 SMTC 命中失败后的第二备选。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="lyric-rust-api-enabled" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
                 <h3>API 搜索保底</h3>
-                <p>无需开关：未命中流派 NCM ID 或直连无歌词时，自动使用 API 搜索保底。</p>
+                <p>无需开关：以上源均未命中时，自动使用 API 搜索保底。</p>
               </div>
             </div>
 

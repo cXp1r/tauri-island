@@ -284,10 +284,33 @@ fn read_smtc_session_info(
 
     let timeline = session.GetTimelineProperties().ok();
 
-    let position_ms = timeline.as_ref()
-        .and_then(|t| t.Position().ok())
-        .map(|p| p.Duration / 10_000) // 100ns ticks -> ms
-        .unwrap_or(0);
+    let position_ms = if let Some(ref t) = timeline {
+        let reported_ms = t.Position().ok()
+            .map(|p| p.Duration / 10_000)
+            .unwrap_or(0);
+        // SMTC Position() is a snapshot at LastUpdatedTime; interpolate to now
+        if is_playing {
+            if let Ok(last_updated) = t.LastUpdatedTime() {
+                let now_ticks = {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let unix_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+                    // Windows FILETIME epoch offset (100ns ticks from 1601 to 1970)
+                    unix_ms * 10_000 + 116_444_736_000_000_000i64
+                };
+                let elapsed_ms = ((now_ticks - last_updated.UniversalTime).max(0)) / 10_000;
+                reported_ms + elapsed_ms
+            } else {
+                reported_ms
+            }
+        } else {
+            reported_ms
+        }
+    } else {
+        0
+    };
 
     let duration_ms = timeline.as_ref()
         .and_then(|t| t.EndTime().ok())

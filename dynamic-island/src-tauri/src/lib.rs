@@ -377,6 +377,7 @@ pub fn run() {
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_ws_enabled = Arc::new(AtomicBool::new(settings.lyric_ws_enabled));
             let lyric_api_search_enabled = Arc::new(AtomicBool::new(settings.lyric_api_search_enabled));
+            let lyric_rust_api_enabled = Arc::new(AtomicBool::new(settings.lyric_rust_api_enabled));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             let lyric_offset_ms = Arc::new(Mutex::new(settings.lyric_offset_ms.clamp(0, 1500)));
             let current_view = Arc::new(Mutex::new("time".to_string()));
@@ -417,6 +418,7 @@ pub fn run() {
                 lyric_mode: lyric_mode.clone(),
                 lyric_ws_enabled: lyric_ws_enabled.clone(),
                 lyric_api_search_enabled: lyric_api_search_enabled.clone(),
+                lyric_rust_api_enabled: lyric_rust_api_enabled.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
                 lyric_offset_ms: lyric_offset_ms.clone(),
                 current_view: current_view.clone(),
@@ -770,6 +772,7 @@ pub fn run() {
             let win_media = window.clone();
             let lyric_mode_media = lyric_mode.clone();
             let lyric_ws_enabled_media = lyric_ws_enabled.clone();
+            let lyric_rust_api_enabled_media = lyric_rust_api_enabled.clone();
             let is_music_media = is_music.clone();
 
             // 歌词异步获取：用 Arc<Mutex> 共享结果 + 代数计数器防止竞态
@@ -777,6 +780,8 @@ pub fn run() {
             // (generation, lyrics, not_found)
             use std::sync::atomic::AtomicU64 as AtomicU64Import;
             let lyrics_generation: Arc<AtomicU64Import> = Arc::new(AtomicU64Import::new(0));
+            // 封面代数计数器，防止旧封面覆盖新歌
+            let thumb_generation: Arc<AtomicU64Import> = Arc::new(AtomicU64Import::new(0));
 
             thread::spawn(move || {
                 let mut current_lyrics: Vec<lyrics::LyricLine> = Vec::new();
@@ -881,8 +886,10 @@ pub fn run() {
                     let track_key = format!("{} - {}", media_info.artist, media_info.title);
                     if track_key != current_track {
                         lyrics::lyric_log_info(&format!(
-                            "track changed title='{}' artist='{}' genre='{}' duration_ms={}",
-                            media_info.title, media_info.artist, media_info.genre, media_info.duration_ms
+                            "\nsmtc: track changed title='{}' artist='{}' genre='{}' duration_ms={} position_ms={} is_playing={} offset_enabled={} offset_ms={}",
+                            media_info.title, media_info.artist, media_info.genre,
+                            media_info.duration_ms, position_ms_raw, is_playing,
+                            offset_enabled, offset_ms
                         ));
                         current_track = track_key.clone();
                         last_lyric_text.clear();
@@ -905,13 +912,18 @@ pub fn run() {
                         // 异步获取封面（独立线程，不阻塞轮询）
                         {
                             let win_thumb = win_media.clone();
+                            let thumb_gen_val = thumb_generation.fetch_add(1, Ordering::Relaxed) + 1;
+                            let thumb_gen_ref = thumb_generation.clone();
                             thread::Builder::new()
                                 .name("thumb-fetch".into())
                                 .spawn(move || {
                                     if let Some(thumb) = media::get_smtc_thumbnail() {
-                                        let _ = win_thumb.emit("media-thumbnail", serde_json::json!({
-                                            "thumbnail": thumb
-                                        }));
+                                        // 只有代数匹配才发送，避免旧封面覆盖新歌
+                                        if thumb_gen_ref.load(Ordering::Relaxed) == thumb_gen_val {
+                                            let _ = win_thumb.emit("media-thumbnail", serde_json::json!({
+                                                "thumbnail": thumb
+                                            }));
+                                        }
                                     }
                                 }).ok();
                         }
@@ -922,14 +934,15 @@ pub fn run() {
                             let artist = media_info.artist.clone();
                             let genre = media_info.genre.clone();
                             let ncm_genre_hit_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
+                            let rust_api_enabled = lyric_rust_api_enabled_media.load(Ordering::Relaxed);
                             let api_search_enabled = true;
                             let gen = current_gen;
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
                             lyrics::lyric_log_info(&format!(
-                                "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid ncm_genre_hit_enabled={} api_search_enabled={}",
-                                gen, title, artist, genre, ncm_genre_hit_enabled, api_search_enabled
+                                "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid ncm_genre_hit_enabled={} rust_api_enabled={} api_search_enabled={}",
+                                gen, title, artist, genre, ncm_genre_hit_enabled, rust_api_enabled, api_search_enabled
                             ));
                             thread::Builder::new()
                                 .name("lyric-fetch".into())
@@ -942,6 +955,7 @@ pub fn run() {
                                     &artist,
                                     &genre,
                                     ncm_genre_hit_enabled,
+                                    rust_api_enabled,
                                     api_search_enabled,
                                 );
                                 // 只有当前代才写入结果
@@ -1085,6 +1099,7 @@ pub struct IslandState {
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
     pub lyric_ws_enabled: Arc<AtomicBool>,
     pub lyric_api_search_enabled: Arc<AtomicBool>,
+    pub lyric_rust_api_enabled: Arc<AtomicBool>,
     pub lyric_offset_enabled: Arc<AtomicBool>,
     pub lyric_offset_ms: Arc<Mutex<i64>>,
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"

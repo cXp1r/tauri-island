@@ -8,6 +8,7 @@ type SettingsResponse = {
   lyric_mode: string;
   lyric_ws_enabled: boolean;
   lyric_api_search_enabled: boolean;
+  lyric_rust_api_enabled: boolean;
   lyric_offset_enabled: boolean;
   lyric_offset_ms: number;
   indicator_color: string;
@@ -53,6 +54,7 @@ const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInput
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
 const lyricWsEnabledToggle = document.getElementById("lyric-ws-enabled") as HTMLInputElement;
+const lyricRustApiEnabledToggle = document.getElementById("lyric-rust-api-enabled") as HTMLInputElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
 const lyricOffsetMsInput = document.getElementById("lyric-offset-ms") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
@@ -98,6 +100,7 @@ async function loadSettings() {
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
+  lyricRustApiEnabledToggle.checked = settings.lyric_rust_api_enabled ?? true;
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 200));
   syncLyricOffsetInputState();
@@ -206,6 +209,7 @@ saveBtn.addEventListener("click", async () => {
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
       lyricWsEnabled: lyricWsEnabledToggle.checked,
+      lyricRustApiEnabled: lyricRustApiEnabledToggle.checked,
       lyricApiSearchEnabled: true,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
       lyricOffsetMs: clampLyricOffsetMs(Number(lyricOffsetMsInput.value)),

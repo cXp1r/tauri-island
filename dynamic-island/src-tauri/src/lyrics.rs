@@ -145,7 +145,7 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<Lyr
         lyric_log(
             LogLevel::Info,
             &format!(
-                "lyric source={} step=fetch attempt={} url='{}'",
+                "{}: fetch attempt={} url='{}'",
                 source,
                 idx + 1,
                 lyric_url
@@ -180,7 +180,7 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<Lyr
                 lyric_log(
                     LogLevel::Info,
                     &format!(
-                        "lyric source={} step=parse lines={} song_id={}",
+                        "{}: parse ok lines={} song_id={}",
                         source,
                         lines.len(),
                         song_id
@@ -194,7 +194,7 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<Lyr
     lyric_log(
         LogLevel::Warn,
         &format!(
-            "lyric source={} empty song_id={} both_urls_failed",
+            "{}: both urls failed song_id={}",
             source,
             song_id
         ),
@@ -209,7 +209,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
         format!("{} {}", title.trim(), artist.trim())
     };
     if keyword.is_empty() {
-        lyric_log(LogLevel::Warn, "lyric source=API-SEARCH empty_keyword");
+        lyric_log(LogLevel::Warn, "\napi-search: empty keyword");
         return None;
     }
 
@@ -220,7 +220,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     );
     lyric_log(
         LogLevel::Info,
-        &format!("lyric source=API-SEARCH step=search keyword='{}'", keyword),
+        &format!("\napi-search: keyword='{}'", keyword),
     );
 
     let client = shared_http_client();
@@ -232,7 +232,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     {
         Ok(v) => v,
         Err(_) => {
-            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search request_failed");
+            lyric_log(LogLevel::Warn, "api-search: search request failed");
             return None;
         }
     };
@@ -240,7 +240,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     let search_json: serde_json::Value = match resp.json() {
         Ok(v) => v,
         Err(_) => {
-            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search invalid_json");
+            lyric_log(LogLevel::Warn, "api-search: search invalid json");
             return None;
         }
     };
@@ -252,7 +252,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     {
         Some(v) if !v.is_empty() => v,
         _ => {
-            lyric_log(LogLevel::Warn, "lyric source=API-SEARCH step=search no_song_results");
+            lyric_log(LogLevel::Warn, "api-search: no song results");
             return None;
         }
     };
@@ -293,7 +293,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
             lyric_log(
                 LogLevel::Info,
                 &format!(
-                    "lyric source=API-SEARCH step=search matched_song_id={} name='{}' artists='{}'",
+                    "api-search: matched song id={} name='{}' artists='{}'",
                     id, name, artists_joined
                 ),
             );
@@ -305,7 +305,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
         lyric_log(
             LogLevel::Info,
             &format!(
-                "lyric source=API-SEARCH step=search use_first_song_id={} total_candidates={}",
+                "api-search: using first song id={} total_candidates={}",
                 id,
                 songs.len()
             ),
@@ -314,18 +314,125 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     fallback_id
 }
 
+/// 通过 lyricify-lyrics-provider 统一接口获取歌词（自动检测播放器，多源 fallback）
+fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
+    use lyricify_lyrics_provider::smtc_lyrics;
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            lyric_log(LogLevel::Warn, &format!("\nrust-api: tokio runtime init failed: {}", e));
+            return None;
+        }
+    };
+
+    let artist_opt = if artist.trim().is_empty() { None } else { Some(artist) };
+
+    rt.block_on(async {
+        lyric_log(LogLevel::Info, &format!(
+            "\nrust-api: title='{}' artist='{}'", title, artist
+        ));
+
+        // 1) 尝试自动检测播放器
+        let running = smtc_lyrics::get_running_players();
+        if !running.is_empty() {
+            let names: Vec<&str> = running.iter().map(|p| p.display_name()).collect();
+            lyric_log(LogLevel::Info, &format!(
+                "rust-api: running players=[{}]", names.join(", ")
+            ));
+        } else {
+            lyric_log(LogLevel::Info, "rust-api: no running players detected");
+        }
+
+        match smtc_lyrics::get_lyrics(title, artist_opt, None, None).await {
+            Ok((player, data)) => {
+                let lines = lyrics_data_to_lyric_lines(&data);
+                if !lines.is_empty() {
+                    lyric_log(LogLevel::Info, &format!(
+                        "rust-api: done player='{}' lines={}",
+                        player.display_name(), lines.len()
+                    ));
+                    return Some(lines);
+                }
+                lyric_log(LogLevel::Warn, &format!(
+                    "rust-api: player='{}' empty after convert", player.display_name()
+                ));
+            }
+            Err(e) => {
+                lyric_log(LogLevel::Warn, &format!(
+                    "rust-api: auto detect failed: {}", e
+                ));
+            }
+        }
+
+        // 2) 自动检测失败，按优先级逐个尝试：网易云 → QQ音乐 → 汽水音乐
+        let fallback_players = [
+            smtc_lyrics::MusicPlayer::Netease,
+            smtc_lyrics::MusicPlayer::QQMusic,
+            smtc_lyrics::MusicPlayer::SodaMusic,
+        ];
+        for player in &fallback_players {
+            lyric_log(LogLevel::Info, &format!(
+                "rust-api: fallback trying '{}'", player.display_name()
+            ));
+            match smtc_lyrics::get_lyrics_with_player(player, title, artist_opt, None, None).await {
+                Ok(data) => {
+                    let lines = lyrics_data_to_lyric_lines(&data);
+                    if !lines.is_empty() {
+                        lyric_log(LogLevel::Info, &format!(
+                            "rust-api: fallback done player='{}' lines={}",
+                            player.display_name(), lines.len()
+                        ));
+                        return Some(lines);
+                    }
+                }
+                Err(e) => {
+                    lyric_log(LogLevel::Warn, &format!(
+                        "rust-api: fallback player='{}' failed: {}",
+                        player.display_name(), e
+                    ));
+                }
+            }
+        }
+
+        lyric_log(LogLevel::Warn, "rust-api: all sources exhausted");
+        None
+    })
+}
+
+/// 将 LyricsData 转换为 Vec<LyricLine>
+fn lyrics_data_to_lyric_lines(
+    data: &lyricify_lyrics_provider::models::LyricsData,
+) -> Vec<LyricLine> {
+    data.lines
+        .iter()
+        .filter_map(|line| {
+            let text = line.text();
+            if text.trim().is_empty() {
+                return None;
+            }
+            let time_ms = line.start_time().unwrap_or(0) as i64;
+            Some(LyricLine { time_ms, text })
+        })
+        .collect()
+}
+
 /// 使用 SMTC genre 中的 NCM ID 直连网易云歌词接口获取歌词
 pub(crate) fn fetch_lyrics_parallel(
     title: &str,
     artist: &str,
     genre: &str,
     ncm_genre_hit_enabled: bool,
+    rust_api_enabled: bool,
     api_search_enabled: bool,
 ) -> Option<Vec<LyricLine>> {
     lyric_log(
         LogLevel::Info,
         &format!(
-            "start lyric fetch song='{}' artist='{}' genre='{}' strategy=genre_ncmid",
+            "\nlyric-fetch: song='{}' artist='{}' genre='{}'",
             title, artist, genre
         ),
     );
@@ -335,17 +442,17 @@ pub(crate) fn fetch_lyrics_parallel(
             lyric_log(
                 LogLevel::Info,
                 &format!(
-                    "lyric source=SMTC-GENRE-NCM extracted_song_id={} genre='{}'",
+                    "\nsmtc-genre-ncm: extracted song_id={} genre='{}'",
                     song_id, genre
                 ),
             );
-            if let Some(lines) = fetch_netease_lyrics_by_song_id(song_id, "SMTC-GENRE-NCM") {
+            if let Some(lines) = fetch_netease_lyrics_by_song_id(song_id, "smtc-genre-ncm") {
                 return Some(lines);
             }
             lyric_log(
                 LogLevel::Warn,
                 &format!(
-                    "lyric source=SMTC-GENRE-NCM fallback_to_search song_id={} reason=empty_or_failed",
+                    "smtc-genre-ncm: fallback to search song_id={}",
                     song_id
                 ),
             );
@@ -353,7 +460,7 @@ pub(crate) fn fetch_lyrics_parallel(
             lyric_log(
                 LogLevel::Warn,
                 &format!(
-                    "lyric source=SMTC-GENRE-NCM invalid_genre genre='{}' no_ncmid fallback_to_search",
+                    "smtc-genre-ncm: no ncmid in genre='{}' fallback to search",
                     genre
                 ),
             );
@@ -361,12 +468,24 @@ pub(crate) fn fetch_lyrics_parallel(
     } else {
         lyric_log(
             LogLevel::Info,
-            "lyric source=SMTC-GENRE-NCM disabled by setting fallback_to_search",
+            "smtc-genre-ncm: disabled by setting",
         );
     }
 
+    // --- 第二优先：Rust API（lyricify-lyrics-helper 库） ---
+    if rust_api_enabled {
+        lyric_log(LogLevel::Info, &format!("rust-api: enabled, title='{}' artist='{}'", title, artist));
+        if let Some(lines) = fetch_lyrics_by_rust_api(title, artist) {
+            return Some(lines);
+        }
+        lyric_log(LogLevel::Warn, "rust-api: failed, fallback to api-search");
+    } else {
+        lyric_log(LogLevel::Info, "rust-api: disabled by setting");
+    }
+
+    // --- 第三优先：API 搜索保底 ---
     if !api_search_enabled {
-        lyric_log(LogLevel::Info, "lyric source=API disabled");
+        lyric_log(LogLevel::Info, "\napi-search: disabled by setting");
         return None;
     }
 
@@ -377,11 +496,11 @@ pub(crate) fn fetch_lyrics_parallel(
     lyric_log(
         LogLevel::Info,
         &format!(
-            "lyric source=API-SEARCH step=fetch_lyrics song_id={} title='{}' artist='{}'",
+            "\napi-search: fetch lyrics song_id={} title='{}' artist='{}'",
             search_song_id, title, artist
         ),
     );
-    fetch_netease_lyrics_by_song_id(search_song_id, "API-SEARCH")
+    fetch_netease_lyrics_by_song_id(search_song_id, "api-search")
 }
 
 pub(crate) fn get_current_lyric(lyrics: &[LyricLine], position_ms: i64) -> Option<&LyricLine> {

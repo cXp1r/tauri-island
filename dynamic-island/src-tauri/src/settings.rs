@@ -23,6 +23,8 @@ pub(crate) struct SettingsData {
     pub lyric_ws_enabled: bool,
     #[serde(default = "default_lyric_api_search_enabled")]
     pub lyric_api_search_enabled: bool,
+    #[serde(default = "default_lyric_rust_api_enabled")]
+    pub lyric_rust_api_enabled: bool,
     #[serde(default = "default_lyric_offset_enabled")]
     pub lyric_offset_enabled: bool,
     #[serde(default = "default_lyric_offset_ms")]
@@ -67,6 +69,10 @@ fn default_lyric_api_search_enabled() -> bool {
     true
 }
 
+fn default_lyric_rust_api_enabled() -> bool {
+    true
+}
+
 fn default_lyric_offset_enabled() -> bool {
     true
 }
@@ -104,6 +110,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         lyric_mode: default_lyric_mode(),
         lyric_ws_enabled: default_lyric_ws_enabled(),
         lyric_api_search_enabled: default_lyric_api_search_enabled(),
+        lyric_rust_api_enabled: default_lyric_rust_api_enabled(),
         lyric_offset_enabled: default_lyric_offset_enabled(),
         lyric_offset_ms: default_lyric_offset_ms(),
         ai_api_url: String::new(),
@@ -135,6 +142,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
         lyric_ws_enabled: state.lyric_ws_enabled.load(Ordering::Relaxed),
         lyric_api_search_enabled: state.lyric_api_search_enabled.load(Ordering::Relaxed),
+        lyric_rust_api_enabled: state.lyric_rust_api_enabled.load(Ordering::Relaxed),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offset_ms: *state.lyric_offset_ms.lock().unwrap(),
         ai_api_url: state.ai_api_url.lock().unwrap().clone(),
@@ -174,6 +182,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let lyric_mode = state.lyric_mode.lock().unwrap().clone();
     let lyric_ws_enabled = state.lyric_ws_enabled.load(Ordering::Relaxed);
     let lyric_api_search_enabled = state.lyric_api_search_enabled.load(Ordering::Relaxed);
+    let lyric_rust_api_enabled = state.lyric_rust_api_enabled.load(Ordering::Relaxed);
     let lyric_offset_enabled = state.lyric_offset_enabled.load(Ordering::Relaxed);
     let lyric_offset_ms = *state.lyric_offset_ms.lock().unwrap();
     let indicator_color = state.indicator_color.lock().unwrap().clone();
@@ -188,6 +197,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "lyric_mode": lyric_mode,
         "lyric_ws_enabled": lyric_ws_enabled,
         "lyric_api_search_enabled": lyric_api_search_enabled,
+        "lyric_rust_api_enabled": lyric_rust_api_enabled,
         "lyric_offset_enabled": lyric_offset_enabled,
         "lyric_offset_ms": lyric_offset_ms,
         "indicator_color": indicator_color,
@@ -208,6 +218,7 @@ pub fn save_settings(
     lyric_mode: String,
     lyric_ws_enabled: Option<bool>,
     lyric_api_search_enabled: Option<bool>,
+    lyric_rust_api_enabled: Option<bool>,
     lyric_offset_enabled: Option<bool>,
     lyric_offset_ms: Option<i64>,
     indicator_color: String,
@@ -225,6 +236,9 @@ pub fn save_settings(
     }
     if let Some(enabled) = lyric_api_search_enabled {
         state.lyric_api_search_enabled.store(enabled, Ordering::Relaxed);
+    }
+    if let Some(enabled) = lyric_rust_api_enabled {
+        state.lyric_rust_api_enabled.store(enabled, Ordering::Relaxed);
     }
     if let Some(enabled) = lyric_offset_enabled {
         state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
@@ -280,6 +294,9 @@ pub fn save_settings(
     }
     if let Some(enabled) = lyric_api_search_enabled {
         settings_data.lyric_api_search_enabled = enabled;
+    }
+    if let Some(enabled) = lyric_rust_api_enabled {
+        settings_data.lyric_rust_api_enabled = enabled;
     }
     if let Some(enabled) = lyric_offset_enabled {
         settings_data.lyric_offset_enabled = enabled;
