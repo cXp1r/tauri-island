@@ -51,6 +51,8 @@ pub(crate) struct SettingsData {
     pub weather_lon: f64,
     #[serde(default)]
     pub auto_start: bool,
+    #[serde(default = "default_blacklist_processes")]
+    pub blacklist_processes: Vec<String>,
 }
 
 fn default_shortcut() -> String {
@@ -89,6 +91,13 @@ pub(crate) fn default_agent_window_size() -> String {
     "medium".to_string()
 }
 
+fn default_blacklist_processes() -> Vec<String> {
+    vec![
+        "msedge.exe".to_string(),
+        "chrome.exe".to_string(),
+    ]
+}
+
 pub(crate) fn get_settings_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("dynamic-island");
@@ -104,7 +113,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
             return data;
         }
     }
-    SettingsData {
+    // 文件不存在或解析失败，使用默认值并立即写入磁盘
+    let defaults = SettingsData {
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
         lyric_mode: default_lyric_mode(),
@@ -124,7 +134,10 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         weather_lat: 0.0,
         weather_lon: 0.0,
         auto_start: false,
-    }
+        blacklist_processes: default_blacklist_processes(),
+    };
+    let _ = save_settings_to_file(&defaults);
+    defaults
 }
 
 pub(crate) fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
@@ -156,6 +169,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         weather_lat: *state.weather_lat.lock().unwrap(),
         weather_lon: *state.weather_lon.lock().unwrap(),
         auto_start: state.auto_start.load(Ordering::Relaxed),
+        blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
     }
 }
 
@@ -462,6 +476,29 @@ pub fn set_auto_start(
 
     let mut settings_data = build_settings_data(&state);
     settings_data.auto_start = enabled;
+    save_settings_to_file(&settings_data)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_blacklist(state: tauri::State<'_, IslandState>) -> Vec<String> {
+    state.blacklist_processes.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn save_blacklist(
+    state: tauri::State<'_, IslandState>,
+    processes: Vec<String>,
+) -> Result<(), String> {
+    let normalized: Vec<String> = processes.iter()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    *state.blacklist_processes.lock().unwrap() = normalized.clone();
+
+    let mut settings_data = build_settings_data(&state);
+    settings_data.blacklist_processes = normalized;
     save_settings_to_file(&settings_data)?;
 
     Ok(())

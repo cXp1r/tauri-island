@@ -1,3 +1,4 @@
+pub mod logger;
 mod privacy;
 mod clipboard;
 mod betterncm;
@@ -347,6 +348,7 @@ pub fn run() {
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
             settings::get_auto_start, settings::set_auto_start,
+            settings::get_blacklist, settings::save_blacklist,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update
         ])
         .setup(|app| {
@@ -401,6 +403,9 @@ pub fn run() {
             let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
             let url_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let auto_start = Arc::new(AtomicBool::new(settings.auto_start));
+            let blacklist_processes: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(
+                settings.blacklist_processes.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
+            ));
             let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
             let weather_lat = Arc::new(Mutex::new(settings.weather_lat));
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
@@ -444,6 +449,7 @@ pub fn run() {
                 weather_cache: weather_cache.clone(),
                 weather_force_refresh: weather_force_refresh.clone(),
                 auto_start: auto_start.clone(),
+                blacklist_processes: blacklist_processes.clone(),
             });
 
             // --- 系统托盘 ---
@@ -595,6 +601,43 @@ pub fn run() {
                     thread::sleep(Duration::from_millis(16));
                 }
             });
+
+            // --- 黑名单监控线程 ---
+            {
+                let blacklist = blacklist_processes.clone();
+                let hwnd_bl = hwnd.0 as usize;
+                thread::spawn(move || {
+                    let hwnd = HWND(hwnd_bl as *mut _);
+                    let mut hidden = false;
+                    loop {
+                        thread::sleep(Duration::from_millis(500));
+                        let list = blacklist.lock().unwrap().clone();
+                        if list.is_empty() {
+                            if hidden {
+                                unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE); }
+                                hidden = false;
+                            }
+                            continue;
+                        }
+                        let should_hide = if let Some(fg_name) = window::get_foreground_process_name() {
+                            list.iter().any(|b| fg_name == *b)
+                        } else {
+                            false
+                        };
+                        if should_hide && !hidden {
+                            if let Some(ref name) = window::get_foreground_process_name() {
+                                crate::logger::info("Blacklist", &format!("hiding island: fg_process='{}'", name));
+                            }
+                            unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE); }
+                            hidden = true;
+                        } else if !should_hide && hidden {
+                            crate::logger::info("Blacklist", "showing island: fg_process no longer blacklisted");
+                            unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE); }
+                            hidden = false;
+                        }
+                    }
+                });
+            }
 
             // --- 硬件监控线程 ---
             let win_hw = window.clone();
@@ -1135,6 +1178,8 @@ pub struct IslandState {
     pub weather_force_refresh: Arc<AtomicBool>,
     // 开机自启
     pub auto_start: Arc<AtomicBool>,
+    // 黑名单进程列表（小写）
+    pub blacklist_processes: Arc<Mutex<Vec<String>>>,
 }
 
 unsafe impl Send for IslandState {}
