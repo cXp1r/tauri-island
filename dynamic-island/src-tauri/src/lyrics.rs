@@ -1,10 +1,6 @@
 use crate::shared_http_client;
 use regex::Regex;
-use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::OnceLock;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LyricLine {
@@ -12,62 +8,6 @@ pub(crate) struct LyricLine {
     pub text: String,
 }
 
-enum LogLevel {
-    Info,
-    Warn,
-}
-
-fn lyric_log_file() -> Option<&'static Mutex<File>> {
-    static LOG_FILE: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    LOG_FILE
-        .get_or_init(|| {
-            let ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let file_name = format!("lyrics_{}.log", ts);
-            let file_path: PathBuf = match std::env::current_dir() {
-                Ok(dir) => {
-                    let log_dir = dir.join("log");
-                    let _ = std::fs::create_dir_all(&log_dir);
-                    log_dir.join(file_name)
-                }
-                Err(_) => return None,
-            };
-            let file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(file_path)
-                .ok()?;
-            Some(Mutex::new(file))
-        })
-        .as_ref()
-}
-
-fn lyric_log(level: LogLevel, message: &str) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let level = match level {
-        LogLevel::Info => "INFO",
-        LogLevel::Warn => "WARN",
-    };
-    let line = format!("[Lyrics][{}][{}] {}", now, level, message);
-    println!("{}", line);
-    if let Some(file) = lyric_log_file() {
-        let mut file = file.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = writeln!(file, "{}", line);
-    }
-}
-
-pub(crate) fn lyric_log_info(message: &str) {
-    lyric_log(LogLevel::Info, message);
-}
-
-pub(crate) fn lyric_log_warn(message: &str) {
-    lyric_log(LogLevel::Warn, message);
-}
 
 fn is_meta_lyric_text(text: &str) -> bool {
     let meta_prefixes = [
@@ -142,15 +82,10 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<Lyr
     ];
 
     for (idx, lyric_url) in lyric_urls.iter().enumerate() {
-        lyric_log(
-            LogLevel::Info,
-            &format!(
-                "{}: fetch attempt={} url='{}'",
-                source,
-                idx + 1,
-                lyric_url
-            ),
-        );
+        crate::logger::info("Lyrics", &format!(
+            "{}: fetch attempt={} url='{}'",
+            source, idx + 1, lyric_url
+        ));
 
         let lyric_resp = match client
             .get(lyric_url)
@@ -177,28 +112,16 @@ fn fetch_netease_lyrics_by_song_id(song_id: i64, source: &str) -> Option<Vec<Lyr
             }
             let lines = parse_synced_lyrics(lrc_str);
             if !lines.is_empty() {
-                lyric_log(
-                    LogLevel::Info,
-                    &format!(
-                        "{}: parse ok lines={} song_id={}",
-                        source,
-                        lines.len(),
-                        song_id
-                    ),
-                );
+                crate::logger::info("Lyrics", &format!(
+                    "{}: parse ok lines={} song_id={}",
+                    source, lines.len(), song_id
+                ));
                 return Some(lines);
             }
         }
     }
 
-    lyric_log(
-        LogLevel::Warn,
-        &format!(
-            "{}: both urls failed song_id={}",
-            source,
-            song_id
-        ),
-    );
+    crate::logger::warn("Lyrics", &format!("{}: both urls failed song_id={}", source, song_id));
     None
 }
 
@@ -209,7 +132,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
         format!("{} {}", title.trim(), artist.trim())
     };
     if keyword.is_empty() {
-        lyric_log(LogLevel::Warn, "\napi-search: empty keyword");
+        crate::logger::warn("Lyrics", "\napi-search: empty keyword");
         return None;
     }
 
@@ -218,10 +141,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
         "https://music.163.com/api/search/get/web?csrf_token=&s={}&type=1&offset=0&total=true&limit=8",
         encoded
     );
-    lyric_log(
-        LogLevel::Info,
-        &format!("\napi-search: keyword='{}'", keyword),
-    );
+    crate::logger::info("Lyrics", &format!("\napi-search: keyword='{}'", keyword));
 
     let client = shared_http_client();
     let resp = match client
@@ -232,7 +152,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     {
         Ok(v) => v,
         Err(_) => {
-            lyric_log(LogLevel::Warn, "api-search: search request failed");
+            crate::logger::warn("Lyrics", "api-search: search request failed");
             return None;
         }
     };
@@ -240,7 +160,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     let search_json: serde_json::Value = match resp.json() {
         Ok(v) => v,
         Err(_) => {
-            lyric_log(LogLevel::Warn, "api-search: search invalid json");
+            crate::logger::warn("Lyrics", "api-search: search invalid json");
             return None;
         }
     };
@@ -252,7 +172,7 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
     {
         Some(v) if !v.is_empty() => v,
         _ => {
-            lyric_log(LogLevel::Warn, "api-search: no song results");
+            crate::logger::warn("Lyrics", "api-search: no song results");
             return None;
         }
     };
@@ -290,26 +210,19 @@ fn fetch_netease_song_id_by_search(title: &str, artist: &str) -> Option<i64> {
         let title_ok = !title_lc.is_empty() && name.contains(&title_lc);
         let artist_ok = artist_lc.is_empty() || artists_joined.contains(&artist_lc);
         if title_ok && artist_ok {
-            lyric_log(
-                LogLevel::Info,
-                &format!(
-                    "api-search: matched song id={} name='{}' artists='{}'",
-                    id, name, artists_joined
-                ),
-            );
+            crate::logger::info("Lyrics", &format!(
+                "api-search: matched song id={} name='{}' artists='{}'",
+                id, name, artists_joined
+            ));
             return Some(id);
         }
     }
 
     if let Some(id) = fallback_id {
-        lyric_log(
-            LogLevel::Info,
-            &format!(
-                "api-search: using first song id={} total_candidates={}",
-                id,
-                songs.len()
-            ),
-        );
+        crate::logger::info("Lyrics", &format!(
+            "api-search: using first song id={} total_candidates={}",
+            id, songs.len()
+        ));
     }
     fallback_id
 }
@@ -324,7 +237,7 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
     {
         Ok(rt) => rt,
         Err(e) => {
-            lyric_log(LogLevel::Warn, &format!("\nrust-api: tokio runtime init failed: {}", e));
+            crate::logger::warn("Lyrics", &format!("\nrust-api: tokio runtime init failed: {}", e));
             return None;
         }
     };
@@ -332,7 +245,7 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
     let artist_opt = if artist.trim().is_empty() { None } else { Some(artist) };
 
     rt.block_on(async {
-        lyric_log(LogLevel::Info, &format!(
+        crate::logger::info("Lyrics", &format!(
             "\nrust-api: title='{}' artist='{}'", title, artist
         ));
 
@@ -340,29 +253,29 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
         let running = smtc_lyrics::get_running_players();
         if !running.is_empty() {
             let names: Vec<&str> = running.iter().map(|p| p.display_name()).collect();
-            lyric_log(LogLevel::Info, &format!(
+            crate::logger::info("Lyrics", &format!(
                 "rust-api: running players=[{}]", names.join(", ")
             ));
         } else {
-            lyric_log(LogLevel::Info, "rust-api: no running players detected");
+            crate::logger::info("Lyrics", "rust-api: no running players detected");
         }
 
         match smtc_lyrics::get_lyrics(title, artist_opt, None, None).await {
             Ok((player, data)) => {
                 let lines = lyrics_data_to_lyric_lines(&data);
                 if !lines.is_empty() {
-                    lyric_log(LogLevel::Info, &format!(
+                    crate::logger::info("Lyrics", &format!(
                         "rust-api: done player='{}' lines={}",
                         player.display_name(), lines.len()
                     ));
                     return Some(lines);
                 }
-                lyric_log(LogLevel::Warn, &format!(
+                crate::logger::warn("Lyrics", &format!(
                     "rust-api: player='{}' empty after convert", player.display_name()
                 ));
             }
             Err(e) => {
-                lyric_log(LogLevel::Warn, &format!(
+                crate::logger::warn("Lyrics", &format!(
                     "rust-api: auto detect failed: {}", e
                 ));
             }
@@ -375,14 +288,14 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
             smtc_lyrics::MusicPlayer::SodaMusic,
         ];
         for player in &fallback_players {
-            lyric_log(LogLevel::Info, &format!(
+            crate::logger::info("Lyrics", &format!(
                 "rust-api: fallback trying '{}'", player.display_name()
             ));
             match smtc_lyrics::get_lyrics_with_player(player, title, artist_opt, None, None).await {
                 Ok(data) => {
                     let lines = lyrics_data_to_lyric_lines(&data);
                     if !lines.is_empty() {
-                        lyric_log(LogLevel::Info, &format!(
+                        crate::logger::info("Lyrics", &format!(
                             "rust-api: fallback done player='{}' lines={}",
                             player.display_name(), lines.len()
                         ));
@@ -390,7 +303,7 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
                     }
                 }
                 Err(e) => {
-                    lyric_log(LogLevel::Warn, &format!(
+                    crate::logger::warn("Lyrics", &format!(
                         "rust-api: fallback player='{}' failed: {}",
                         player.display_name(), e
                     ));
@@ -398,7 +311,7 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
             }
         }
 
-        lyric_log(LogLevel::Warn, "rust-api: all sources exhausted");
+        crate::logger::warn("Lyrics", "rust-api: all sources exhausted");
         None
     })
 }
@@ -429,63 +342,48 @@ pub(crate) fn fetch_lyrics_parallel(
     rust_api_enabled: bool,
     api_search_enabled: bool,
 ) -> Option<Vec<LyricLine>> {
-    lyric_log(
-        LogLevel::Info,
-        &format!(
-            "\nlyric-fetch: song='{}' artist='{}' genre='{}'",
-            title, artist, genre
-        ),
-    );
+    crate::logger::info("Lyrics", &format!(
+        "\nlyric-fetch: song='{}' artist='{}' genre='{}'",
+        title, artist, genre
+    ));
 
     if ncm_genre_hit_enabled {
         if let Some(song_id) = extract_ncm_id_from_genre(genre) {
-            lyric_log(
-                LogLevel::Info,
-                &format!(
-                    "\nsmtc-genre-ncm: extracted song_id={} genre='{}'",
-                    song_id, genre
-                ),
-            );
+            crate::logger::info("Lyrics", &format!(
+                "\nsmtc-genre-ncm: extracted song_id={} genre='{}'",
+                song_id, genre
+            ));
             if let Some(lines) = fetch_netease_lyrics_by_song_id(song_id, "smtc-genre-ncm") {
                 return Some(lines);
             }
-            lyric_log(
-                LogLevel::Warn,
-                &format!(
-                    "smtc-genre-ncm: fallback to search song_id={}",
-                    song_id
-                ),
-            );
+            crate::logger::warn("Lyrics", &format!(
+                "smtc-genre-ncm: fallback to search song_id={}",
+                song_id
+            ));
         } else {
-            lyric_log(
-                LogLevel::Warn,
-                &format!(
-                    "smtc-genre-ncm: no ncmid in genre='{}' fallback to search",
-                    genre
-                ),
-            );
+            crate::logger::warn("Lyrics", &format!(
+                "smtc-genre-ncm: no ncmid in genre='{}' fallback to search",
+                genre
+            ));
         }
     } else {
-        lyric_log(
-            LogLevel::Info,
-            "smtc-genre-ncm: disabled by setting",
-        );
+        crate::logger::info("Lyrics", "smtc-genre-ncm: disabled by setting");
     }
 
     // --- 第二优先：Rust API（lyricify-lyrics-helper 库） ---
     if rust_api_enabled {
-        lyric_log(LogLevel::Info, &format!("rust-api: enabled, title='{}' artist='{}'", title, artist));
+        crate::logger::info("Lyrics", &format!("rust-api: enabled, title='{}' artist='{}'", title, artist));
         if let Some(lines) = fetch_lyrics_by_rust_api(title, artist) {
             return Some(lines);
         }
-        lyric_log(LogLevel::Warn, "rust-api: failed, fallback to api-search");
+        crate::logger::warn("Lyrics", "rust-api: failed, fallback to api-search");
     } else {
-        lyric_log(LogLevel::Info, "rust-api: disabled by setting");
+        crate::logger::info("Lyrics", "rust-api: disabled by setting");
     }
 
     // --- 第三优先：API 搜索保底 ---
     if !api_search_enabled {
-        lyric_log(LogLevel::Info, "\napi-search: disabled by setting");
+        crate::logger::info("Lyrics", "\napi-search: disabled by setting");
         return None;
     }
 
@@ -493,13 +391,10 @@ pub(crate) fn fetch_lyrics_parallel(
         Some(id) => id,
         None => return None,
     };
-    lyric_log(
-        LogLevel::Info,
-        &format!(
-            "\napi-search: fetch lyrics song_id={} title='{}' artist='{}'",
-            search_song_id, title, artist
-        ),
-    );
+    crate::logger::info("Lyrics", &format!(
+        "\napi-search: fetch lyrics song_id={} title='{}' artist='{}'",
+        search_song_id, title, artist
+    ));
     fetch_netease_lyrics_by_song_id(search_song_id, "api-search")
 }
 

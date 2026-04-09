@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
+
+
 type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
@@ -48,7 +50,7 @@ type CityResult = {
   longitude: number;
 };
 
-const INFLINK_URL = "https://github.com/BetterNCM/InfinityLink";
+const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
@@ -678,6 +680,7 @@ const updateInfoCard = document.getElementById("update-info-card") as HTMLDivEle
 const updateLatestVersion = document.getElementById("update-latest-version") as HTMLSpanElement;
 const updatePublished = document.getElementById("update-published") as HTMLParagraphElement;
 const updateNotes = document.getElementById("update-notes") as HTMLDivElement;
+const updateCardTitle = document.getElementById("update-card-title") as HTMLSpanElement;
 const updateProgressWrapper = document.getElementById("update-progress-wrapper") as HTMLDivElement;
 const updateProgressText = document.getElementById("update-progress-text") as HTMLSpanElement;
 const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLSpanElement;
@@ -686,8 +689,40 @@ const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButton
 const downloadUpdateBtn = document.getElementById("download-update-btn") as HTMLButtonElement;
 const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
 const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
+const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement;
+const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement;
+const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement;
+const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement;
 
 let pendingDownloadUrl = "";
+let showPreviewEnabled = false;
+
+// 加载预览更新开关
+invoke<boolean>("get_preview_updates").then((enabled) => {
+  if (previewUpdatesToggle) previewUpdatesToggle.checked = enabled;
+}).catch(() => {});
+
+if (previewUpdatesToggle) {
+  previewUpdatesToggle.addEventListener("change", () => {
+    void invoke("set_preview_updates", { enabled: previewUpdatesToggle.checked });
+  });
+}
+
+// 后端控制：是否显示预览版开关行
+function applyPreviewVisibility(enabled: boolean) {
+  showPreviewEnabled = enabled;
+  if (previewToggleRow) previewToggleRow.style.display = enabled ? "" : "none";
+  if (disablePreviewWrap) disablePreviewWrap.style.display = enabled ? "" : "none";
+}
+
+invoke<boolean>("get_show_preview_toggle").then(applyPreviewVisibility).catch(() => {});
+
+if (disablePreviewBtn) {
+  disablePreviewBtn.addEventListener("click", () => {
+    void invoke("set_show_preview_toggle", { enabled: false });
+    applyPreviewVisibility(false);
+  });
+}
 
 // 加载当前版本号
 invoke<string>("get_app_version").then((ver) => {
@@ -711,14 +746,18 @@ checkUpdateBtn.addEventListener("click", async () => {
   downloadUpdateBtn.style.display = "none";
   openReleaseBtn.style.display = "none";
 
+  const isPreview = showPreviewEnabled && (previewUpdatesToggle?.checked ?? false);
+
+  let failed = false;
   try {
-    const info = await invoke<UpdateInfo>("check_for_updates");
+    const info = await invoke<UpdateInfo>("check_for_updates", { preview: isPreview });
     currentVersionEl.textContent = `v${info.current_version}`;
 
     if (info.has_update) {
-      updateStatusText.textContent = "发现新版本！";
+      updateStatusText.textContent = isPreview ? "发现预览构建！" : "发现新版本！";
       updateStatusText.style.color = "var(--primary)";
-      updateLatestVersion.textContent = `v${info.latest_version}`;
+      if (updateCardTitle) updateCardTitle.textContent = isPreview ? "🚧 发现预览构建" : "🎉 发现新版本";
+      updateLatestVersion.textContent = isPreview ? `预览: ${info.latest_version}` : `v${info.latest_version}`;
       updatePublished.textContent = info.published_at
         ? `发布于 ${new Date(info.published_at).toLocaleDateString("zh-CN")}`
         : "";
@@ -728,15 +767,34 @@ checkUpdateBtn.addEventListener("click", async () => {
       openReleaseBtn.style.display = "inline-flex";
       pendingDownloadUrl = info.download_url;
     } else {
-      updateStatusText.textContent = `当前已是最新版本 (v${info.current_version})`;
+      updateStatusText.textContent = isPreview
+        ? `当前是最新测试版 (v${info.current_version})`
+        : `当前是主分支最新版 (v${info.current_version})`;
       updateStatusText.style.color = "var(--ok)";
     }
   } catch (e) {
+    failed = true;
     updateStatusText.textContent = `检查更新失败: ${e}`;
     updateStatusText.style.color = "var(--danger)";
   } finally {
-    checkUpdateBtn.disabled = false;
-    checkUpdateBtn.textContent = "检查更新";
+    if (failed) {
+      // 失败后冷却 10 秒，防止频繁触发 rate limit
+      let cd = 10;
+      checkUpdateBtn.textContent = `重试 (${cd}s)`;
+      const cdTimer = setInterval(() => {
+        cd--;
+        if (cd <= 0) {
+          clearInterval(cdTimer);
+          checkUpdateBtn.disabled = false;
+          checkUpdateBtn.textContent = "检查更新";
+        } else {
+          checkUpdateBtn.textContent = `重试 (${cd}s)`;
+        }
+      }, 1000);
+    } else {
+      checkUpdateBtn.disabled = false;
+      checkUpdateBtn.textContent = "检查更新";
+    }
   }
 });
 
@@ -783,20 +841,47 @@ listen<string>("update-error", (event) => {
 });
 
 openReleaseBtn.addEventListener("click", () => {
-  invoke("open_url", { url: "https://github.com/Python-island/Python-island/releases/latest" });
+  const url = (previewUpdatesToggle?.checked)
+    ? "https://github.com/cXp1r/Python-island/releases/tag/tauri-test"
+    : "https://github.com/Python-island/Python-island/releases/latest";
+  invoke("open_url", { url });
 });
 
 openGithubBtn.addEventListener("click", () => {
   invoke("open_url", { url: "https://github.com/Python-island/Python-island" });
 });
 
+const logPathText = document.getElementById("log-path-text") as HTMLParagraphElement;
+const openLogDirBtn = document.getElementById("open-log-dir-btn") as HTMLButtonElement;
+
+invoke<string>("get_log_path").then((p) => {
+  if (logPathText) logPathText.textContent = p;
+}).catch(() => {
+  if (logPathText) logPathText.textContent = "获取失败";
+});
+
+if (openLogDirBtn) {
+  openLogDirBtn.addEventListener("click", () => {
+    void invoke("open_log_dir");
+  });
+}
+
 // ==================== 黑名单 ====================
 
 const blacklistInput = document.getElementById("blacklist-input") as HTMLInputElement | null;
 const blacklistAddBtn = document.getElementById("blacklist-add-btn") as HTMLButtonElement | null;
 const blacklistList = document.getElementById("blacklist-list") as HTMLDivElement | null;
+const blacklistEnabledToggle = document.getElementById("blacklist-enabled-toggle") as HTMLInputElement | null;
+const blacklistContentGroup = document.getElementById("blacklist-content-group") as HTMLDivElement | null;
 
 let blacklistProcesses: string[] = [];
+
+function updateBlacklistContentVisibility(enabled: boolean) {
+  if (blacklistContentGroup) {
+    blacklistContentGroup.style.opacity = enabled ? "1" : "0.4";
+    blacklistContentGroup.style.pointerEvents = enabled ? "" : "none";
+  }
+}
 
 async function loadBlacklist() {
   try {
@@ -805,6 +890,29 @@ async function loadBlacklist() {
   } catch (e) {
     console.error("加载黑名单失败:", e);
   }
+}
+
+async function loadBlacklistEnabled() {
+  try {
+    const enabled = await invoke<boolean>("get_blacklist_enabled");
+    if (blacklistEnabledToggle) blacklistEnabledToggle.checked = enabled;
+    updateBlacklistContentVisibility(enabled);
+  } catch (e) {
+    console.error("加载黑名单开关失败:", e);
+  }
+}
+
+if (blacklistEnabledToggle) {
+  blacklistEnabledToggle.addEventListener("change", async () => {
+    const enabled = blacklistEnabledToggle.checked;
+    updateBlacklistContentVisibility(enabled);
+    try {
+      await invoke("set_blacklist_enabled", { enabled });
+      showStatus(enabled ? "黑名单已启用" : "黑名单已禁用");
+    } catch (e) {
+      showStatus(`保存失败: ${String(e)}`, true, 4500);
+    }
+  });
 }
 
 function renderBlacklist() {
@@ -872,3 +980,4 @@ if (blacklistInput) blacklistInput.addEventListener("keydown", (e) => {
 });
 
 void loadBlacklist();
+void loadBlacklistEnabled();

@@ -4,789 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>灵动岛 - 设置</title>
-  <style>
-    :root {
-      --bg: #f5f5f5;
-      --surface: #ffffff;
-      --surface-hover: #f3f3f3;
-      --border: #e0e0e0;
-      --text: #1f1f1f;
-      --text-secondary: #717171;
-      --text-muted: #a0a0a0;
-      --primary: #0078d4;
-      --primary-hover: #1084d7;
-      --primary-active: #005a9e;
-      --danger: #d13438;
-      --ok: #107c10;
-      --radius: 8px;
-      --shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #1f1f1f;
-        --surface: #2d2d2d;
-        --surface-hover: #3d3d3d;
-        --border: #404040;
-        --text: #e0e0e0;
-        --text-secondary: #b0b0b0;
-        --text-muted: #808080;
-        --primary: #0078d4;
-        --primary-hover: #1084d7;
-        --primary-active: #005a9e;
-        --danger: #f48771;
-        --ok: #6cc24a;
-        --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
-      }
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      min-height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-
-    .container {
-      width: min(900px, 100%);
-      background: var(--surface);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      display: flex;
-      height: min(600px, 80vh);
-      overflow: hidden;
-    }
-
-    .sidebar {
-      width: 200px;
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      background: var(--surface);
-    }
-
-    .sidebar-header {
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .sidebar-header h1 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .sidebar-header p {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-
-    .nav-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px 0;
-    }
-
-    .nav-item {
-      padding: 12px 16px;
-      cursor: pointer;
-      border-left: 3px solid transparent;
-      transition: all 0.15s ease;
-      font-size: 13px;
-      color: var(--text-secondary);
-      user-select: none;
-    }
-
-    .nav-item:hover {
-      background: var(--surface-hover);
-      color: var(--text);
-    }
-
-    .nav-item.active {
-      background: rgba(0, 120, 212, 0.1);
-      border-left-color: var(--primary);
-      color: var(--primary);
-      font-weight: 500;
-    }
-
-    .content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .content-header {
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .content-header h2 {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .content-header p {
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .content-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px 24px;
-    }
-
-    .page {
-      display: none;
-      position: relative;
-    }
-
-    .page.active {
-      display: block;
-      height: 100%;
-    }
-
-    .setting-group {
-      margin-bottom: 24px;
-    }
-
-    .setting-group:last-child {
-      margin-bottom: 0;
-    }
-
-    .setting-group-title {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      letter-spacing: 0.5px;
-    }
-
-    .setting-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .setting-item:last-child {
-      border-bottom: none;
-    }
-
-    .setting-label {
-      flex: 1;
-    }
-
-    .setting-label h3 {
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 4px;
-      color: var(--text);
-    }
-
-    .setting-label p {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.4;
-    }
-
-    .setting-control {
-      flex-shrink: 0;
-      margin-left: 16px;
-    }
-
-    .switch {
-      width: 44px;
-      height: 24px;
-      position: relative;
-      display: inline-block;
-    }
-
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .slider {
-      position: absolute;
-      inset: 0;
-      border-radius: 12px;
-      background: #ccc;
-      cursor: pointer;
-      transition: background 0.2s ease;
-    }
-
-    .slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      top: 3px;
-      border-radius: 50%;
-      background: #fff;
-      transition: transform 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    }
-
-    .switch input:checked + .slider {
-      background: var(--primary);
-    }
-
-    .switch input:checked + .slider::before {
-      transform: translateX(20px);
-    }
-
-    .input,
-    .select {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 4px;
-      font-size: 13px;
-      padding: 8px 12px;
-      outline: none;
-      transition: border-color 0.15s ease;
-      font-family: inherit;
-    }
-
-    .input:focus,
-    .select:focus {
-      border-color: var(--primary);
-    }
-
-    .input.shortcut {
-      width: 140px;
-      text-align: center;
-      cursor: pointer;
-    }
-
-    .input.path {
-      width: 100%;
-      margin-top: 8px;
-    }
-
-    .select {
-      width: 140px;
-      cursor: pointer;
-    }
-
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      width: 100%;
-    }
-
-    .input-group .input {
-      width: 100%;
-    }
-
-    .actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-
-    .btn {
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      font-weight: 500;
-      font-size: 13px;
-      padding: 8px 16px;
-      background: var(--surface);
-      color: var(--text);
-      user-select: none;
-    }
-
-    .btn:hover {
-      background: var(--surface-hover);
-      border-color: var(--text-muted);
-    }
-
-    .btn:active {
-      background: var(--border);
-    }
-
-    .btn-primary {
-      color: #fff;
-      background: var(--primary);
-      border-color: var(--primary);
-    }
-
-    .btn-primary:hover {
-      background: var(--primary-hover);
-      border-color: var(--primary-hover);
-    }
-
-    .btn-primary:active {
-      background: var(--primary-active);
-      border-color: var(--primary-active);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      color: var(--text);
-      font-size: 12px;
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 8px 12px;
-      margin-top: 8px;
-      word-break: break-all;
-      line-height: 1.5;
-    }
-
-    .footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .save-btn {
-      padding: 8px 24px;
-      font-size: 13px;
-      color: #fff;
-      background: var(--primary);
-      border: 1px solid var(--primary);
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      font-weight: 500;
-    }
-
-    .save-btn:hover {
-      background: var(--primary-hover);
-      border-color: var(--primary-hover);
-    }
-
-    .status {
-      font-size: 13px;
-      color: var(--ok);
-      flex: 1;
-    }
-
-    .status.error {
-      color: var(--danger);
-    }
-
-    /* 滚动条样式 - Webkit 浏览器 */
-    .nav-list::-webkit-scrollbar,
-    .content-body::-webkit-scrollbar {
-      width: 12px;
-    }
-
-    .nav-list::-webkit-scrollbar-track,
-    .content-body::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .nav-list::-webkit-scrollbar-thumb,
-    .content-body::-webkit-scrollbar-thumb {
-      background: var(--text-muted);
-      border-radius: 6px;
-      border: 3px solid transparent;
-      background-clip: padding-box;
-      transition: background 0.2s ease;
-    }
-
-    .nav-list::-webkit-scrollbar-thumb:hover,
-    .content-body::-webkit-scrollbar-thumb:hover {
-      background: var(--text-secondary);
-      background-clip: padding-box;
-    }
-
-    .nav-list::-webkit-scrollbar-thumb:active,
-    .content-body::-webkit-scrollbar-thumb:active {
-      background: var(--text);
-      background-clip: padding-box;
-    }
-
-    /* Firefox 滚动条样式 */
-    .nav-list,
-    .content-body {
-      scrollbar-color: var(--text-muted) transparent;
-      scrollbar-width: thin;
-    }
-
-    @media (max-width: 768px) {
-      .container {
-        flex-direction: column;
-        height: auto;
-        max-height: 90vh;
-      }
-
-      .sidebar {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-        flex-direction: row;
-        height: auto;
-      }
-
-      .sidebar-header {
-        flex: 1;
-        border-bottom: none;
-        border-right: 1px solid var(--border);
-      }
-
-      .nav-list {
-        flex: 1;
-        display: flex;
-        overflow-x: auto;
-        overflow-y: hidden;
-        padding: 0;
-      }
-
-      .nav-item {
-        border-left: none;
-        border-bottom: 3px solid transparent;
-        padding: 12px 16px;
-        white-space: nowrap;
-      }
-
-      .nav-item.active {
-        border-left: none;
-        border-bottom-color: var(--primary);
-      }
-
-      .content-body {
-        padding: 16px;
-      }
-
-      .input.shortcut,
-      .select {
-        width: 100%;
-      }
-    }
-
-    .handler-card {
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px 16px;
-      margin-bottom: 12px;
-    }
-
-    .handlers-list {
-      margin-top: 16px;
-    }
-
-    .handler-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .handler-name {
-      font-weight: 500;
-      font-size: 14px;
-    }
-
-    .handler-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .handler-field {
-      margin-bottom: 8px;
-    }
-
-    .handler-field label {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: block;
-      margin-bottom: 4px;
-    }
-
-    .handler-field input {
-      width: 100%;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 4px;
-      font-size: 13px;
-      padding: 6px 10px;
-      outline: none;
-    }
-
-    .handler-field input:focus {
-      border-color: var(--primary);
-    }
-
-    /* 链接处理器列表样式 */
-    .handler-list-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin-bottom: 8px;
-      transition: background 0.15s ease;
-    }
-
-    .handler-list-item:hover {
-      background: var(--surface-hover);
-    }
-
-    .handler-list-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-    }
-
-    .handler-list-name {
-      font-weight: 500;
-      font-size: 14px;
-      color: var(--text);
-    }
-
-    .handler-list-name.empty {
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    .handler-list-status {
-      font-size: 12px;
-      color: var(--text-muted);
-      padding: 2px 8px;
-      background: var(--surface-hover);
-      border-radius: 4px;
-    }
-
-    .handler-list-status.active {
-      color: var(--ok);
-      background: rgba(16, 124, 16, 0.1);
-    }
-
-    .handler-list-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    /* 二级页面样式 */
-    .handler-detail-page {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 56px; /* 为 footer 留出空间 */
-      background: var(--surface);
-      display: none;
-      flex-direction: column;
-      z-index: 10;
-    }
-
-    .handler-detail-page.active {
-      display: flex;
-    }
-
-    .handler-detail-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .handler-detail-header h3 {
-      flex: 1;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .handler-detail-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-    }
-
-    .handler-detail-field {
-      margin-bottom: 20px;
-    }
-
-    .handler-detail-field label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-
-    .handler-detail-field .hint {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-
-    .handler-detail-field input {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 4px;
-      font-size: 13px;
-      padding: 10px 12px;
-      outline: none;
-    }
-
-    .handler-detail-field input:focus {
-      border-color: var(--primary);
-    }
-
-    .app-path-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .app-path-row input {
-      flex: 1;
-    }
-
-    .app-path-row .btn {
-      white-space: nowrap;
-    }
-
-    .handler-detail-footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 12px;
-    }
-
-    .btn-success {
-      color: #fff;
-      background: var(--ok);
-      border-color: var(--ok);
-    }
-
-    .btn-success:hover {
-      background: #0e6e0e;
-      border-color: #0e6e0e;
-    }
-
-    .btn-small {
-      padding: 4px 10px;
-      font-size: 12px;
-    }
-
-    .btn-danger {
-      color: var(--danger);
-      border-color: var(--danger);
-    }
-
-    .btn-danger:hover {
-      background: rgba(209, 52, 56, 0.1);
-    }
-
-    /* 城市搜索下拉列表 */
-    .city-search-wrapper {
-      position: relative;
-      width: 100%;
-    }
-
-    .city-results {
-      max-height: 220px;
-      overflow-y: auto;
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin-top: 6px;
-      display: none;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .city-results.active {
-      display: block;
-    }
-
-    .city-result-item {
-      padding: 8px 12px;
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--text);
-      transition: background 0.1s ease;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .city-result-item:last-child {
-      border-bottom: none;
-    }
-
-    .city-result-item:hover {
-      background: var(--surface-hover);
-    }
-
-    .city-result-item .city-name {
-      font-weight: 500;
-    }
-
-    .city-result-item .city-detail {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    .city-current {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .city-current .city-tag {
-      background: rgba(0, 120, 212, 0.1);
-      color: var(--primary);
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-
-    .city-current .clear-city {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-size: 12px;
-      padding: 2px 6px;
-    }
-
-    .city-current .clear-city:hover {
-      color: var(--danger);
-    }
-  </style>
+  <link rel="stylesheet" href="src/settings.css" />
 </head>
 <body>
   <div class="container">
@@ -802,6 +20,7 @@
         <div class="nav-item" data-page="ai">AI Agent</div>
         <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
+        <div class="nav-item" data-page="blacklist">黑名单</div>
         <div class="nav-item" data-page="about">关于与更新</div>
       </nav>
     </aside>
@@ -862,6 +81,17 @@
         <div class="page" id="page-music">
           <div class="setting-group">
             <div class="setting-group-title">歌词</div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>网易云音乐用户第一次使用请先去插件管理安装插件</h3>
+                <p>音乐依赖SMTC协议和开放api</p>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="btn" data-nav-to="plugins">去插件管理</button>
+              </div>
+            </div>
+            
             <div class="setting-item">
               <div class="setting-label">
                 <h3>歌词显示模式</h3>
@@ -891,8 +121,19 @@
 
             <div class="setting-item">
               <div class="setting-label">
+                <h3>补偿时长</h3>
+                <p>范围 0-1500ms，默认 200ms。</p>
+              </div>
+              <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
+                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="200" style="width: 100px; text-align: right;" />
+                <span style="font-size: 12px; color: var(--text-secondary);">ms</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
                 <h3>SMTC 命中（网易云）</h3>
-                <p>从 SMTC 流派提取 NCM ID，直连网易云歌词接口获取歌词（推荐开启）。</p>
+                <p>从 SMTC 流派提取 NCM ID，直连网易云歌词接口获取歌词（推荐开启）,依赖插件。</p>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -905,7 +146,7 @@
             <div class="setting-item">
               <div class="setting-label">
                 <h3>Rust API</h3>
-                <p>使用 Lyricify Lyrics Helper 库搜索网易云歌词，作为 SMTC 命中失败后的第二备选。</p>
+                <p>使用 Lyricify-Lyrics-Provider-rs 库搜索网易云歌词，作为 SMTC 命中失败后的第二备选。</p>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -922,16 +163,7 @@
               </div>
             </div>
 
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>补偿时长</h3>
-                <p>范围 0-1500ms，默认 200ms。</p>
-              </div>
-              <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
-                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="200" style="width: 100px; text-align: right;" />
-                <span style="font-size: 12px; color: var(--text-secondary);">ms</span>
-              </div>
-            </div>
+            
           </div>
         </div>
 
@@ -994,13 +226,13 @@
         <!-- 插件管理页面 -->
         <div class="page" id="page-plugins">
           <div class="setting-group">
-            <div class="setting-group-title">InfLink</div>
+            <div class="setting-group-title">InfLink-rs</div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
               <div class="setting-label">
-                <h3>InfLink 下载地址</h3>
-                <p>仅提供下载地址，不再执行 InfLink 插件文件写入。</p>
+                <h3>InfLink-rs 下载教程</h3>
+                <p>仅提供下载教程，不再执行 InfLink 插件文件写入。</p>
               </div>
-              <div class="mono">https://github.com/BetterNCM/InfinityLink</div>
+              <div class="mono" id="InfLink-rs-docs-link">https://docs.pyisland.com/guide/tauri-island.html</div>
               <div class="actions">
                 <button id="open-inflink-btn" class="btn" type="button">打开下载地址</button>
               </div>
@@ -1087,6 +319,34 @@
             </div>
           </div>
         </div>
+        <!-- 黑名单页面 -->
+        <div class="page" id="page-blacklist">
+          <div class="setting-group">
+            <div class="setting-group-title">黑名单开关</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <div class="setting-label-title">启用黑名单</div>
+                <div class="setting-label-desc">关闭后黑名单列表暂时失效，灵动岛始终显示。</div>
+              </div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="blacklist-enabled-toggle" /><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+          <div class="setting-group" id="blacklist-content-group">
+            <div class="setting-group-title">黑名单进程</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label" style="margin-bottom: 12px;">
+                <p>填写进程文件名（如 <code style="background:var(--surface-active);padding:1px 5px;border-radius:4px;font-family:monospace;">game.exe</code>），不区分大小写。焦点窗口或全屏进程匹配时灵动岛自动隐藏。</p>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <input id="blacklist-input" class="input" type="text" placeholder="输入进程名，如 game.exe" style="flex:1;" />
+                <button id="blacklist-add-btn" class="btn btn-primary">添加</button>
+              </div>
+              <div id="blacklist-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+          </div>
+        </div>
         <!-- 关于与更新页面 -->
         <div class="page" id="page-about">
           <div class="setting-group">
@@ -1106,6 +366,27 @@
 
           <div class="setting-group">
             <div class="setting-group-title">软件更新</div>
+            <div class="setting-item" id="preview-toggle-row">
+              <div class="setting-label">
+                <h3>预览版更新</h3>
+                <p>检查来自 tauri-test 通道的预览构建，可能不稳定</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="preview-updates-toggle" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item" id="disable-preview-wrap">
+              <div class="setting-label">
+                <h3>关闭预览版功能</h3>
+                <p>关闭后将从 UI 中隐藏预览版相关选项，如需重新开启请编辑本地配置文件。</p>
+              </div>
+              <div class="setting-control">
+                <button id="disable-preview-btn" class="btn btn-danger" type="button">关闭</button>
+              </div>
+            </div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
               <div id="update-status" style="margin-bottom: 12px;">
                 <p id="update-status-text" style="color: var(--text-secondary);">点击下方按钮检查是否有新版本。</p>
@@ -1114,7 +395,7 @@
               <!-- 更新信息卡片（默认隐藏） -->
               <div id="update-info-card" style="display: none; background: var(--surface-hover); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; border: 1px solid var(--border);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span style="font-weight: 600; color: var(--primary);">🎉 发现新版本</span>
+                  <span id="update-card-title" style="font-weight: 600; color: var(--primary);">🎉 发现新版本</span>
                   <span id="update-latest-version" style="font-size: 14px; font-weight: 600;"></span>
                 </div>
                 <p id="update-published" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;"></p>
@@ -1149,6 +430,15 @@
               </div>
               <div class="setting-control">
                 <button id="open-github-btn" class="btn" type="button">打开</button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>最后一次日志</h3>
+                <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
+              </div>
+              <div class="setting-control">
+                <button id="open-log-dir-btn" class="btn" type="button">打开</button>
               </div>
             </div>
           </div>
@@ -1193,64 +483,41 @@
       </footer>
     </div>
   </div>
-
   <script>
-    // 页面切换逻辑
-    const navItems = document.querySelectorAll('.nav-item');
-    const pages = document.querySelectorAll('.page');
-    const pageTitle = document.getElementById('page-title');
-    const pageDesc = document.getElementById('page-desc');
+    // ==================== 页面导航 ====================
+const pageInfo = {
+  general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
+  music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
+  weather:          { title: "天气",          desc: "配置天气显示位置。" },
+  ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
+  "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
+  plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
+  blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
+  about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
+};
 
-    const pageInfo = {
-      general: {
-        title: '常规设置',
-        desc: '配置快捷键和外观选项。'
-      },
-      music: {
-        title: '音乐',
-        desc: '配置音乐歌词显示策略。'
-      },
-      weather: {
-        title: '天气',
-        desc: '配置天气显示位置。'
-      },
-      ai: {
-        title: 'AI Agent',
-        desc: '配置 OpenAI 兼容的 API 和模型参数。'
-      },
-      'clipboard-links': {
-        title: '剪贴板与链接',
-        desc: '配置剪贴板监听和链接处理器。'
-      },
-      plugins: {
-        title: '插件管理',
-        desc: '管理 InfLink 和 PluginMarket 相关设置。'
-      },
-      about: {
-        title: '关于与更新',
-        desc: '查看版本信息和检查软件更新。'
-      }
-    };
+const navItems = document.querySelectorAll(".nav-item");
+const pages = document.querySelectorAll(".page");
+const pageTitle = document.getElementById("page-title");
+const pageDesc  = document.getElementById("page-desc");
 
-    navItems.forEach(item => {
-      item.addEventListener('click', () => {
-        const pageId = item.dataset.page;
+function navigateTo(pageId) {
+  navItems.forEach(n => n.classList.remove("active"));
+  document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
+  pages.forEach(p => p.classList.remove("active"));
+  document.getElementById(`page-${pageId}`)?.classList.add("active");
+  if (pageTitle) pageTitle.textContent = pageInfo[pageId]?.title ?? "";
+  if (pageDesc)  pageDesc.textContent  = pageInfo[pageId]?.desc  ?? "";
+}
 
-        // 更新导航状态
-        navItems.forEach(nav => nav.classList.remove('active'));
-        item.classList.add('active');
+navItems.forEach(item => {
+  item.addEventListener("click", () => navigateTo(item.dataset.page ?? ""));
+});
 
-        // 更新页面显示
-        pages.forEach(page => page.classList.remove('active'));
-        document.getElementById(`page-${pageId}`).classList.add('active');
-
-        // 更新标题和描述
-        pageTitle.textContent = pageInfo[pageId].title;
-        pageDesc.textContent = pageInfo[pageId].desc;
-      });
-    });
+document.querySelectorAll("[data-nav-to]").forEach(btn => {
+  btn.addEventListener("click", () => navigateTo(btn.dataset.navTo ?? ""));
+});
   </script>
-
-  <script type="module" src="/src/settings.ts"></script>
+  <script type="module" src="src/settings.ts"></script>
 </body>
 </html>
