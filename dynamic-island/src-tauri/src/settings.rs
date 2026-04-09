@@ -108,6 +108,10 @@ fn default_blacklist_processes() -> Vec<String> {
     vec![
         "msedge.exe".to_string(),
         "chrome.exe".to_string(),
+        "brave.exe".to_string(),
+        "vivaldi.exe".to_string(),
+        "opera.exe".to_string(),
+        "firefox.exe".to_string(),
     ]
 }
 
