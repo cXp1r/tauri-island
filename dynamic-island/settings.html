@@ -366,7 +366,7 @@
 
           <div class="setting-group">
             <div class="setting-group-title">软件更新</div>
-            <div class="setting-item">
+            <div class="setting-item" id="preview-toggle-row">
               <div class="setting-label">
                 <h3>预览版更新</h3>
                 <p>检查来自 tauri-test 通道的预览构建，可能不稳定</p>
@@ -376,6 +376,15 @@
                   <input type="checkbox" id="preview-updates-toggle" />
                   <span class="slider"></span>
                 </label>
+              </div>
+            </div>
+            <div class="setting-item" id="disable-preview-wrap">
+              <div class="setting-label">
+                <h3>关闭预览版功能</h3>
+                <p>关闭后将从 UI 中隐藏预览版相关选项，如需重新开启请编辑本地配置文件。</p>
+              </div>
+              <div class="setting-control">
+                <button id="disable-preview-btn" class="btn btn-danger" type="button">关闭</button>
               </div>
             </div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
@@ -474,7 +483,41 @@
       </footer>
     </div>
   </div>
+  <script>
+    // ==================== 页面导航 ====================
+const pageInfo = {
+  general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
+  music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
+  weather:          { title: "天气",          desc: "配置天气显示位置。" },
+  ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
+  "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
+  plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
+  blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
+  about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
+};
 
+const navItems = document.querySelectorAll(".nav-item");
+const pages = document.querySelectorAll(".page");
+const pageTitle = document.getElementById("page-title");
+const pageDesc  = document.getElementById("page-desc");
+
+function navigateTo(pageId) {
+  navItems.forEach(n => n.classList.remove("active"));
+  document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
+  pages.forEach(p => p.classList.remove("active"));
+  document.getElementById(`page-${pageId}`)?.classList.add("active");
+  if (pageTitle) pageTitle.textContent = pageInfo[pageId]?.title ?? "";
+  if (pageDesc)  pageDesc.textContent  = pageInfo[pageId]?.desc  ?? "";
+}
+
+navItems.forEach(item => {
+  item.addEventListener("click", () => navigateTo(item.dataset.page ?? ""));
+});
+
+document.querySelectorAll("[data-nav-to]").forEach(btn => {
+  btn.addEventListener("click", () => navigateTo(btn.dataset.navTo ?? ""));
+});
+  </script>
   <script type="module" src="src/settings.ts"></script>
 </body>
 </html>

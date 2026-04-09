@@ -2,39 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
-// ==================== 页面导航 ====================
-const pageInfo: Record<string, { title: string; desc: string }> = {
-  general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
-  music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
-  weather:          { title: "天气",          desc: "配置天气显示位置。" },
-  ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
-  "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
-  plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
-  blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
-  about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
-};
 
-const navItems = document.querySelectorAll<HTMLElement>(".nav-item");
-const pages = document.querySelectorAll<HTMLElement>(".page");
-const pageTitle = document.getElementById("page-title");
-const pageDesc  = document.getElementById("page-desc");
-
-function navigateTo(pageId: string) {
-  navItems.forEach(n => n.classList.remove("active"));
-  document.querySelector<HTMLElement>(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
-  pages.forEach(p => p.classList.remove("active"));
-  document.getElementById(`page-${pageId}`)?.classList.add("active");
-  if (pageTitle) pageTitle.textContent = pageInfo[pageId]?.title ?? "";
-  if (pageDesc)  pageDesc.textContent  = pageInfo[pageId]?.desc  ?? "";
-}
-
-navItems.forEach(item => {
-  item.addEventListener("click", () => navigateTo(item.dataset.page ?? ""));
-});
-
-document.querySelectorAll<HTMLElement>("[data-nav-to]").forEach(btn => {
-  btn.addEventListener("click", () => navigateTo(btn.dataset.navTo ?? ""));
-});
 
 type SettingsResponse = {
   clipboard_enabled: boolean;
@@ -722,8 +690,12 @@ const downloadUpdateBtn = document.getElementById("download-update-btn") as HTML
 const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
 const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
 const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement;
+const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement;
+const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement;
+const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement;
 
 let pendingDownloadUrl = "";
+let showPreviewEnabled = false;
 
 // 加载预览更新开关
 invoke<boolean>("get_preview_updates").then((enabled) => {
@@ -733,6 +705,22 @@ invoke<boolean>("get_preview_updates").then((enabled) => {
 if (previewUpdatesToggle) {
   previewUpdatesToggle.addEventListener("change", () => {
     void invoke("set_preview_updates", { enabled: previewUpdatesToggle.checked });
+  });
+}
+
+// 后端控制：是否显示预览版开关行
+function applyPreviewVisibility(enabled: boolean) {
+  showPreviewEnabled = enabled;
+  if (previewToggleRow) previewToggleRow.style.display = enabled ? "" : "none";
+  if (disablePreviewWrap) disablePreviewWrap.style.display = enabled ? "" : "none";
+}
+
+invoke<boolean>("get_show_preview_toggle").then(applyPreviewVisibility).catch(() => {});
+
+if (disablePreviewBtn) {
+  disablePreviewBtn.addEventListener("click", () => {
+    void invoke("set_show_preview_toggle", { enabled: false });
+    applyPreviewVisibility(false);
   });
 }
 
@@ -758,7 +746,7 @@ checkUpdateBtn.addEventListener("click", async () => {
   downloadUpdateBtn.style.display = "none";
   openReleaseBtn.style.display = "none";
 
-  const isPreview = previewUpdatesToggle?.checked ?? false;
+  const isPreview = showPreviewEnabled && (previewUpdatesToggle?.checked ?? false);
 
   let failed = false;
   try {
@@ -779,7 +767,9 @@ checkUpdateBtn.addEventListener("click", async () => {
       openReleaseBtn.style.display = "inline-flex";
       pendingDownloadUrl = info.download_url;
     } else {
-      updateStatusText.textContent = `当前已是最新版本 (v${info.current_version})`;
+      updateStatusText.textContent = isPreview
+        ? `当前是最新测试版 (v${info.current_version})`
+        : `当前是主分支最新版 (v${info.current_version})`;
       updateStatusText.style.color = "var(--ok)";
     }
   } catch (e) {

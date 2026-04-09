@@ -57,6 +57,12 @@ pub(crate) struct SettingsData {
     pub blacklist_enabled: bool,
     #[serde(default)]
     pub preview_updates: bool,
+    #[serde(default = "default_show_preview_toggle")]
+    pub show_preview_toggle: bool,
+}
+
+fn default_show_preview_toggle() -> bool {
+    false
 }
 
 fn default_shortcut() -> String {
@@ -144,6 +150,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         blacklist_processes: default_blacklist_processes(),
         blacklist_enabled: true,
         preview_updates: false,
+        show_preview_toggle: false,
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -181,6 +188,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
         blacklist_enabled: state.blacklist_enabled.load(Ordering::Relaxed),
         preview_updates: state.preview_updates.load(Ordering::Relaxed),
+        show_preview_toggle: state.show_preview_toggle.load(Ordering::Relaxed),
     }
 }
 
@@ -503,6 +511,22 @@ pub fn set_preview_updates(
     enabled: bool,
 ) -> Result<(), String> {
     state.preview_updates.store(enabled, Ordering::Relaxed);
+    let settings_data = build_settings_data(&state);
+    save_settings_to_file(&settings_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_show_preview_toggle(state: tauri::State<'_, IslandState>) -> bool {
+    state.show_preview_toggle.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn set_show_preview_toggle(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.show_preview_toggle.store(enabled, Ordering::Relaxed);
     let settings_data = build_settings_data(&state);
     save_settings_to_file(&settings_data)?;
     Ok(())

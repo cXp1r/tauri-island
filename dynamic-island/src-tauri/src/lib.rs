@@ -351,6 +351,7 @@ pub fn run() {
             settings::get_blacklist, settings::save_blacklist,
             settings::get_blacklist_enabled, settings::set_blacklist_enabled,
             settings::get_preview_updates, settings::set_preview_updates,
+            settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
             logger::get_log_path, logger::open_log_dir
         ])
@@ -411,6 +412,7 @@ pub fn run() {
             ));
             let blacklist_enabled = Arc::new(AtomicBool::new(settings.blacklist_enabled));
             let preview_updates = Arc::new(AtomicBool::new(settings.preview_updates));
+            let show_preview_toggle = Arc::new(AtomicBool::new(settings.show_preview_toggle));
             let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
             let weather_lat = Arc::new(Mutex::new(settings.weather_lat));
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
@@ -457,6 +459,7 @@ pub fn run() {
                 blacklist_processes: blacklist_processes.clone(),
                 blacklist_enabled: blacklist_enabled.clone(),
                 preview_updates: preview_updates.clone(),
+                show_preview_toggle: show_preview_toggle.clone(),
             });
 
             // --- 系统托盘 ---
@@ -1224,6 +1227,8 @@ pub struct IslandState {
     pub blacklist_enabled: Arc<AtomicBool>,
     // 预览更新通道开关
     pub preview_updates: Arc<AtomicBool>,
+    // 是否显示预览版开关（UI 可见性）
+    pub show_preview_toggle: Arc<AtomicBool>,
 }
 
 unsafe impl Send for IslandState {}

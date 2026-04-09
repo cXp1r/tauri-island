@@ -150,12 +150,7 @@ pub fn check_for_updates(app: tauri::AppHandle, preview: Option<bool>) -> Result
         latest_version, download_url, file_size
     ));
 
-    // 预览版：始终视为有更新（固定 tag，随时可能更新）
-    let has_update = if is_preview {
-        true
-    } else {
-        is_newer_version(&current_version, &latest_version)
-    };
+    let has_update = is_newer_version(&current_version, &latest_version);
 
     Ok(UpdateInfo {
         has_update,
