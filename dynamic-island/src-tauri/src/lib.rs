@@ -349,7 +349,10 @@ pub fn run() {
             media::media_get_volume, media::media_set_volume,
             settings::get_auto_start, settings::set_auto_start,
             settings::get_blacklist, settings::save_blacklist,
-            updater::get_app_version, updater::check_for_updates, updater::download_and_install_update
+            settings::get_blacklist_enabled, settings::set_blacklist_enabled,
+            settings::get_preview_updates, settings::set_preview_updates,
+            updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
+            logger::get_log_path, logger::open_log_dir
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -406,6 +409,8 @@ pub fn run() {
             let blacklist_processes: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(
                 settings.blacklist_processes.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
             ));
+            let blacklist_enabled = Arc::new(AtomicBool::new(settings.blacklist_enabled));
+            let preview_updates = Arc::new(AtomicBool::new(settings.preview_updates));
             let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
             let weather_lat = Arc::new(Mutex::new(settings.weather_lat));
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
@@ -450,6 +455,8 @@ pub fn run() {
                 weather_force_refresh: weather_force_refresh.clone(),
                 auto_start: auto_start.clone(),
                 blacklist_processes: blacklist_processes.clone(),
+                blacklist_enabled: blacklist_enabled.clone(),
+                preview_updates: preview_updates.clone(),
             });
 
             // --- 系统托盘 ---
@@ -602,15 +609,48 @@ pub fn run() {
                 }
             });
 
-            // --- 黑名单监控线程 ---
+            // --- 黑名单监控：全屏扫描线程（慢，独立跑，结果存原子变量）---
+            let blacklist_fs_cache = Arc::new(AtomicBool::new(false));
             {
                 let blacklist = blacklist_processes.clone();
+                let bl_enabled = blacklist_enabled.clone();
+                let fs_cache = blacklist_fs_cache.clone();
+                thread::Builder::new().name("bl-fullscreen-scan".into()).spawn(move || {
+                    loop {
+                        thread::sleep(Duration::from_millis(800));
+                        if !bl_enabled.load(Ordering::Relaxed) {
+                            fs_cache.store(false, Ordering::Relaxed);
+                            continue;
+                        }
+                        let list = blacklist.lock().unwrap().clone();
+                        let found = if list.is_empty() {
+                            false
+                        } else {
+                            window::is_any_blacklisted_fullscreen(&list)
+                        };
+                        fs_cache.store(found, Ordering::Relaxed);
+                    }
+                }).ok();
+            }
+
+            // --- 黑名单监控：前台进程检测 + 隐藏/显示线程（快，200ms）---
+            {
+                let blacklist = blacklist_processes.clone();
+                let bl_enabled = blacklist_enabled.clone();
+                let fs_cache = blacklist_fs_cache.clone();
                 let hwnd_bl = hwnd.0 as usize;
-                thread::spawn(move || {
+                thread::Builder::new().name("bl-monitor".into()).spawn(move || {
                     let hwnd = HWND(hwnd_bl as *mut _);
                     let mut hidden = false;
                     loop {
-                        thread::sleep(Duration::from_millis(500));
+                        thread::sleep(Duration::from_millis(200));
+                        if !bl_enabled.load(Ordering::Relaxed) {
+                            if hidden {
+                                unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE); }
+                                hidden = false;
+                            }
+                            continue;
+                        }
                         let list = blacklist.lock().unwrap().clone();
                         if list.is_empty() {
                             if hidden {
@@ -619,11 +659,11 @@ pub fn run() {
                             }
                             continue;
                         }
-                        let should_hide = if let Some(fg_name) = window::get_foreground_process_name() {
-                            list.iter().any(|b| fg_name == *b)
-                        } else {
-                            false
-                        };
+                        let fg_match = window::get_foreground_process_name()
+                            .map(|n| list.iter().any(|b| n == *b))
+                            .unwrap_or(false);
+                        let fs_match = fs_cache.load(Ordering::Relaxed);
+                        let should_hide = fg_match || fs_match;
                         if should_hide && !hidden {
                             if let Some(ref name) = window::get_foreground_process_name() {
                                 crate::logger::info("Blacklist", &format!("hiding island: fg_process='{}'", name));
@@ -636,7 +676,7 @@ pub fn run() {
                             hidden = false;
                         }
                     }
-                });
+                }).ok();
             }
 
             // --- 硬件监控线程 ---
@@ -796,7 +836,7 @@ pub fn run() {
             let app_handle_update = app.handle().clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(10));
-                match updater::check_for_updates(app_handle_update.clone()) {
+                match updater::check_for_updates(app_handle_update.clone(), None) {
                     Ok(info) => {
                         if info.has_update {
                             println!("[Updater] 发现新版本: v{}", info.latest_version);
@@ -859,7 +899,7 @@ pub fn run() {
                     let mode = lyric_mode_media.lock().unwrap().clone();
                     if mode == "off" {
                         if was_playing {
-                            lyrics::lyric_log_warn("playback state=stopped reason=lyric_mode_off");
+                            crate::logger::warn("Lyrics", "playback state=stopped reason=lyric_mode_off");
                             was_playing = false;
                             last_is_playing = false;
                             current_track.clear();
@@ -874,7 +914,7 @@ pub fn run() {
                         Some(v) => v,
                         None => {
                             if was_playing {
-                                lyrics::lyric_log_warn("playback state=stopped reason=no_smtc_session");
+                                crate::logger::warn("Lyrics", "playback state=stopped reason=no_smtc_session");
                                 was_playing = false;
                                 last_is_playing = false;
                                 current_track.clear();
@@ -896,7 +936,7 @@ pub fn run() {
                     // 播放/暂停状态变化
                     if is_playing != last_is_playing {
                         last_is_playing = is_playing;
-                        lyrics::lyric_log_info(&format!(
+                        crate::logger::info("Lyrics", &format!(
                             "playback state={} title='{}' artist='{}' genre='{}' position_raw_ms={} position_effective_ms={}",
                             if is_playing { "playing" } else { "paused" },
                             media_info.title,
@@ -913,7 +953,7 @@ pub fn run() {
                     if !is_playing {
                         if was_playing {
                             was_playing = false;
-                            lyrics::lyric_log_info(&format!(
+                            crate::logger::info("Lyrics", &format!(
                                 "playback paused title='{}' artist='{}'",
                                 media_info.title, media_info.artist
                             ));
@@ -928,7 +968,7 @@ pub fn run() {
                     // 歌曲切换时重新获取歌词
                     let track_key = format!("{} - {}", media_info.artist, media_info.title);
                     if track_key != current_track {
-                        lyrics::lyric_log_info(&format!(
+                        crate::logger::info("Lyrics", &format!(
                             "\nsmtc: track changed title='{}' artist='{}' genre='{}' duration_ms={} position_ms={} is_playing={} offset_enabled={} offset_ms={}",
                             media_info.title, media_info.artist, media_info.genre,
                             media_info.duration_ms, position_ms_raw, is_playing,
@@ -983,7 +1023,7 @@ pub fn run() {
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
-                            lyrics::lyric_log_info(&format!(
+                            crate::logger::info("Lyrics", &format!(
                                 "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid ncm_genre_hit_enabled={} rust_api_enabled={} api_search_enabled={}",
                                 gen, title, artist, genre, ncm_genre_hit_enabled, rust_api_enabled, api_search_enabled
                             ));
@@ -1005,7 +1045,7 @@ pub fn run() {
                                 if gen_ref.load(Ordering::Relaxed) == gen {
                                     let not_found = fetched_lyrics.is_none();
                                     let line_count = fetched_lyrics.as_ref().map(|v| v.len()).unwrap_or(0);
-                                    lyrics::lyric_log_info(&format!(
+                                    crate::logger::info("Lyrics", &format!(
                                         "lyric fetch done gen={} found={} lines={}",
                                         gen,
                                         !not_found,
@@ -1014,7 +1054,7 @@ pub fn run() {
                                     let mut guard = result_ref.lock().unwrap_or_else(|e| e.into_inner());
                                     *guard = Some((gen, fetched_lyrics.unwrap_or_default(), not_found));
                                 } else {
-                                    lyrics::lyric_log_warn(&format!(
+                                    crate::logger::warn("Lyrics", &format!(
                                         "lyric fetch drop stale gen={} current_gen={}",
                                         gen,
                                         gen_ref.load(Ordering::Relaxed)
@@ -1180,6 +1220,10 @@ pub struct IslandState {
     pub auto_start: Arc<AtomicBool>,
     // 黑名单进程列表（小写）
     pub blacklist_processes: Arc<Mutex<Vec<String>>>,
+    // 黑名单功能总开关
+    pub blacklist_enabled: Arc<AtomicBool>,
+    // 预览更新通道开关
+    pub preview_updates: Arc<AtomicBool>,
 }
 
 unsafe impl Send for IslandState {}

@@ -2,6 +2,40 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 
+// ==================== 页面导航 ====================
+const pageInfo: Record<string, { title: string; desc: string }> = {
+  general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
+  music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
+  weather:          { title: "天气",          desc: "配置天气显示位置。" },
+  ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
+  "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
+  plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
+  blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
+  about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
+};
+
+const navItems = document.querySelectorAll<HTMLElement>(".nav-item");
+const pages = document.querySelectorAll<HTMLElement>(".page");
+const pageTitle = document.getElementById("page-title");
+const pageDesc  = document.getElementById("page-desc");
+
+function navigateTo(pageId: string) {
+  navItems.forEach(n => n.classList.remove("active"));
+  document.querySelector<HTMLElement>(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
+  pages.forEach(p => p.classList.remove("active"));
+  document.getElementById(`page-${pageId}`)?.classList.add("active");
+  if (pageTitle) pageTitle.textContent = pageInfo[pageId]?.title ?? "";
+  if (pageDesc)  pageDesc.textContent  = pageInfo[pageId]?.desc  ?? "";
+}
+
+navItems.forEach(item => {
+  item.addEventListener("click", () => navigateTo(item.dataset.page ?? ""));
+});
+
+document.querySelectorAll<HTMLElement>("[data-nav-to]").forEach(btn => {
+  btn.addEventListener("click", () => navigateTo(btn.dataset.navTo ?? ""));
+});
+
 type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
@@ -48,7 +82,7 @@ type CityResult = {
   longitude: number;
 };
 
-const INFLINK_URL = "https://github.com/BetterNCM/InfinityLink";
+const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
@@ -678,6 +712,7 @@ const updateInfoCard = document.getElementById("update-info-card") as HTMLDivEle
 const updateLatestVersion = document.getElementById("update-latest-version") as HTMLSpanElement;
 const updatePublished = document.getElementById("update-published") as HTMLParagraphElement;
 const updateNotes = document.getElementById("update-notes") as HTMLDivElement;
+const updateCardTitle = document.getElementById("update-card-title") as HTMLSpanElement;
 const updateProgressWrapper = document.getElementById("update-progress-wrapper") as HTMLDivElement;
 const updateProgressText = document.getElementById("update-progress-text") as HTMLSpanElement;
 const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLSpanElement;
@@ -686,8 +721,20 @@ const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButton
 const downloadUpdateBtn = document.getElementById("download-update-btn") as HTMLButtonElement;
 const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
 const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
+const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement;
 
 let pendingDownloadUrl = "";
+
+// 加载预览更新开关
+invoke<boolean>("get_preview_updates").then((enabled) => {
+  if (previewUpdatesToggle) previewUpdatesToggle.checked = enabled;
+}).catch(() => {});
+
+if (previewUpdatesToggle) {
+  previewUpdatesToggle.addEventListener("change", () => {
+    void invoke("set_preview_updates", { enabled: previewUpdatesToggle.checked });
+  });
+}
 
 // 加载当前版本号
 invoke<string>("get_app_version").then((ver) => {
@@ -711,14 +758,18 @@ checkUpdateBtn.addEventListener("click", async () => {
   downloadUpdateBtn.style.display = "none";
   openReleaseBtn.style.display = "none";
 
+  const isPreview = previewUpdatesToggle?.checked ?? false;
+
+  let failed = false;
   try {
-    const info = await invoke<UpdateInfo>("check_for_updates");
+    const info = await invoke<UpdateInfo>("check_for_updates", { preview: isPreview });
     currentVersionEl.textContent = `v${info.current_version}`;
 
     if (info.has_update) {
-      updateStatusText.textContent = "发现新版本！";
+      updateStatusText.textContent = isPreview ? "发现预览构建！" : "发现新版本！";
       updateStatusText.style.color = "var(--primary)";
-      updateLatestVersion.textContent = `v${info.latest_version}`;
+      if (updateCardTitle) updateCardTitle.textContent = isPreview ? "🚧 发现预览构建" : "🎉 发现新版本";
+      updateLatestVersion.textContent = isPreview ? `预览: ${info.latest_version}` : `v${info.latest_version}`;
       updatePublished.textContent = info.published_at
         ? `发布于 ${new Date(info.published_at).toLocaleDateString("zh-CN")}`
         : "";
@@ -732,11 +783,28 @@ checkUpdateBtn.addEventListener("click", async () => {
       updateStatusText.style.color = "var(--ok)";
     }
   } catch (e) {
+    failed = true;
     updateStatusText.textContent = `检查更新失败: ${e}`;
     updateStatusText.style.color = "var(--danger)";
   } finally {
-    checkUpdateBtn.disabled = false;
-    checkUpdateBtn.textContent = "检查更新";
+    if (failed) {
+      // 失败后冷却 10 秒，防止频繁触发 rate limit
+      let cd = 10;
+      checkUpdateBtn.textContent = `重试 (${cd}s)`;
+      const cdTimer = setInterval(() => {
+        cd--;
+        if (cd <= 0) {
+          clearInterval(cdTimer);
+          checkUpdateBtn.disabled = false;
+          checkUpdateBtn.textContent = "检查更新";
+        } else {
+          checkUpdateBtn.textContent = `重试 (${cd}s)`;
+        }
+      }, 1000);
+    } else {
+      checkUpdateBtn.disabled = false;
+      checkUpdateBtn.textContent = "检查更新";
+    }
   }
 });
 
@@ -783,20 +851,47 @@ listen<string>("update-error", (event) => {
 });
 
 openReleaseBtn.addEventListener("click", () => {
-  invoke("open_url", { url: "https://github.com/Python-island/Python-island/releases/latest" });
+  const url = (previewUpdatesToggle?.checked)
+    ? "https://github.com/cXp1r/Python-island/releases/tag/tauri-test"
+    : "https://github.com/Python-island/Python-island/releases/latest";
+  invoke("open_url", { url });
 });
 
 openGithubBtn.addEventListener("click", () => {
   invoke("open_url", { url: "https://github.com/Python-island/Python-island" });
 });
 
+const logPathText = document.getElementById("log-path-text") as HTMLParagraphElement;
+const openLogDirBtn = document.getElementById("open-log-dir-btn") as HTMLButtonElement;
+
+invoke<string>("get_log_path").then((p) => {
+  if (logPathText) logPathText.textContent = p;
+}).catch(() => {
+  if (logPathText) logPathText.textContent = "获取失败";
+});
+
+if (openLogDirBtn) {
+  openLogDirBtn.addEventListener("click", () => {
+    void invoke("open_log_dir");
+  });
+}
+
 // ==================== 黑名单 ====================
 
 const blacklistInput = document.getElementById("blacklist-input") as HTMLInputElement | null;
 const blacklistAddBtn = document.getElementById("blacklist-add-btn") as HTMLButtonElement | null;
 const blacklistList = document.getElementById("blacklist-list") as HTMLDivElement | null;
+const blacklistEnabledToggle = document.getElementById("blacklist-enabled-toggle") as HTMLInputElement | null;
+const blacklistContentGroup = document.getElementById("blacklist-content-group") as HTMLDivElement | null;
 
 let blacklistProcesses: string[] = [];
+
+function updateBlacklistContentVisibility(enabled: boolean) {
+  if (blacklistContentGroup) {
+    blacklistContentGroup.style.opacity = enabled ? "1" : "0.4";
+    blacklistContentGroup.style.pointerEvents = enabled ? "" : "none";
+  }
+}
 
 async function loadBlacklist() {
   try {
@@ -805,6 +900,29 @@ async function loadBlacklist() {
   } catch (e) {
     console.error("加载黑名单失败:", e);
   }
+}
+
+async function loadBlacklistEnabled() {
+  try {
+    const enabled = await invoke<boolean>("get_blacklist_enabled");
+    if (blacklistEnabledToggle) blacklistEnabledToggle.checked = enabled;
+    updateBlacklistContentVisibility(enabled);
+  } catch (e) {
+    console.error("加载黑名单开关失败:", e);
+  }
+}
+
+if (blacklistEnabledToggle) {
+  blacklistEnabledToggle.addEventListener("change", async () => {
+    const enabled = blacklistEnabledToggle.checked;
+    updateBlacklistContentVisibility(enabled);
+    try {
+      await invoke("set_blacklist_enabled", { enabled });
+      showStatus(enabled ? "黑名单已启用" : "黑名单已禁用");
+    } catch (e) {
+      showStatus(`保存失败: ${String(e)}`, true, 4500);
+    }
+  });
 }
 
 function renderBlacklist() {
@@ -872,3 +990,4 @@ if (blacklistInput) blacklistInput.addEventListener("keydown", (e) => {
 });
 
 void loadBlacklist();
+void loadBlacklistEnabled();

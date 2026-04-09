@@ -9,6 +9,8 @@ use crate::CREATE_NO_WINDOW;
 
 const GITHUB_API_URL: &str =
     "https://api.github.com/repos/Python-island/Python-island/releases/latest";
+const GITHUB_PREVIEW_API_URL: &str =
+    "https://api.github.com/repos/cXp1r/Python-island/releases/tags/tauri-test";
 
 #[tauri::command]
 pub fn get_app_version(app: tauri::AppHandle) -> String {
@@ -50,28 +52,73 @@ fn is_newer_version(current: &str, latest: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+pub fn check_for_updates(app: tauri::AppHandle, preview: Option<bool>) -> Result<UpdateInfo, String> {
+    let is_preview = preview.unwrap_or(false);
     let current_version = app.config().version.clone().unwrap_or_default();
+
+    let api_url = if is_preview { GITHUB_PREVIEW_API_URL } else { GITHUB_API_URL };
+
+    crate::logger::info("Updater", &format!(
+        "检查更新 channel={} url={} current_version={}",
+        if is_preview { "preview" } else { "stable" },
+        api_url,
+        current_version
+    ));
 
     let client = crate::shared_http_client();
     let resp = client
-        .get(GITHUB_API_URL)
+        .get(api_url)
         .header("User-Agent", "DynamicIsland-Updater")
         .header("Accept", "application/vnd.github+json")
         .send()
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("请求失败: {}", e);
+            crate::logger::warn("Updater", &msg);
+            msg
+        })?;
 
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API 返回错误: {}", resp.status()));
+    let status = resp.status();
+    crate::logger::info("Updater", &format!("GitHub API 响应: {}", status));
+
+    if !status.is_success() {
+        let body = resp.text().unwrap_or_else(|_| "<无法读取响应体>".to_string());
+        let msg = format!("GitHub API 返回错误: {} | body: {}", status, body);
+        crate::logger::warn("Updater", &msg);
+        let friendly = if status.as_u16() == 403 && body.contains("rate limit") {
+            "GitHub API 请求频率超限（每小时 60 次），请稍后再试".to_string()
+        } else {
+            format!("GitHub API 返回错误: {}", status)
+        };
+        return Err(friendly);
     }
 
-    let json: serde_json::Value = resp.json().map_err(|e| format!("解析 JSON 失败: {}", e))?;
+    let json: serde_json::Value = resp.json().map_err(|e| {
+        let msg = format!("解析 JSON 失败: {}", e);
+        crate::logger::warn("Updater", &msg);
+        msg
+    })?;
 
-    // 从 tag_name "tauri-vX.Y.Z" 中提取版本号
-    let tag = json["tag_name"]
-        .as_str()
-        .ok_or("无法获取 tag_name")?;
-    let latest_version = tag.trim_start_matches("tauri-v").to_string();
+    // 稳定版: tag_name = "tauri-vX.Y.Z"；预览版: tag_name = "tauri-test"
+    let tag = json["tag_name"].as_str().ok_or("无法获取 tag_name")?;
+    let latest_version = if is_preview {
+        // 从 assets 文件名提取版本，如 DynamicIsland_0.5.0-1_x64-setup.exe
+        let assets_arr = json["assets"].as_array().ok_or("无法获取 assets")?;
+        let mut ver = tag.to_string();
+        for asset in assets_arr {
+            let name = asset["name"].as_str().unwrap_or("");
+            if name.starts_with("DynamicIsland_") && name.ends_with(".exe") {
+                // DynamicIsland_0.5.0-1_x64-setup.exe
+                let stripped = name.trim_start_matches("DynamicIsland_");
+                if let Some(v) = stripped.split('_').next() {
+                    ver = v.to_string();
+                }
+                break;
+            }
+        }
+        ver
+    } else {
+        tag.trim_start_matches("tauri-v").to_string()
+    };
 
     let release_notes = json["body"].as_str().unwrap_or("").to_string();
     let published_at = json["published_at"].as_str().unwrap_or("").to_string();
@@ -94,10 +141,21 @@ pub fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     }
 
     if download_url.is_empty() {
+        crate::logger::warn("Updater", "未找到 .exe 安装包");
         return Err("未找到 .exe 安装包".to_string());
     }
 
-    let has_update = is_newer_version(&current_version, &latest_version);
+    crate::logger::info("Updater", &format!(
+        "解析完成 latest_version={} download_url={} size={}",
+        latest_version, download_url, file_size
+    ));
+
+    // 预览版：始终视为有更新（固定 tag，随时可能更新）
+    let has_update = if is_preview {
+        true
+    } else {
+        is_newer_version(&current_version, &latest_version)
+    };
 
     Ok(UpdateInfo {
         has_update,

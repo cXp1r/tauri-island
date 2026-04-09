@@ -53,6 +53,10 @@ pub(crate) struct SettingsData {
     pub auto_start: bool,
     #[serde(default = "default_blacklist_processes")]
     pub blacklist_processes: Vec<String>,
+    #[serde(default = "default_blacklist_enabled")]
+    pub blacklist_enabled: bool,
+    #[serde(default)]
+    pub preview_updates: bool,
 }
 
 fn default_shortcut() -> String {
@@ -90,6 +94,9 @@ pub(crate) fn default_indicator_color() -> String {
 pub(crate) fn default_agent_window_size() -> String {
     "medium".to_string()
 }
+
+fn default_blacklist_enabled() -> bool { true }
+
 
 fn default_blacklist_processes() -> Vec<String> {
     vec![
@@ -135,6 +142,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         weather_lon: 0.0,
         auto_start: false,
         blacklist_processes: default_blacklist_processes(),
+        blacklist_enabled: true,
+        preview_updates: false,
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -170,6 +179,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         weather_lon: *state.weather_lon.lock().unwrap(),
         auto_start: state.auto_start.load(Ordering::Relaxed),
         blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
+        blacklist_enabled: state.blacklist_enabled.load(Ordering::Relaxed),
+        preview_updates: state.preview_updates.load(Ordering::Relaxed),
     }
 }
 
@@ -482,8 +493,41 @@ pub fn set_auto_start(
 }
 
 #[tauri::command]
+pub fn get_preview_updates(state: tauri::State<'_, IslandState>) -> bool {
+    state.preview_updates.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn set_preview_updates(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.preview_updates.store(enabled, Ordering::Relaxed);
+    let settings_data = build_settings_data(&state);
+    save_settings_to_file(&settings_data)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_blacklist(state: tauri::State<'_, IslandState>) -> Vec<String> {
     state.blacklist_processes.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn get_blacklist_enabled(state: tauri::State<'_, IslandState>) -> bool {
+    state.blacklist_enabled.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn set_blacklist_enabled(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.blacklist_enabled.store(enabled, Ordering::Relaxed);
+    let mut settings_data = build_settings_data(&state);
+    settings_data.blacklist_enabled = enabled;
+    save_settings_to_file(&settings_data)?;
+    Ok(())
 }
 
 #[tauri::command]

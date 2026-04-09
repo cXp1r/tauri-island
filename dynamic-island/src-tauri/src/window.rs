@@ -28,6 +28,69 @@ pub(crate) fn get_foreground_process_name() -> Option<String> {
     }
 }
 
+pub(crate) fn is_any_blacklisted_fullscreen(blacklist: &[String]) -> bool {
+    use windows::Win32::Foundation::{LPARAM, RECT};
+    use windows::core::BOOL;
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::core::PWSTR;
+
+    struct Ctx<'a> {
+        blacklist: &'a [String],
+        found: bool,
+    }
+
+    unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut Ctx);
+        if ctx.found { return BOOL(0); }
+
+        if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+            return BOOL(1);
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() { return BOOL(1); }
+
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if !GetMonitorInfoW(monitor, &mut mi).as_bool() { return BOOL(1); }
+
+        let mr = mi.rcMonitor;
+        if rect.left > mr.left || rect.top > mr.top || rect.right < mr.right || rect.bottom < mr.bottom {
+            return BOOL(1);
+        }
+
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == 0 { return BOOL(1); }
+
+        let handle = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => h,
+            Err(_) => return BOOL(1),
+        };
+        let mut buf = [0u16; 260];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len);
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        if ok.is_err() { return BOOL(1); }
+
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        let name = path.rsplit('\\').next().map(|s| s.to_lowercase()).unwrap_or_default();
+        if ctx.blacklist.iter().any(|b| *b == name) {
+            ctx.found = true;
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+
+    let mut ctx = Ctx { blacklist, found: false };
+    unsafe {
+        let _ = EnumWindows(Some(callback), LPARAM(&mut ctx as *mut _ as isize));
+    }
+    ctx.found
+}
+
 pub(crate) fn ease_out_cubic(t: f64) -> f64 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }

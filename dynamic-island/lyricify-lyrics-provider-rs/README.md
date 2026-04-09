@@ -1,4 +1,9 @@
 # Lyricify Lyrics Provider
+## 声明
+
+逻辑(C#源代码)源于[Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
+
+以下下内容**由ai代笔**
 
 网络歌词获取库，提供音乐平台 API 调用、智能搜索匹配和 SMTC 一站式歌词获取管线。
 
@@ -18,7 +23,7 @@ lyricify-lyrics-provider = { path = "../lyricify-lyrics-provider-rs" }
 tokio = { version = "1", features = ["full"] }
 ```
 
-> 本库依赖 `lyricify-lyrics-helper`（自动引入，无需额外声明），用于歌词解析和数据模型。
+> 本库已内置歌词解析、数据模型和辅助工具模块，无需额外声明 `helper` 依赖。
 
 ## 快速上手
 
@@ -87,12 +92,12 @@ let searcher = NeteaseSearcher::new();
 let best = searcher.search_for_result(&track_metadata).await?;
 ```
 
-### 访问解析/模型（通过 re-export）
+### 访问解析/模型/工具模块
 
 ```rust
-use lyricify_lyrics_provider::lyricify_lyrics_helper::parsers;
-use lyricify_lyrics_provider::lyricify_lyrics_helper::models;
-use lyricify_lyrics_provider::lyricify_lyrics_helper::generators;
+use lyricify_lyrics_provider::parsers;
+use lyricify_lyrics_provider::models;
+use lyricify_lyrics_provider::helpers;
 ```
 
 ## 支持的播放器
@@ -108,7 +113,10 @@ use lyricify_lyrics_provider::lyricify_lyrics_helper::generators;
 
 ```
 src/
-├── lib.rs              # 入口，re-export lyricify_lyrics_helper
+├── lib.rs              # 入口，导出 models/helpers/parsers/providers/searchers/smtc_lyrics
+├── models/             # 歌词数据模型
+├── helpers/            # 通用辅助工具
+├── parsers/            # LRC / YRC 解析
 ├── smtc_lyrics.rs      # SMTC 一站式歌词获取管线
 ├── providers/          # 平台 API 客户端
 │   ├── base_api.rs     # HTTP 基础封装
@@ -118,7 +126,7 @@ src/
 │   ├── kugou.rs        # 酷狗音乐 API
 │   └── soda_music.rs   # 汽水音乐 API
 └── searchers/          # 智能搜索
-    ├── helpers/
+    ├── helpers/        # 搜索辅助逻辑
     │   └── compare.rs  # 匹配算法
     ├── netease.rs
     ├── qqmusic.rs
