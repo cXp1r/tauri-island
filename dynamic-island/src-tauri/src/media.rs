@@ -253,11 +253,16 @@ fn extract_thumbnail(
 
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
-    // 尝试检测图片格式
     let mime = if buf.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
         "image/png"
+    } else if buf.starts_with(b"RIFF") && buf.get(8..12) == Some(b"WEBP") {
+        "image/webp"
+    } else if buf.starts_with(b"GIF8") {
+        "image/gif"
+    } else if buf.starts_with(&[0x42, 0x4D]) {
+        "image/bmp"
     } else {
-        "image/jpeg" // 大多数情况是 JPEG
+        "image/jpeg"
     };
     Some(format!("data:{};base64,{}", mime, b64))
 }

@@ -1003,13 +1003,23 @@ pub fn run() {
                             thread::Builder::new()
                                 .name("thumb-fetch".into())
                                 .spawn(move || {
-                                    if let Some(thumb) = media::get_smtc_thumbnail() {
-                                        // 只有代数匹配才发送，避免旧封面覆盖新歌
-                                        if thumb_gen_ref.load(Ordering::Relaxed) == thumb_gen_val {
-                                            let _ = win_thumb.emit("media-thumbnail", serde_json::json!({
-                                                "thumbnail": thumb
-                                            }));
+                                    // 最多重试 3 次，每次间隔递增（150ms / 400ms / 800ms）
+                                    let delays = [150u64, 400, 800];
+                                    for (i, &delay_ms) in delays.iter().enumerate() {
+                                        thread::sleep(std::time::Duration::from_millis(delay_ms));
+                                        // 代数已变说明新歌切换，放弃
+                                        if thumb_gen_ref.load(Ordering::Relaxed) != thumb_gen_val {
+                                            return;
                                         }
+                                        if let Some(thumb) = media::get_smtc_thumbnail() {
+                                            if thumb_gen_ref.load(Ordering::Relaxed) == thumb_gen_val {
+                                                let _ = win_thumb.emit("media-thumbnail", serde_json::json!({
+                                                    "thumbnail": thumb
+                                                }));
+                                            }
+                                            return;
+                                        }
+                                        let _ = i; // suppress unused warning on last iter
                                     }
                                 }).ok();
                         }

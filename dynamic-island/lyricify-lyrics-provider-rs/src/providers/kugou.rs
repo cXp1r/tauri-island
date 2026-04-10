@@ -28,6 +28,20 @@ impl KugouApi {
         Ok(serde_json::from_str(&resp).ok())
     }
 
+    /// 下载 KRC 歌词（返回加密 base64 内容）
+    pub async fn get_download_krc(
+        &self,
+        id: &str,
+        access_key: &str,
+    ) -> Result<Option<DownloadKrcResponse>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "https://lyrics.kugou.com/download?ver=1&client=pc&id={}&accesskey={}&fmt=krc&charset=utf8",
+            id, access_key
+        );
+        let resp = self.api.get_async(&url).await?;
+        Ok(serde_json::from_str(&resp).ok())
+    }
+
     /// 搜索歌词
     pub async fn get_search_lyrics(
         &self,
@@ -117,4 +131,16 @@ pub struct LyricsCandidate {
     pub content_type: Option<i32>,
     #[serde(rename = "content_format")]
     pub content_format: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct DownloadKrcResponse {
+    pub content: Option<String>,
+    pub info: Option<String>,
+    pub status: Option<i32>,
+    #[serde(rename = "contenttype")]
+    pub content_type: Option<i32>,
+    #[serde(rename = "error_code")]
+    pub error_code: Option<i32>,
+    pub fmt: Option<String>,
 }
