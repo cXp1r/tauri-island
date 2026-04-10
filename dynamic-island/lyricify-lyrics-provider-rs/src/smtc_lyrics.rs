@@ -30,7 +30,7 @@ impl MusicPlayer {
     /// 播放器进程名
     pub fn process_name(&self) -> &str {
         match self {
-            MusicPlayer::Kugou => "KGMusic.exe",
+            MusicPlayer::Kugou => "KuGou.exe",
             MusicPlayer::Netease => "cloudmusic.exe",
             MusicPlayer::QQMusic => "QQMusic.exe",
             MusicPlayer::SodaMusic => "SodaMusic.exe",
@@ -251,6 +251,7 @@ async fn fetch_kugou_lyrics(
 
     let api = KugouApi::new();
     let keyword = format!("{} {}", result.title, result.artists.join(", "));
+
     let lyrics_resp = api.get_search_lyrics(
         Some(&keyword),
         result.duration_ms,
@@ -258,11 +259,70 @@ async fn fetch_kugou_lyrics(
     ).await?
         .ok_or("酷狗: 获取歌词候选失败")?;
 
-    // TODO: 酷狗歌词需要通过 candidate 的 id + access_key 下载实际歌词内容
-    // 当前 KugouApi 尚未实现歌词下载接口
-    let _candidates = lyrics_resp.candidates.unwrap_or_default();
+    let candidates = lyrics_resp.candidates.unwrap_or_default();
+    let candidate = candidates.first().ok_or("酷狗: 无歌词候选")?;
 
-    Err("酷狗: 歌词下载接口尚未实现".into())
+    let id = candidate.id.as_deref().ok_or("酷狗: 候选缺少 id")?;
+    let access_key = candidate.access_key.as_deref().ok_or("酷狗: 候选缺少 accesskey")?;
+
+    let dl_resp = api.get_download_krc(id, access_key).await?
+        .ok_or("酷狗: 下载 KRC 失败")?;
+
+    let encrypted = dl_resp.content.ok_or("酷狗: KRC 内容为空")?;
+    if encrypted.is_empty() {
+        return Err("酷狗: KRC 内容为空".into());
+    }
+
+    let krc_text = krc_decrypt(&encrypted).map_err(|e| format!("酷狗: KRC 解密失败: {}", e))?;
+    let data = parse_soda_lyric(&krc_text);
+
+    if data.lines.is_empty() {
+        return Err("酷狗: 解析歌词为空".into());
+    }
+
+    Ok(data)
+}
+
+fn krc_decrypt(encoded: &str) -> Result<String, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+    use flate2::read::{DeflateDecoder, ZlibDecoder};
+    use std::io::Read;
+
+    const KEY: &[u8] = &[
+        0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47,
+        0x51, 0x36, 0x31, 0x2d, 0xce, 0xd2, 0x6e, 0x69,
+    ];
+
+    let clean: String = encoded.chars().filter(|c| !c.is_whitespace()).collect();
+    let decoded = B64.decode(&clean)
+        .map_err(|e| format!("base64 decode failed (len={}): {}", clean.len(), e))?;
+    if decoded.len() <= 4 {
+        return Err(format!("decoded too short: {} bytes", decoded.len()));
+    }
+    let mut data = decoded[4..].to_vec();
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte ^= KEY[i % KEY.len()];
+    }
+    let head4: Vec<String> = data[..4.min(data.len())].iter().map(|b| format!("{:02x}", b)).collect();
+    let inflated = {
+        let mut out = Vec::new();
+        if ZlibDecoder::new(&data[..]).read_to_end(&mut out).is_ok() && !out.is_empty() {
+            out
+        } else {
+            let mut out2 = Vec::new();
+            DeflateDecoder::new(&data[..]).read_to_end(&mut out2)
+                .map_err(|e| format!("inflate failed (xor_head=[{}]): {}", head4.join(","), e))?;
+            if out2.is_empty() {
+                return Err(format!("inflate produced empty output (xor_head=[{}])", head4.join(",")));
+            }
+            out2
+        }
+    };
+    if inflated.len() <= 1 {
+        return Err(format!("inflated too short: {} bytes", inflated.len()));
+    }
+    String::from_utf8(inflated[1..].to_vec())
+        .map_err(|e| format!("utf8 decode failed: {}", e))
 }
 
 async fn fetch_soda_music_lyrics(
