@@ -17,7 +17,7 @@ impl ITrackMetadata for TrackMetadata {
     fn duration_ms(&self) -> Option<i32> { self.duration_ms }
 }
 
-/// 曲目元数据
+/// 曲目元数据类型在此...............
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TrackMetadata {
     pub title: Option<String>,

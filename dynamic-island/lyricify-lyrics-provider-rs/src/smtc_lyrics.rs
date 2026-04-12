@@ -116,20 +116,26 @@ pub fn get_first_running_player() -> Option<MusicPlayer> {
 /// # 返回
 /// - `Ok((MusicPlayer, LyricsData))` — 使用的播放器源 + 歌词数据
 /// - `Err(...)` — 未检测到播放器，或获取歌词失败
+
+
+//如果你发现了kugou的smtc和别的smtc有点不同,你不需要调整smtc信息再传入
+//因为我已经想到了....
 pub async fn get_lyrics(
     title: &str,
     artist: Option<&str>,
     album: Option<&str>,
-    duration_ms: Option<i32>,
+    album_artist: Option<&str>,
+    duration_ms: i32,
 ) -> Result<(MusicPlayer, LyricsData), Box<dyn std::error::Error + Send + Sync>> {
     let player = get_first_running_player()
-        .ok_or("未检测到正在运行的音乐播放器")?;
+        .ok_or("未检测到支持的音乐播放器")?;
 
     let metadata = TrackMetadata {
         title: Some(title.to_string()),
         artist: artist.map(|s| s.to_string()),
         album: album.map(|s| s.to_string()),
-        duration_ms,
+        album_artist: album_artist.map(|s| s.to_string()),
+        duration_ms: Some(duration_ms),
         ..Default::default()
     };
 
@@ -140,22 +146,28 @@ pub async fn get_lyrics(
 /// 指定播放器源获取歌词
 ///
 /// 当调用方已知要使用哪个播放器源时，可直接指定，跳过进程检测。
+///
+/// # 返回
+/// - `Ok(LyricsData)` — 歌词数据
+/// - `Err(...)` — 获取歌词失败
 pub async fn get_lyrics_with_player(
     player: &MusicPlayer,
     title: &str,
     artist: Option<&str>,
     album: Option<&str>,
-    duration_ms: Option<i32>,
+    album_artist: Option<&str>,
+    duration_ms: i32,
 ) -> Result<LyricsData, Box<dyn std::error::Error + Send + Sync>> {
     let metadata = TrackMetadata {
         title: Some(title.to_string()),
         artist: artist.map(|s| s.to_string()),
         album: album.map(|s| s.to_string()),
-        duration_ms,
+        album_artist: album_artist.map(|s| s.to_string()),
+        duration_ms: Some(duration_ms),
         ..Default::default()
     };
 
-    fetch_lyrics_from_player(player, &metadata).await
+    Ok(fetch_lyrics_from_player(player, &metadata).await?)
 }
 
 // ===== 内部: 按播放器分发 =====
@@ -181,13 +193,12 @@ async fn fetch_netease_lyrics(
     use crate::providers::netease::NeteaseApi;
 
     let searcher = NeteaseSearcher::new();
-    let best = searcher.search_for_result(track).await?
+    let result = searcher.search_for_result(track).await?
         .ok_or("网易云: 未找到匹配的歌曲")?;
-
-    let id = best.as_any()
+    let best = result.as_any()
         .downcast_ref::<NeteaseSearchResult>()
-        .ok_or("网易云: 搜索结果类型不匹配")?
-        .id.clone();
+        .ok_or("网易云: 搜索结果类型不匹配")?;
+    let id = best.id.clone();
 
     let api = NeteaseApi::new();
     let lyric_result = api.get_lyric(&id).await?;
@@ -200,7 +211,17 @@ async fn fetch_netease_lyrics(
     }
     if let Some(lrc_text) = lyric_result.lrc.and_then(|l| l.lyric) {
         if !lrc_text.is_empty() {
-            return Ok(crate::parsers::lrc::parse(&lrc_text));
+            let mut data = crate::parsers::lrc::parse(&lrc_text);
+            data.track_metadata = Some(TrackMetadata {
+                title: Some(best.title.clone()),
+                artist: Some(best.artists.join(", ")),
+                album: Some(best.album.clone()),
+                album_artist: None,
+                duration_ms: best.duration_ms,
+                isrc: None,
+                language: None,
+            });
+            return Ok(data);
         }
     }
 
@@ -214,13 +235,12 @@ async fn fetch_qqmusic_lyrics(
     use crate::providers::qqmusic::QQMusicApi;
 
     let searcher = QQMusicSearcher::new();
-    let best = searcher.search_for_result(track).await?
+    let result = searcher.search_for_result(track).await?
         .ok_or("QQ音乐: 未找到匹配的歌曲")?;
-
-    let mid = best.as_any()
+    let best = result.as_any()
         .downcast_ref::<QQMusicSearchResult>()
-        .ok_or("QQ音乐: 搜索结果类型不匹配")?
-        .mid.clone();
+        .ok_or("QQ音乐: 搜索结果类型不匹配")?;
+    let mid = best.mid.clone();
 
     let api = QQMusicApi::new();
     let lyric_result = api.get_lyric(&mid).await?
@@ -228,7 +248,17 @@ async fn fetch_qqmusic_lyrics(
 
     if let Some(lrc_text) = lyric_result.lyric {
         if !lrc_text.is_empty() {
-            return Ok(crate::parsers::lrc::parse(&lrc_text));
+            let mut data = crate::parsers::lrc::parse(&lrc_text);
+            data.track_metadata = Some(TrackMetadata {
+                title: Some(best.title.clone()),
+                artist: Some(best.artists.join(", ")),
+                album: Some(best.album.clone()),
+                album_artist: None,
+                duration_ms: best.duration_ms,
+                isrc: None,
+                language: None,
+            });
+            return Ok(data);
         }
     }
 
@@ -274,12 +304,20 @@ async fn fetch_kugou_lyrics(
     }
 
     let krc_text = krc_decrypt(&encrypted).map_err(|e| format!("酷狗: KRC 解密失败: {}", e))?;
-    let data = parse_soda_lyric(&krc_text);
+    let mut data = parse_soda_lyric(&krc_text);
 
     if data.lines.is_empty() {
         return Err("酷狗: 解析歌词为空".into());
     }
-
+    data.track_metadata = Some(TrackMetadata {
+        title: Some(result.title.clone()),
+        artist: Some(result.artists.join(", ")),
+        album: Some(result.album.clone()),
+        album_artist: None,
+        duration_ms: result.duration_ms,
+        isrc: None,
+        language: None,
+    });
     Ok(data)
 }
 
@@ -318,10 +356,11 @@ fn krc_decrypt(encoded: &str) -> Result<String, String> {
             out2
         }
     };
-    if inflated.len() <= 1 {
-        return Err(format!("inflated too short: {} bytes", inflated.len()));
+    let skip = if inflated.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 1 };
+    if inflated.len() <= skip {
+        return Err(format!("inflated too short after skip({}): {} bytes", skip, inflated.len()));
     }
-    String::from_utf8(inflated[1..].to_vec())
+    String::from_utf8(inflated[skip..].to_vec())
         .map_err(|e| format!("utf8 decode failed: {}", e))
 }
 
@@ -332,13 +371,16 @@ async fn fetch_soda_music_lyrics(
     use crate::providers::soda_music::SodaMusicApi;
 
     let searcher = SodaMusicSearcher::new();
-    let best = searcher.search_for_result(track).await?
-        .ok_or("汽水音乐: 未找到匹配的歌曲")?;
+    let result = searcher.search_for_result(track).await?;
 
-    let id = best.as_any()
+    let result = result.ok_or("汽水音乐: 未找到匹配的歌曲")?;
+
+    let best = result
+        .as_any()
         .downcast_ref::<SodaMusicSearchResult>()
-        .ok_or("汽水音乐: 搜索结果类型不匹配")?
-        .id.clone();
+        .ok_or("汽水音乐: 搜索结果类型不匹配")?;
+
+    let id = best.id.clone();
 
     let api = SodaMusicApi::new();
     let detail = api.get_detail(&id).await?
@@ -347,7 +389,17 @@ async fn fetch_soda_music_lyrics(
     if let Some(lyric_info) = detail.lyric {
         if let Some(content) = lyric_info.content {
             if !content.is_empty() {
-                return Ok(parse_soda_lyric(&content));
+                let mut data = parse_soda_lyric(&content);
+                data.track_metadata = Some(TrackMetadata {
+                    title: Some(best.title.clone()),
+                    artist: Some(best.artists.join(", ")),
+                    album: Some(best.album.clone()),
+                    album_artist: None,
+                    duration_ms: best.duration_ms,
+                    isrc: None,
+                    language: None,
+                });
+                return Ok(data);
             }
         }
     }

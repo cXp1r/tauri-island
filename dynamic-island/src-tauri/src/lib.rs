@@ -978,6 +978,7 @@ pub fn run() {
                             offset_enabled, offset_ms
                         ));
                         current_track = track_key.clone();
+                        media::dump_smtc_session("");
                         last_lyric_text.clear();
                         last_info_track.clear();
                         current_lyrics.clear();
@@ -1028,6 +1029,9 @@ pub fn run() {
                         if mode == "lyric" {
                             let title = media_info.title.clone();
                             let artist = media_info.artist.clone();
+                            let album_title = media_info.album_title.clone();
+                            let album_artist = media_info.album_artist.clone();
+                            let duration_ms = media_info.duration_ms;
                             let genre = media_info.genre.clone();
                             let ncm_genre_hit_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
                             let rust_api_enabled = lyric_rust_api_enabled_media.load(Ordering::Relaxed);
@@ -1049,23 +1053,36 @@ pub fn run() {
                                 let fetched_lyrics = lyrics::fetch_lyrics_parallel(
                                     &title,
                                     &artist,
+                                    &album_title,
+                                    &album_artist,
+                                    duration_ms,
                                     &genre,
                                     ncm_genre_hit_enabled,
                                     rust_api_enabled,
                                     api_search_enabled,
+                                    gen_ref.clone(),
+                                    gen,
                                 );
-                                // 只有当前代才写入结果
+                                // 只有当前代才写入结果；已有 found 结果时不允许被 not_found 覆盖
                                 if gen_ref.load(Ordering::Relaxed) == gen {
                                     let not_found = fetched_lyrics.is_none();
                                     let line_count = fetched_lyrics.as_ref().map(|v| v.len()).unwrap_or(0);
-                                    crate::logger::info("Lyrics", &format!(
-                                        "lyric fetch done gen={} found={} lines={}",
-                                        gen,
-                                        !not_found,
-                                        line_count
-                                    ));
                                     let mut guard = result_ref.lock().unwrap_or_else(|e| e.into_inner());
-                                    *guard = Some((gen, fetched_lyrics.unwrap_or_default(), not_found));
+                                    let already_found = guard.as_ref()
+                                        .map(|(g, _, nf)| *g == gen && !nf)
+                                        .unwrap_or(false);
+                                    if already_found && not_found {
+                                        crate::logger::warn("Lyrics", &format!(
+                                            "lyric fetch skip stale not_found gen={} (already have result)",
+                                            gen
+                                        ));
+                                    } else {
+                                        crate::logger::info("Lyrics", &format!(
+                                            "lyric fetch done gen={} found={} lines={}",
+                                            gen, !not_found, line_count
+                                        ));
+                                        *guard = Some((gen, fetched_lyrics.unwrap_or_default(), not_found));
+                                    }
                                 } else {
                                     crate::logger::warn("Lyrics", &format!(
                                         "lyric fetch drop stale gen={} current_gen={}",
@@ -1078,6 +1095,15 @@ pub fn run() {
                     }
 
                     was_playing = true;
+
+                    // 当 SMTC 不提供时长时，用最后一句歌词时间 +5s 做估算
+                    let effective_duration_ms = if media_info.duration_ms > 0 {
+                        media_info.duration_ms
+                    } else if let Some(last) = current_lyrics.last() {
+                        last.time_ms + 5000
+                    } else {
+                        0
+                    };
 
                     if mode == "lyric" {
                         // 构建歌词文本和附近歌词（文本去重，但始终发送位置）
@@ -1110,7 +1136,7 @@ pub fn run() {
                             "artist": media_info.artist,
                             "genre": media_info.genre,
                             "position_ms": position_ms,
-                            "duration_ms": media_info.duration_ms,
+                            "duration_ms": effective_duration_ms,
                             "is_playing": is_playing
                         });
                         if let Some(nearby) = nearby_json {
@@ -1125,7 +1151,7 @@ pub fn run() {
                             "artist": media_info.artist,
                             "genre": media_info.genre,
                             "position_ms": position_ms,
-                            "duration_ms": media_info.duration_ms,
+                            "duration_ms": effective_duration_ms,
                             "is_playing": is_playing
                         }));
                     }
