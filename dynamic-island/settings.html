@@ -163,6 +163,30 @@
               </div>
             </div>
 
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>SMTC 白名单</h3>
+                <p>只允许白名单中的 app_id 命中 SMTC（适合多播放器环境）。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="smtc-whitelist-enabled" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item" id="smtc-whitelist-content-group" style="display: block; border: none; padding: 0;">
+              <div class="setting-label" style="margin-bottom: 12px;">
+                <p>小白勿动</p>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <input id="smtc-whitelist-input" class="input" type="text" placeholder="输入 app_id，如 cloudmusic.exe" style="flex:1;" />
+                <button id="smtc-whitelist-add-btn" class="btn btn-primary">添加</button>
+              </div>
+              <div id="smtc-whitelist-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+
             
           </div>
         </div>

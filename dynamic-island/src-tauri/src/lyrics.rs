@@ -354,11 +354,13 @@ fn kugou_decrypt_krc(encoded: &str) -> Option<String> {
             }
         }
     };
-    if inflated.len() <= 1 {
-        crate::logger::warn("Lyrics", &format!("kugou-decrypt: inflated too short ({})", inflated.len()));
+    let skip = if inflated.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 1 };
+    crate::logger::info("Lyrics", &format!("kugou-decrypt: bom_skip={} inflated_len={}", skip, inflated.len()));
+    if inflated.len() <= skip {
+        crate::logger::warn("Lyrics", &format!("kugou-decrypt: inflated too short after skip({}) ({})", skip, inflated.len()));
         return None;
     }
-    match String::from_utf8(inflated[1..].to_vec()) {
+    match String::from_utf8(inflated[skip..].to_vec()) {
         Ok(s) => {
             crate::logger::info("Lyrics", &format!("kugou-decrypt: ok, text_len={}", s.len()));
             Some(s)
@@ -431,7 +433,15 @@ fn fetch_kugou_lyrics(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
 }
 
 /// 通过 lyricify-lyrics-provider 统一接口获取歌词（自动检测播放器，多源 fallback）
-fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>> {
+fn fetch_lyrics_by_rust_api(
+    title: &str,
+    artist: &str,
+    album_title: &str,
+    album_artist: &str,
+    duration_ms: i64,
+    gen_ref: &std::sync::Arc<std::sync::atomic::AtomicU64>,
+    gen: u64,
+) -> Option<Vec<LyricLine>> {
     use lyricify_lyrics_provider::smtc_lyrics;
 
     let rt = match tokio::runtime::Builder::new_current_thread()
@@ -446,10 +456,12 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
     };
 
     let artist_opt = if artist.trim().is_empty() { None } else { Some(artist) };
-
+    let album_opt: Option<&str> = if album_title.trim().is_empty() { None } else { Some(album_title) };
+    let album_artist_opt: Option<&str> = if album_artist.trim().is_empty() { None } else { Some(album_artist) };
+    let duration_ms_i32: i32 = duration_ms.clamp(0, i64::from(i32::MAX)) as i32;
     rt.block_on(async {
         crate::logger::info("Lyrics", &format!(
-            "\nrust-api: title='{}' artist='{}'", title, artist
+            "\nrust-api: title='{}' artist='{}' album artist='{}' duration_ms={}", title, artist, album_artist, duration_ms
         ));
 
         // 1) 尝试自动检测播放器
@@ -463,8 +475,16 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
             crate::logger::info("Lyrics", "rust-api: no running players detected");
         }
 
-        match smtc_lyrics::get_lyrics(title, artist_opt, None, None).await {
+        match smtc_lyrics::get_lyrics(title, artist_opt, album_opt, album_artist_opt, duration_ms_i32).await {
             Ok((player, data)) => {
+                let meta = data.track_metadata.as_ref();
+                crate::logger::info("Lyrics", &format!(
+                    "rust-api: raw from='{}' lines={} file={:?} meta={:?}",
+                    player.display_name(),
+                    data.lines.len(),
+                    data.file.as_ref().map(|f| format!("{:?}/{:?}", f.lyrics_type, f.sync_type)),
+                    meta
+                ));
                 let lines = lyrics_data_to_lyric_lines(&data);
                 if !lines.is_empty() {
                     crate::logger::info("Lyrics", &format!(
@@ -489,13 +509,26 @@ fn fetch_lyrics_by_rust_api(title: &str, artist: &str) -> Option<Vec<LyricLine>>
             smtc_lyrics::MusicPlayer::Netease,
             smtc_lyrics::MusicPlayer::QQMusic,
             smtc_lyrics::MusicPlayer::SodaMusic,
+            smtc_lyrics::MusicPlayer::Kugou,
         ];
         for player in &fallback_players {
+            if gen_ref.load(std::sync::atomic::Ordering::Relaxed) != gen {
+                crate::logger::warn("Lyrics", &format!("rust-api: fallback abort gen={} (stale)", gen));
+                return None;
+            }
             crate::logger::info("Lyrics", &format!(
                 "rust-api: fallback trying '{}'", player.display_name()
             ));
-            match smtc_lyrics::get_lyrics_with_player(player, title, artist_opt, None, None).await {
+            match smtc_lyrics::get_lyrics_with_player(player, title, artist_opt, album_opt, album_artist_opt, duration_ms_i32).await {
                 Ok(data) => {
+                    let meta = data.track_metadata.as_ref();
+                    crate::logger::info("Lyrics", &format!(
+                        "rust-api: raw from='{}' lines={} file={:?} meta={:?}",
+                        player.display_name(),
+                        data.lines.len(),
+                        data.file.as_ref().map(|f| format!("{:?}/{:?}", f.lyrics_type, f.sync_type)),
+                        meta
+                    ));
                     let lines = lyrics_data_to_lyric_lines(&data);
                     if !lines.is_empty() {
                         crate::logger::info("Lyrics", &format!(
@@ -540,14 +573,19 @@ fn lyrics_data_to_lyric_lines(
 pub(crate) fn fetch_lyrics_parallel(
     title: &str,
     artist: &str,
+    album_title: &str,
+    album_artist: &str,
+    duration_ms: i64,
     genre: &str,
     ncm_genre_hit_enabled: bool,
     rust_api_enabled: bool,
     api_search_enabled: bool,
+    gen_ref: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    gen: u64,
 ) -> Option<Vec<LyricLine>> {
     crate::logger::info("Lyrics", &format!(
-        "\nlyric-fetch: song='{}' artist='{}' genre='{}'",
-        title, artist, genre
+        "\nlyric-fetch: song='{}' artist='{}' album='{}' album_artist='{}' duration_ms={} genre='{}'",
+        title, artist, album_title, album_artist, duration_ms, genre
     ));
 
     if ncm_genre_hit_enabled {
@@ -576,7 +614,7 @@ pub(crate) fn fetch_lyrics_parallel(
     // --- 第二优先：Rust API（lyricify-lyrics-helper 库） ---
     if rust_api_enabled {
         crate::logger::info("Lyrics", &format!("rust-api: enabled, title='{}' artist='{}'", title, artist));
-        if let Some(lines) = fetch_lyrics_by_rust_api(title, artist) {
+        if let Some(lines) = fetch_lyrics_by_rust_api(title, artist, album_title, album_artist, duration_ms, &gen_ref, gen) {
             return Some(lines);
         }
         crate::logger::warn("Lyrics", "rust-api: failed, fallback to api-search");
@@ -585,6 +623,10 @@ pub(crate) fn fetch_lyrics_parallel(
     }
 
     // --- 第三优先：Netease API 搜索 ---
+    if gen_ref.load(std::sync::atomic::Ordering::Relaxed) != gen {
+        crate::logger::warn("Lyrics", &format!("fetch-parallel: abort before api-search gen={} (stale)", gen));
+        return None;
+    }
     if !api_search_enabled {
         crate::logger::info("Lyrics", "\napi-search: disabled by setting");
         return None;
@@ -604,6 +646,10 @@ pub(crate) fn fetch_lyrics_parallel(
     }
 
     // --- 第四优先：酷狗 API 搜索 ---
+    if gen_ref.load(std::sync::atomic::Ordering::Relaxed) != gen {
+        crate::logger::warn("Lyrics", &format!("fetch-parallel: abort before kugou gen={} (stale)", gen));
+        return None;
+    }
     if let Some(lines) = fetch_kugou_lyrics(title, artist) {
         return Some(lines);
     }

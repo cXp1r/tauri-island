@@ -55,6 +55,10 @@ pub(crate) struct SettingsData {
     pub blacklist_processes: Vec<String>,
     #[serde(default = "default_blacklist_enabled")]
     pub blacklist_enabled: bool,
+    #[serde(default = "default_smtc_whitelist_enabled")]
+    pub smtc_whitelist_enabled: bool,
+    #[serde(default = "default_smtc_app_whitelist")]
+    pub smtc_app_whitelist: Vec<String>,
     #[serde(default)]
     pub preview_updates: bool,
     #[serde(default = "default_show_preview_toggle")]
@@ -102,6 +106,17 @@ pub(crate) fn default_agent_window_size() -> String {
 }
 
 fn default_blacklist_enabled() -> bool { true }
+
+fn default_smtc_whitelist_enabled() -> bool { false }
+
+fn default_smtc_app_whitelist() -> Vec<String> {
+    vec![
+        "汽水音乐".to_string(),
+        "cloudmusic.exe".to_string(),
+        "qqmusic.exe".to_string(),
+        "kugou".to_string(),
+    ]
+}
 
 
 fn default_blacklist_processes() -> Vec<String> {
@@ -153,6 +168,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         auto_start: false,
         blacklist_processes: default_blacklist_processes(),
         blacklist_enabled: true,
+        smtc_whitelist_enabled: default_smtc_whitelist_enabled(),
+        smtc_app_whitelist: default_smtc_app_whitelist(),
         preview_updates: false,
         show_preview_toggle: false,
     };
@@ -191,6 +208,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         auto_start: state.auto_start.load(Ordering::Relaxed),
         blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
         blacklist_enabled: state.blacklist_enabled.load(Ordering::Relaxed),
+        smtc_whitelist_enabled: state.smtc_whitelist_enabled.load(Ordering::Relaxed),
+        smtc_app_whitelist: state.smtc_app_whitelist.lock().unwrap().clone(),
         preview_updates: state.preview_updates.load(Ordering::Relaxed),
         show_preview_toggle: state.show_preview_toggle.load(Ordering::Relaxed),
     }
@@ -228,6 +247,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let weather_lat = *state.weather_lat.lock().unwrap();
     let weather_lon = *state.weather_lon.lock().unwrap();
     let auto_start = state.auto_start.load(Ordering::Relaxed);
+    let smtc_whitelist_enabled = state.smtc_whitelist_enabled.load(Ordering::Relaxed);
+    let smtc_app_whitelist = state.smtc_app_whitelist.lock().unwrap().clone();
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
@@ -242,7 +263,9 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "weather_city": weather_city,
         "weather_lat": weather_lat,
         "weather_lon": weather_lon,
-        "auto_start": auto_start
+        "auto_start": auto_start,
+        "smtc_whitelist_enabled": smtc_whitelist_enabled,
+        "smtc_app_whitelist": smtc_app_whitelist
     })
 }
 
@@ -264,6 +287,8 @@ pub fn save_settings(
     weather_lat: Option<f64>,
     weather_lon: Option<f64>,
     auto_start: Option<bool>,
+    smtc_whitelist_enabled: Option<bool>,
+    smtc_app_whitelist: Option<Vec<String>>,
 ) {
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
@@ -294,6 +319,25 @@ pub fn save_settings(
     }
     if let Some(lon) = weather_lon {
         *state.weather_lon.lock().unwrap() = lon;
+    }
+    let mut smtc_whitelist_changed = false;
+    if let Some(enabled) = smtc_whitelist_enabled {
+        state.smtc_whitelist_enabled.store(enabled, Ordering::Relaxed);
+        smtc_whitelist_changed = true;
+    }
+    if let Some(ref app_ids) = smtc_app_whitelist {
+        let normalized: Vec<String> = app_ids
+            .iter()
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        *state.smtc_app_whitelist.lock().unwrap() = normalized;
+        smtc_whitelist_changed = true;
+    }
+    if smtc_whitelist_changed {
+        let enabled = state.smtc_whitelist_enabled.load(Ordering::Relaxed);
+        let app_ids = state.smtc_app_whitelist.lock().unwrap().clone();
+        crate::media::update_smtc_whitelist(enabled, app_ids);
     }
 
     // 通知前端指示器颜色变更
@@ -357,6 +401,17 @@ pub fn save_settings(
         state.auto_start.store(auto, Ordering::Relaxed);
         let _ = apply_auto_start(auto);
     }
+    if let Some(enabled) = smtc_whitelist_enabled {
+        settings_data.smtc_whitelist_enabled = enabled;
+    }
+    if let Some(ref app_ids) = smtc_app_whitelist {
+        let normalized: Vec<String> = app_ids
+            .iter()
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        settings_data.smtc_app_whitelist = normalized;
+    }
     let _ = save_settings_to_file(&settings_data);
 }
 
@@ -375,6 +430,55 @@ pub fn save_link_handlers(
     let mut settings_data = build_settings_data(&state);
     settings_data.link_handlers = handlers;
     save_settings_to_file(&settings_data)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_smtc_whitelist(state: tauri::State<'_, IslandState>) -> Vec<String> {
+    state.smtc_app_whitelist.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn get_smtc_whitelist_enabled(state: tauri::State<'_, IslandState>) -> bool {
+    state.smtc_whitelist_enabled.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn set_smtc_whitelist_enabled(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.smtc_whitelist_enabled.store(enabled, Ordering::Relaxed);
+    let mut settings_data = build_settings_data(&state);
+    settings_data.smtc_whitelist_enabled = enabled;
+    save_settings_to_file(&settings_data)?;
+
+    let app_ids = state.smtc_app_whitelist.lock().unwrap().clone();
+    crate::media::update_smtc_whitelist(enabled, app_ids);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_smtc_whitelist(
+    state: tauri::State<'_, IslandState>,
+    app_ids: Vec<String>,
+) -> Result<(), String> {
+    let normalized: Vec<String> = app_ids
+        .into_iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    *state.smtc_app_whitelist.lock().unwrap() = normalized.clone();
+
+    let mut settings_data = build_settings_data(&state);
+    settings_data.smtc_app_whitelist = normalized;
+    save_settings_to_file(&settings_data)?;
+
+    let enabled = state.smtc_whitelist_enabled.load(Ordering::Relaxed);
+    let app_ids = state.smtc_app_whitelist.lock().unwrap().clone();
+    crate::media::update_smtc_whitelist(enabled, app_ids);
 
     Ok(())
 }

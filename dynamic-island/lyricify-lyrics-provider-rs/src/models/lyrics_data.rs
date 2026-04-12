@@ -6,6 +6,5 @@ use super::{LineInfo, LyricsFileInfo, TrackMetadata};
 pub struct LyricsData {
     pub file: Option<LyricsFileInfo>,
     pub lines: Vec<LineInfo>,
-    pub writers: Option<Vec<String>>,
     pub track_metadata: Option<TrackMetadata>,
 }

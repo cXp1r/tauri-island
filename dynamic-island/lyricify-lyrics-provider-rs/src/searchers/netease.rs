@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use crate::providers::netease::NeteaseApi;
 use super::{ISearcher, ISearchResult, SearcherType};
-use super::helpers::compare::MatchType;
 
 pub struct NeteaseSearcher {
     api: NeteaseApi,
@@ -46,7 +45,7 @@ impl ISearcher for NeteaseSearcher {
                         artists,
                         album,
                         duration_ms: duration,
-                        match_type: None,
+                        match_score: 0,
                     }));
                 }
             }
@@ -62,7 +61,7 @@ pub struct NeteaseSearchResult {
     pub artists: Vec<String>,
     pub album: String,
     pub duration_ms: Option<i32>,
-    pub match_type: Option<MatchType>,
+    pub match_score: i8,
 }
 
 impl ISearchResult for NeteaseSearchResult {
@@ -70,7 +69,7 @@ impl ISearchResult for NeteaseSearchResult {
     fn artists(&self) -> &[String] { &self.artists }
     fn album(&self) -> &str { &self.album }
     fn duration_ms(&self) -> Option<i32> { self.duration_ms }
-    fn match_type(&self) -> Option<MatchType> { self.match_type }
-    fn set_match_type(&mut self, mt: Option<MatchType>) { self.match_type = mt; }
+    fn match_score(&self) -> i8 { self.match_score }
+    fn set_match_score(&mut self, score: i8) { self.match_score = score; }
     fn as_any(&self) -> &dyn std::any::Any { self }
 }
