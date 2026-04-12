@@ -350,6 +350,8 @@ pub fn run() {
             settings::get_auto_start, settings::set_auto_start,
             settings::get_blacklist, settings::save_blacklist,
             settings::get_blacklist_enabled, settings::set_blacklist_enabled,
+            settings::get_smtc_whitelist, settings::save_smtc_whitelist,
+            settings::get_smtc_whitelist_enabled, settings::set_smtc_whitelist_enabled,
             settings::get_preview_updates, settings::set_preview_updates,
             settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
@@ -411,6 +413,10 @@ pub fn run() {
                 settings.blacklist_processes.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
             ));
             let blacklist_enabled = Arc::new(AtomicBool::new(settings.blacklist_enabled));
+            let smtc_app_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(
+                settings.smtc_app_whitelist.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
+            ));
+            let smtc_whitelist_enabled = Arc::new(AtomicBool::new(settings.smtc_whitelist_enabled));
             let preview_updates = Arc::new(AtomicBool::new(settings.preview_updates));
             let show_preview_toggle = Arc::new(AtomicBool::new(settings.show_preview_toggle));
             let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
@@ -418,6 +424,11 @@ pub fn run() {
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
             let weather_cache: Arc<Mutex<Option<WeatherResult>>> = Arc::new(Mutex::new(None));
             let weather_force_refresh = Arc::new(AtomicBool::new(true)); // 启动后立即获取
+
+            media::update_smtc_whitelist(
+                smtc_whitelist_enabled.load(Ordering::Relaxed),
+                smtc_app_whitelist.lock().unwrap().clone(),
+            );
 
             app.manage(IslandState {
                 is_notifying: is_notifying.clone(),
@@ -458,6 +469,8 @@ pub fn run() {
                 auto_start: auto_start.clone(),
                 blacklist_processes: blacklist_processes.clone(),
                 blacklist_enabled: blacklist_enabled.clone(),
+                smtc_app_whitelist: smtc_app_whitelist.clone(),
+                smtc_whitelist_enabled: smtc_whitelist_enabled.clone(),
                 preview_updates: preview_updates.clone(),
                 show_preview_toggle: show_preview_toggle.clone(),
             });
@@ -1261,6 +1274,9 @@ pub struct IslandState {
     pub blacklist_processes: Arc<Mutex<Vec<String>>>,
     // 黑名单功能总开关
     pub blacklist_enabled: Arc<AtomicBool>,
+    // SMTC app_id 白名单
+    pub smtc_app_whitelist: Arc<Mutex<Vec<String>>>,
+    pub smtc_whitelist_enabled: Arc<AtomicBool>,
     // 预览更新通道开关
     pub preview_updates: Arc<AtomicBool>,
     // 是否显示预览版开关（UI 可见性）

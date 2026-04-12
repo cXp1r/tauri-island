@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -10,6 +11,38 @@ pub(crate) struct MediaInfo {
     pub album_artist: String,
     pub duration_ms: i64,
     pub genre: String,
+}
+
+#[derive(Clone, Default)]
+struct SmtcWhitelist {
+    enabled: bool,
+    app_ids: Vec<String>,
+}
+
+static SMTC_WHITELIST: OnceLock<Mutex<SmtcWhitelist>> = OnceLock::new();
+
+pub(crate) fn update_smtc_whitelist(enabled: bool, app_ids: Vec<String>) {
+    let normalized: Vec<String> = app_ids
+        .into_iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut guard = SMTC_WHITELIST
+        .get_or_init(|| Mutex::new(SmtcWhitelist::default()))
+        .lock()
+        .unwrap();
+    *guard = SmtcWhitelist {
+        enabled,
+        app_ids: normalized,
+    };
+}
+
+fn get_smtc_whitelist() -> SmtcWhitelist {
+    SMTC_WHITELIST
+        .get_or_init(|| Mutex::new(SmtcWhitelist::default()))
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default()
 }
 
 pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
@@ -290,14 +323,19 @@ fn read_smtc_session_info(
     if let Err(ref e) = playback_info {
         crate::logger::warn("SMTC", &format!("GetPlaybackInfo failed: {:?}", e));
     }
-    let is_playing = playback_info.ok()
+    let playback_status = playback_info.ok()
         .and_then(|p| {
             p.PlaybackStatus().map_err(|e| {
                 crate::logger::warn("SMTC", &format!("PlaybackStatus failed: {:?}", e));
             }).ok()
-        })
-        .map(|status| status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
-        .unwrap_or(false);
+        });
+    if matches!(playback_status, Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed)) {
+        return None;
+    }
+    let is_playing = matches!(
+        playback_status,
+        Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
+    );
 
     let timeline = match session.GetTimelineProperties() {
         Ok(t) => Some(t),
@@ -536,6 +574,8 @@ pub(crate) fn select_best_smtc_session(
         String,
     )> = None;
 
+    let whitelist = get_smtc_whitelist();
+
     for i in 0..size {
         let session = match sessions.GetAt(i) {
             Ok(s) => s,
@@ -552,6 +592,14 @@ pub(crate) fn select_best_smtc_session(
             .map(|s| s.to_string_lossy())
             .unwrap_or_default();
         let app_id_lc = app_id.to_ascii_lowercase();
+
+        if whitelist.enabled {
+            let allowed = !whitelist.app_ids.is_empty()
+                && whitelist.app_ids.iter().any(|id| app_id_lc.contains(id));
+            if !allowed {
+                continue;
+            }
+        }
 
         let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
         if !has_meta && !is_playing {
