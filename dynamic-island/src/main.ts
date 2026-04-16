@@ -119,6 +119,9 @@ let isMinimizeAnimating = false; // 最小化/恢复动画进行中
 let currentSongTitle = "";
 let currentArtistName = "";
 
+// 展开态多行歌词的 FLIP 过渡状态：key（文本+重复序号）→ 行 DOM
+let prevLineMap: Map<string, HTMLElement> = new Map();
+
 // AI Agent 相关状态
 let aiEnabled = false;
 let aiGenerating = false;
@@ -625,6 +628,143 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
+/** 为 nearby_lyrics 生成稳定 key：相同文本按出现次序追加序号，避免副歌重复导致匹配错乱 */
+function buildLineKeys(nearby: Array<{ text: string; is_current: boolean }>): string[] {
+  const counts = new Map<string, number>();
+  const keys: string[] = [];
+  for (const l of nearby) {
+    const c = counts.get(l.text) ?? 0;
+    counts.set(l.text, c + 1);
+    keys.push(`${l.text}#${c}`);
+  }
+  return keys;
+}
+
+/**
+ * 以 FLIP（First-Last-Invert-Play）技术让多行歌词切换时像轨道一样平滑滚动：
+ * 复用行做位移过渡，新行从底部淡入，退出行向上淡出。
+ */
+function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolean }>) {
+  // 清理 prevLineMap 中已不在 DOM 的无效引用（可能被其他分支如 textContent="♪" 破坏过）
+  for (const [k, el] of Array.from(prevLineMap)) {
+    if (!mpLyricText.contains(el)) prevLineMap.delete(k);
+  }
+  // 若此时 mpLyricText 里是文本节点（如 "♪"）或已无行元素，清空作为全新入场
+  if (prevLineMap.size === 0) {
+    while (mpLyricText.firstChild) mpLyricText.removeChild(mpLyricText.firstChild);
+  }
+
+  const keys = buildLineKeys(nearby);
+
+  // ===== FIRST：记录所有旧行的矩形位置（读布局） =====
+  const containerRect = mpLyricText.getBoundingClientRect();
+  const oldRects = new Map<HTMLElement, DOMRect>();
+  for (const el of prevLineMap.values()) {
+    oldRects.set(el, el.getBoundingClientRect());
+  }
+
+  // ===== 分类：reused（复用）/ entering（新增）/ exiting（稍后从剩余 prevLineMap 中得出） =====
+  const newMap = new Map<string, HTMLElement>();
+  const reusedEls: HTMLElement[] = [];
+  const enteringEls: HTMLElement[] = [];
+  const fragment = document.createDocumentFragment();
+
+  for (let i = 0; i < nearby.length; i++) {
+    const key = keys[i];
+    const line = nearby[i];
+    let el = prevLineMap.get(key);
+    let isNew = false;
+    if (el) {
+      prevLineMap.delete(key);
+      reusedEls.push(el);
+    } else {
+      el = document.createElement("div");
+      el.textContent = line.text;
+      enteringEls.push(el);
+      isNew = true;
+    }
+    // 清除可能残留的 inline 样式（上一次动画的尾巴）
+    el.style.position = "";
+    el.style.left = "";
+    el.style.top = "";
+    el.style.width = "";
+    el.style.transition = "";
+    el.style.transform = "";
+    // 更新 class：mp-lyric-line [+ mp-lyric-current] [+ entering]
+    let cls = "mp-lyric-line";
+    if (line.is_current) cls += " mp-lyric-current";
+    if (isNew) cls += " entering";
+    el.className = cls;
+    newMap.set(key, el);
+    fragment.appendChild(el);
+  }
+
+  // 剩下的 prevLineMap 即是 exiting 集合
+  const exitingEls: HTMLElement[] = Array.from(prevLineMap.values());
+
+  // ===== 先把 exiting 元素定格为 absolute，脱离 flex 布局以免挤压复用行 =====
+  for (const el of exitingEls) {
+    const rect = oldRects.get(el);
+    if (!rect) continue;
+    el.style.position = "absolute";
+    el.style.left = `${rect.left - containerRect.left}px`;
+    el.style.top = `${rect.top - containerRect.top}px`;
+    el.style.width = `${rect.width}px`;
+  }
+
+  // ===== LAST：将复用/新增元素按新顺序插入容器（复用元素会被移动到新位置） =====
+  mpLyricText.appendChild(fragment);
+
+  // 强制 reflow，让浏览器计算出复用元素的新 rect
+  void mpLyricText.offsetHeight;
+
+  // ===== INVERT：对复用元素设置反向 translate，使其视觉上"留在原位" =====
+  for (const el of reusedEls) {
+    const oldRect = oldRects.get(el);
+    if (!oldRect) continue;
+    const newRect = el.getBoundingClientRect();
+    const dy = oldRect.top - newRect.top;
+    if (dy !== 0) {
+      const isCurrent = el.classList.contains("mp-lyric-current");
+      el.style.transition = "none";
+      el.style.transform = `translateY(${dy}px) scale(${isCurrent ? 1.05 : 1})`;
+    }
+  }
+
+  // 再次 reflow，确保上一步的 inline 样式被浏览器采纳
+  void mpLyricText.offsetHeight;
+
+  // ===== PLAY：下一帧清空 inline、去掉 entering、给 exiting 打标记，让 CSS transition 接管 =====
+  requestAnimationFrame(() => {
+    for (const el of reusedEls) {
+      el.style.transition = "";
+      el.style.transform = "";
+    }
+    for (const el of enteringEls) {
+      el.classList.remove("entering");
+    }
+    for (const el of exitingEls) {
+      el.classList.add("exiting");
+      const cleanup = () => {
+        el.removeEventListener("transitionend", cleanup);
+        if (el.parentNode) el.remove();
+      };
+      el.addEventListener("transitionend", cleanup);
+      // 兜底：若 transitionend 未触发（例如元素被中途移除），600ms 后强制清理
+      window.setTimeout(() => {
+        if (el.parentNode) el.remove();
+      }, 600);
+    }
+  });
+
+  prevLineMap = newMap;
+}
+
+/** 当 mpLyricText 被其他分支覆盖成纯文本（如 "♪"、歌名）时调用，丢弃 FLIP 状态 */
+function resetMpLyricFlipState() {
+  prevLineMap.clear();
+}
+
 listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
@@ -695,49 +835,25 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
     setView("lyric", true);
   }
 
-  // 同步歌词到展开面板（多行）— 使用固定槽位，平滑过渡
+  // 同步歌词到展开面板（多行）— 使用 FLIP 技术做轨道式平滑滚动
   const nearby = event.payload.nearby_lyrics;
   if (nearby && nearby.length > 0) {
-    const slots = mpLyricText.children;
-    // 首次从文本节点切换到槽位时，清除残留文本节点（如 "♪"）
-    if (slots.length === 0 && mpLyricText.childNodes.length > 0) {
-      mpLyricText.textContent = "";
-    }
-    // 确保槽位数量匹配
-    while (slots.length < nearby.length) {
-      const div = document.createElement("div");
-      div.className = "mp-lyric-line";
-      mpLyricText.appendChild(div);
-    }
-    while (slots.length > nearby.length) {
-      mpLyricText.removeChild(mpLyricText.lastChild!);
-    }
-    // 更新每个槽位的文字和样式
-    for (let i = 0; i < nearby.length; i++) {
-      const el = slots[i] as HTMLElement;
-      const line = nearby[i];
-      if (el.textContent !== line.text) {
-        // 文字变化时做微淡入
-        el.style.opacity = "0";
-        setTimeout(() => {
-          el.textContent = line.text;
-          el.style.opacity = "";
-        }, 120);
-      }
-      el.className = line.is_current ? "mp-lyric-line mp-lyric-current" : "mp-lyric-line";
-    }
+    renderNearbyLyricsFlip(nearby);
   } else if (text !== null && text !== undefined) {
     // 前奏/等待歌词阶段：强制显示音乐符号，避免残留多行歌词造成“提前显示后续歌词”
     if (text === "♪") {
       mpLyricText.textContent = "♪";
+      resetMpLyricFlipState();
     } else {
       // 如果面板已有多行歌词槽位，不用单行文本覆盖
       if (mpLyricText.children.length === 0) {
         mpLyricText.textContent = text;
+        resetMpLyricFlipState();
       }
     }
   } else {
     mpLyricText.textContent = title;
+    resetMpLyricFlipState();
   }
 
   updateSwitcherUI();
@@ -751,6 +867,7 @@ listen<{ title: string; artist: string; genre?: string; thumbnail?: string | nul
   lyricText.textContent = "♪";
   lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
   mpLyricText.textContent = "♪";
+  resetMpLyricFlipState();
   lyricMeta.style.fontSize = "";
   lyricMeta.style.color = "";
 

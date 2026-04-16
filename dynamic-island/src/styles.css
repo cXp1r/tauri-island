@@ -985,14 +985,24 @@ body.minimized #collapsed-indicator {
 #music-panel-lyrics {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 4px 8px;
+    position: relative;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE/Edge */
+    -webkit-mask-image: linear-gradient(to bottom,
+        transparent 0%,
+        black 18%,
+        black 82%,
+        transparent 100%);
+    mask-image: linear-gradient(to bottom,
+        transparent 0%,
+        black 18%,
+        black 82%,
+        transparent 100%);
 }
 #music-panel-lyrics::-webkit-scrollbar {
     display: none; /* Chrome/Safari/WebView */
@@ -1011,15 +1021,20 @@ body.minimized #collapsed-indicator {
     align-items: center;
     gap: 4px;
     width: 100%;
+    position: relative;
 }
 
 .mp-lyric-line {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.3);
-    transition: color 0.35s ease, font-size 0.35s ease,
-                opacity 0.15s ease, transform 0.35s ease, font-weight 0.35s ease;
+    transition: color 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                font-size 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                font-weight 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.32s ease;
     line-height: 1.5;
     transform: scale(1);
+    will-change: transform, opacity;
 }
 
 .mp-lyric-current {
@@ -1027,6 +1042,22 @@ body.minimized #collapsed-indicator {
     font-weight: 700;
     color: rgba(255, 255, 255, 0.95);
     transform: scale(1.05);
+}
+
+/* 新进入的行：从下方淡入 */
+.mp-lyric-line.entering {
+    opacity: 0;
+    transform: translateY(24px) scale(1);
+}
+.mp-lyric-line.mp-lyric-current.entering {
+    transform: translateY(24px) scale(1.05);
+}
+
+/* 退出的行：向上淡出（JS 会把它改成 absolute 以脱离布局） */
+.mp-lyric-line.exiting {
+    opacity: 0;
+    transform: translateY(-12px) scale(1);
+    pointer-events: none;
 }
 
 
