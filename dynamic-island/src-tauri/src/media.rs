@@ -11,6 +11,7 @@ pub(crate) struct MediaInfo {
     pub album_artist: String,
     pub duration_ms: i64,
     pub genre: String,
+    pub seekable: bool,
 }
 
 #[derive(Clone, Default)]
@@ -48,16 +49,46 @@ fn get_smtc_whitelist() -> SmtcWhitelist {
 pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
     let id = app_id.to_ascii_lowercase();
     [
-        "cloudmusic", // 网易云音乐
-        "netease",
-        "music.163",
-        "spotify",
-        "qqmusic",
-        "kugou",
-        "kuwo",
-        "foobar",
-        "vlc",
-        "aimp",
+        // —— 国内音乐平台 ——
+        "cloudmusic",   // 网易云音乐
+        "netease",      // 网易云音乐（备用匹配）
+        "music.163",    // 网易云音乐（UWP / 网页版 PWA）
+        "qqmusic",      // QQ 音乐
+        "kugou",        // 酷狗音乐
+        "kuwo",         // 酷我音乐
+        "qishui",       // 汽水音乐
+        "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}", // 汽水音乐（中文名）
+        "migu",         // 咪咕音乐
+        // —— 国际音乐平台 ——
+        "spotify",      // Spotify
+        "itunes",       // Apple Music / iTunes
+        "applemusic",   // Apple Music
+        "apple.music",  // Apple Music（UWP）
+        "tidal",        // TIDAL
+        "deezer",       // Deezer
+        "amazonmusic",  // Amazon Music
+        "amazon music", // Amazon Music（备用）
+        // —— 本地播放器 ——
+        "foobar",       // foobar2000 / foobox
+        "vlc",          // VLC media player
+        "aimp",         // AIMP
+        "musicbee",     // MusicBee
+        "winamp",       // Winamp
+        "wacup",        // WACUP（Winamp 社区版）
+        "mediamonkey",  // MediaMonkey
+        "dopamine",     // Dopamine
+        // —— Windows 内置 ——
+        "zunemusic",    // Groove 音乐 / Windows Media Player（新版）
+        "microsoft.windows.media", // Windows Media Player
+        // —— 第三方开源 / 小众 ——
+        "lx-music",     // 洛雪音乐
+        "lx_music",     // 洛雪音乐（备用）
+        "listen1",      // Listen 1
+        "yesplaymusic", // YesPlayMusic
+        "harmonoid",    // Harmonoid
+        "cider",        // Cider（Apple Music 第三方客户端）
+        "plexamp",      // Plexamp
+        "tauon",        // Tauon Music Box
     ]
     .iter()
     .any(|k| id.contains(k))
@@ -239,6 +270,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
                 album_artist: String::new(),
                 duration_ms: 0,
                 genre: String::new(),
+                seekable: false,
             });
         }
     }
@@ -250,6 +282,7 @@ fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
         album_artist: String::new(),
         duration_ms: 0,
         genre: String::new(),
+        seekable: false,
     })
 }
 
@@ -323,6 +356,10 @@ fn read_smtc_session_info(
     if let Err(ref e) = playback_info {
         crate::logger::warn("SMTC", &format!("GetPlaybackInfo failed: {:?}", e));
     }
+    let seekable = playback_info.as_ref().ok()
+        .and_then(|p| p.Controls().ok())
+        .and_then(|c| c.IsPlaybackPositionEnabled().ok())
+        .unwrap_or(false);
     let playback_status = playback_info.ok()
         .and_then(|p| {
             p.PlaybackStatus().map_err(|e| {
@@ -438,7 +475,7 @@ fn read_smtc_session_info(
         None => (String::new(), String::new(), String::new(), String::new(), String::new()),
     };
 
-    Some((MediaInfo { title, artist, album_title, album_artist, duration_ms, genre }, position_ms, is_playing))
+    Some((MediaInfo { title, artist, album_title, album_artist, duration_ms, genre, seekable }, position_ms, is_playing))
 }
 
 /// 将当前 SMTC 会话的所有可读字段打印到日志，用于排查不同播放器行为差异
@@ -718,23 +755,25 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
             }
         }
 
-        // SMTC 有元数据但非首选应用：如果是浏览器/视频应用则跳过，不当作音乐
+        // 非首选应用：仅当白名单启用且该应用通过了白名单筛选时才接受
         if has_meta {
-            if is_browser_or_video_app(&app_id) {
-                if let Some(fb) = cloud_fallback() {
-                    return Some(fb);
-                }
-                return None;
+            let whitelist = get_smtc_whitelist();
+            if whitelist.enabled {
+                // 白名单启用，能到达此处说明通过了 select_best_smtc_session 的筛选
+                return Some((media, position_ms, is_playing));
             }
-            return Some((media, position_ms, is_playing));
+            // 白名单未启用，非首选应用不当作音乐
+            if let Some(fb) = cloud_fallback() {
+                return Some(fb);
+            }
+            return None;
         }
 
-        // SMTC 完全没有有用数据：回退到网易云窗口标题
+        // 非首选应用且无元数据：回退到网易云窗口标题
         if let Some(fb) = cloud_fallback() {
             return Some(fb);
         }
-
-        return Some((media, position_ms, is_playing));
+        return None;
     }
 
     cloud_fallback()

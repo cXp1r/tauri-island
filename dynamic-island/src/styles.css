@@ -459,6 +459,15 @@ html, body {
     background: #1ed760;
     transition: none;
 }
+.progress-bar.no-seek {
+    cursor: default;
+}
+.progress-bar.no-seek .progress-thumb {
+    display: none;
+}
+.progress-bar.no-seek:hover .progress-fill {
+    background: rgba(255, 255, 255, 0.45);
+}
 
 /* --- 媒体控制按钮（仅展开时显示） --- */
 .media-controls {
@@ -845,6 +854,15 @@ body.minimized #collapsed-indicator {
 .mp-progress-bar.seeking .mp-progress-fill {
     background: #1ed760;
     transition: none;
+}
+.mp-progress-bar.no-seek {
+    cursor: default;
+}
+.mp-progress-bar.no-seek .mp-progress-thumb {
+    display: none;
+}
+.mp-progress-bar.no-seek:hover .mp-progress-fill {
+    background: rgba(255, 255, 255, 0.45);
 }
 
 .mp-time {

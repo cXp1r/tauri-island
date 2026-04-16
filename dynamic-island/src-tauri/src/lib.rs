@@ -1006,7 +1006,8 @@ pub fn run() {
                             "artist": media_info.artist,
                             "genre": media_info.genre,
                             "thumbnail": null,
-                            "duration_ms": media_info.duration_ms
+                            "duration_ms": media_info.duration_ms,
+                            "seekable": media_info.seekable
                         }));
 
                         // 异步获取封面（独立线程，不阻塞轮询）
@@ -1150,7 +1151,8 @@ pub fn run() {
                             "genre": media_info.genre,
                             "position_ms": position_ms,
                             "duration_ms": effective_duration_ms,
-                            "is_playing": is_playing
+                            "is_playing": is_playing,
+                            "seekable": media_info.seekable
                         });
                         if let Some(nearby) = nearby_json {
                             payload["nearby_lyrics"] = serde_json::json!(nearby);
@@ -1165,7 +1167,8 @@ pub fn run() {
                             "genre": media_info.genre,
                             "position_ms": position_ms,
                             "duration_ms": effective_duration_ms,
-                            "is_playing": is_playing
+                            "is_playing": is_playing,
+                            "seekable": media_info.seekable
                         }));
                     }
                 }

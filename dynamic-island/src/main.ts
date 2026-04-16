@@ -112,6 +112,7 @@ let currentDurationMs = 0; // 歌曲总时长
 let isSeeking = false; // 是否正在拖动进度条
 let isMpSeeking = false; // 面板进度条拖动
 let isMpVolSeeking = false; // 面板音量条拖动
+let isSeekable = true; // 当前播放器是否支持 seek
 let musicClickTimer: number | null = null; // 音乐单击延时
 let isExpandAnimating = false; // 展开/收起动画进行中，防止重复触发
 let isMinimizeAnimating = false; // 最小化/恢复动画进行中
@@ -624,7 +625,7 @@ listen<boolean>("playback-state", (event) => {
   updatePlayIcon();
 });
 
-listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
@@ -648,6 +649,11 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   if (event.payload.is_playing !== undefined && event.payload.is_playing !== isPlaying) {
     isPlaying = event.payload.is_playing;
     updatePlayIcon();
+  }
+
+  // 同步 seekable 状态
+  if (event.payload.seekable !== undefined) {
+    updateSeekable(event.payload.seekable);
   }
 
   // 更新进度条（收起态 + 面板）
@@ -737,7 +743,7 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   updateSwitcherUI();
 });
 
-listen<{ title: string; artist: string; genre?: string; thumbnail?: string | null; duration_ms?: number }>("media-changed", (event) => {
+listen<{ title: string; artist: string; genre?: string; thumbnail?: string | null; duration_ms?: number; seekable?: boolean }>("media-changed", (event) => {
   isMusicPlaying = true;
   currentSongTitle = event.payload.title;
   currentArtistName = event.payload.artist;
@@ -769,6 +775,9 @@ listen<{ title: string; artist: string; genre?: string; thumbnail?: string | nul
     currentDurationMs = 0;
     mpTimeTotal.textContent = "0:00";
   }
+
+  // 更新 seekable 状态
+  updateSeekable(event.payload.seekable ?? true);
 
   // 重置进度条
   progressFill.style.width = "0%";
@@ -924,8 +933,15 @@ document.addEventListener("mouseup", (e: MouseEvent) => {
 });
 
 // ===== 进度条拖动（Seek）=====
+function updateSeekable(seekable: boolean) {
+  if (isSeekable === seekable) return;
+  isSeekable = seekable;
+  progressBar.classList.toggle("no-seek", !seekable);
+  mpProgressBar.classList.toggle("no-seek", !seekable);
+}
+
 progressBar.addEventListener("mousedown", (e: MouseEvent) => {
-  if (currentDurationMs <= 0) return;
+  if (currentDurationMs <= 0 || !isSeekable) return;
   e.stopPropagation();
   isSeeking = true;
   progressBar.classList.add("seeking");
@@ -972,7 +988,7 @@ mpNext.addEventListener("click", (e) => {
 
 // ===== 面板进度条拖动（Seek）=====
 mpProgressBar.addEventListener("mousedown", (e: MouseEvent) => {
-  if (currentDurationMs <= 0) return;
+  if (currentDurationMs <= 0 || !isSeekable) return;
   e.stopPropagation();
   isMpSeeking = true;
   mpProgressBar.classList.add("seeking");
