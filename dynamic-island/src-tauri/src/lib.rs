@@ -811,13 +811,31 @@ pub fn run() {
             let weather_refresh_t = weather_force_refresh.clone();
 
             thread::spawn(move || {
-                const WEATHER_INTERVAL_SECS: u64 = 20 * 60; // 20 分钟
+                const WEATHER_INTERVAL_SECS: u64 = 20 * 60; // 正常成功间隔：20 分钟
+                const WEATHER_RETRY_SECS: u64 = 60;          // 连续失败时的快速重试间隔：1 分钟
+                const WEATHER_COOLDOWN_SECS: u64 = 30 * 60;  // 达到上限后的冷却时长：30 分钟
+                const WEATHER_MAX_FAILURES: u32 = 3;         // 触发冷却的连续失败次数
+
                 let mut last_fetch = Instant::now() - Duration::from_secs(WEATHER_INTERVAL_SECS);
+                // 当前「快速重试窗口」内已失败次数（0..=WEATHER_MAX_FAILURES）
+                let mut consecutive_failures: u32 = 0;
+                // 下次允许发起请求的最早时间点；None 表示不受退避限制
+                let mut next_retry_at: Option<Instant> = None;
 
                 loop {
-                    let should_fetch = weather_refresh_t.compare_exchange(
-                        true, false, Ordering::SeqCst, Ordering::Relaxed
-                    ).is_ok() || last_fetch.elapsed() >= Duration::from_secs(WEATHER_INTERVAL_SECS);
+                    // 手动强制刷新：彻底重置失败状态，立即放行
+                    let force = weather_refresh_t.compare_exchange(
+                        true, false, Ordering::SeqCst, Ordering::Relaxed,
+                    ).is_ok();
+                    if force {
+                        consecutive_failures = 0;
+                        next_retry_at = None;
+                    }
+
+                    let now = Instant::now();
+                    let retry_gate_passed = next_retry_at.map(|t| now >= t).unwrap_or(true);
+                    let interval_elapsed = last_fetch.elapsed() >= Duration::from_secs(WEATHER_INTERVAL_SECS);
+                    let should_fetch = force || (retry_gate_passed && interval_elapsed);
 
                     if should_fetch {
                         let city = weather_city_t.lock().unwrap().clone();
@@ -833,10 +851,26 @@ pub fn run() {
                                     "city": result.city
                                 }));
                                 last_fetch = Instant::now();
+                                consecutive_failures = 0;
+                                next_retry_at = None;
                                 println!("[Weather] 天气更新成功: {} {} {}°C", result.city, result.desc, result.temp);
                             }
                             Err(e) => {
-                                println!("[Weather] 天气获取失败: {}", e);
+                                consecutive_failures += 1;
+                                if consecutive_failures >= WEATHER_MAX_FAILURES {
+                                    next_retry_at = Some(now + Duration::from_secs(WEATHER_COOLDOWN_SECS));
+                                    consecutive_failures = 0; // 冷却结束后重新给 3 次机会
+                                    println!(
+                                        "[Weather] 连续 {} 次失败，进入 {} 秒冷却后再重试: {}",
+                                        WEATHER_MAX_FAILURES, WEATHER_COOLDOWN_SECS, e,
+                                    );
+                                } else {
+                                    next_retry_at = Some(now + Duration::from_secs(WEATHER_RETRY_SECS));
+                                    println!(
+                                        "[Weather] 天气获取失败 ({}/{}), {} 秒后重试: {}",
+                                        consecutive_failures, WEATHER_MAX_FAILURES, WEATHER_RETRY_SECS, e,
+                                    );
+                                }
                                 let _ = win_weather.emit("weather-error", serde_json::json!({
                                     "error": e
                                 }));
@@ -892,6 +926,11 @@ pub fn run() {
                 let mut lyrics_not_found = false;
                 let mut current_gen: u64 = 0;
                 let mut fetch_pending = false; // 当前代是否还在等待结果
+                // SMTC 会话丢失宽限期：部分播放器（如汽水音乐）在自动切歌瞬间会短暂关闭
+                // 并重建会话，若立即发 lyric-update:null 会导致前端从歌词视图回退到时间视图。
+                // 轮询周期 80ms，阈值 63 次 ≈ 5s，确认确实没有任何音乐会话后再关闭视图。
+                let mut no_session_count: u32 = 0;
+                const NO_SESSION_GRACE_CYCLES: u32 = 63;
 
                 loop {
                     thread::sleep(Duration::from_millis(80));
@@ -927,10 +966,23 @@ pub fn run() {
 
                     let info = media::get_smtc_media_info();
                     let (media_info, position_ms_raw, is_playing) = match info {
-                        Some(v) => v,
+                        Some(v) => {
+                            // 拿到有效会话，重置宽限期计数
+                            no_session_count = 0;
+                            v
+                        }
                         None => {
                             if was_playing {
-                                crate::logger::warn("Lyrics", "playback state=stopped reason=no_smtc_session");
+                                // 会话短暂丢失：先走宽限期，避免切歌瞬间被误判为停止播放
+                                no_session_count = no_session_count.saturating_add(1);
+                                if no_session_count < NO_SESSION_GRACE_CYCLES {
+                                    continue;
+                                }
+                                crate::logger::warn(
+                                    "Lyrics",
+                                    "playback state=stopped reason=no_smtc_session (grace expired)",
+                                );
+                                no_session_count = 0;
                                 was_playing = false;
                                 last_is_playing = false;
                                 current_track.clear();
