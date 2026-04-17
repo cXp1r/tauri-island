@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
+import { initLyricOffset } from "./settings-lyric-offset";
 
 
 
@@ -12,7 +13,6 @@ type SettingsResponse = {
   lyric_api_search_enabled: boolean;
   lyric_rust_api_enabled: boolean;
   lyric_offset_enabled: boolean;
-  lyric_offset_ms: number;
   indicator_color: string;
   agent_window_size: string;
   weather_city: string;
@@ -58,7 +58,6 @@ const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectEleme
 const lyricWsEnabledToggle = document.getElementById("lyric-ws-enabled") as HTMLInputElement;
 const lyricRustApiEnabledToggle = document.getElementById("lyric-rust-api-enabled") as HTMLInputElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
-const lyricOffsetMsInput = document.getElementById("lyric-offset-ms") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
@@ -87,15 +86,6 @@ const cityTag = document.getElementById("city-tag") as HTMLSpanElement;
 const clearCityBtn = document.getElementById("clear-city-btn") as HTMLButtonElement;
 let citySearchTimer: number | null = null;
 
-function clampLyricOffsetMs(v: number): number {
-  if (!Number.isFinite(v)) return 200;
-  return Math.min(1500, Math.max(0, Math.round(v)));
-}
-
-function syncLyricOffsetInputState() {
-  lyricOffsetMsInput.disabled = !lyricOffsetEnabledToggle.checked;
-}
-
 async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
   clipboardToggle.checked = settings.clipboard_enabled;
@@ -104,8 +94,6 @@ async function loadSettings() {
   lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
   lyricRustApiEnabledToggle.checked = settings.lyric_rust_api_enabled ?? true;
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
-  lyricOffsetMsInput.value = String(clampLyricOffsetMs(settings.lyric_offset_ms ?? 200));
-  syncLyricOffsetInputState();
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   autoStartToggle.checked = settings.auto_start || false;
@@ -189,14 +177,8 @@ shortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
-lyricOffsetEnabledToggle.addEventListener("change", () => {
-  syncLyricOffsetInputState();
-});
-
-lyricOffsetMsInput.addEventListener("change", () => {
-  const next = clampLyricOffsetMs(Number(lyricOffsetMsInput.value));
-  lyricOffsetMsInput.value = String(next);
-});
+// 歌词偏移补偿总开关及按播放器子页的所有交互，集中在 settings-lyric-offset 模块处理
+initLyricOffset();
 
 saveBtn.addEventListener("click", async () => {
   const shortcut = shortcutInput.value.trim();
@@ -214,7 +196,6 @@ saveBtn.addEventListener("click", async () => {
       lyricRustApiEnabled: lyricRustApiEnabledToggle.checked,
       lyricApiSearchEnabled: true,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
-      lyricOffsetMs: clampLyricOffsetMs(Number(lyricOffsetMsInput.value)),
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,

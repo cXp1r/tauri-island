@@ -735,9 +735,13 @@ pub fn media_seek(position_ms: i64) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
+pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool, String)> {
     // 惰性调用 cloud_fallback，避免每次轮询都枚举窗口
-    let cloud_fallback = || get_cloudmusic_fallback_info();
+    // cloud 回退默认归属到 "cloudmusic.exe"，让上层能按播放器管理配置
+    let cloud_fallback = || -> Option<(MediaInfo, i64, bool, String)> {
+        get_cloudmusic_fallback_info()
+            .map(|(m, p, play)| (m, p, play, "cloudmusic.exe".to_string()))
+    };
 
     if let Some((_, media, position_ms, is_playing, app_id)) = select_best_smtc_session() {
         let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
@@ -745,13 +749,13 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
 
         // SMTC 有元数据且来自首选音乐应用：信任 SMTC 的播放状态
         if has_meta && is_preferred {
-            return Some((media, position_ms, is_playing));
+            return Some((media, position_ms, is_playing, app_id));
         }
 
         // SMTC 缺少元数据，但来自首选应用：用网易云窗口标题补充元数据，但保留 SMTC 的播放状态
         if !has_meta && is_preferred {
-            if let Some((fallback_media, _, _)) = cloud_fallback() {
-                return Some((fallback_media, position_ms, is_playing));
+            if let Some((fallback_media, _, _, _)) = cloud_fallback() {
+                return Some((fallback_media, position_ms, is_playing, app_id));
             }
         }
 
@@ -760,7 +764,7 @@ pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool)> {
             let whitelist = get_smtc_whitelist();
             if whitelist.enabled {
                 // 白名单启用，能到达此处说明通过了 select_best_smtc_session 的筛选
-                return Some((media, position_ms, is_playing));
+                return Some((media, position_ms, is_playing, app_id));
             }
             // 白名单未启用，非首选应用不当作音乐
             if let Some(fb) = cloud_fallback() {

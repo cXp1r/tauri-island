@@ -121,12 +121,11 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <h3>补偿时长</h3>
-                <p>范围 0-1500ms，默认 200ms。</p>
+                <h3>按播放器配置歌词补偿</h3>
+                <p>每个播放器单独存储，默认 0ms；进入后点 ±0.5s 即时生效（范围 ±3s）。</p>
               </div>
-              <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
-                <input id="lyric-offset-ms" class="input" type="number" min="0" max="1500" step="1" value="200" style="width: 100px; text-align: right;" />
-                <span style="font-size: 12px; color: var(--text-secondary);">ms</span>
+              <div class="setting-control">
+                <button type="button" class="btn" data-nav-to="lyric-offset">打开</button>
               </div>
             </div>
 
@@ -188,6 +187,38 @@
             </div>
 
             
+          </div>
+        </div>
+
+        <!-- 歌词补偿·按播放器（二级页面，不在侧栏显示） -->
+        <div class="page" id="page-lyric-offset">
+          <div class="setting-group">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <button type="button" class="btn" data-nav-to="music">← 返回音乐</button>
+              <span id="lyric-offset-status" style="font-size:12px;color:var(--text-secondary);"></span>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>歌词偏移补偿</h3>
+                <p>总开关；关闭后所有播放器的补偿立即失效。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="lyric-offset-enabled-sub" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item" style="display:block;border:none;padding:0;">
+              <div class="setting-label" style="margin-bottom:12px;">
+                <h3>各播放器补偿时长</h3>
+                <p>点击 ± 立即生效并保存；步长 0.5s，范围 ±3s。新播放器第一次被检测到时自动以 0ms 入表。</p>
+              </div>
+              <div id="lyric-offset-empty" style="color:var(--text-secondary);padding:12px 0;">
+                还没有检测到播放器，先播放一首歌再回到这里。
+              </div>
+              <div id="lyric-offset-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
           </div>
         </div>
 
@@ -512,6 +543,7 @@
 const pageInfo = {
   general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
   music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
+  "lyric-offset":   { title: "歌词补偿·按播放器", desc: "每个播放器单独存储补偿时长，点 ± 立即生效。" },
   weather:          { title: "天气",          desc: "配置天气显示位置。" },
   ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
   "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },

@@ -337,6 +337,8 @@ pub fn run() {
             window::set_agent_expanded, window::sync_window_height, window::set_minimized, window::show_context_menu,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
+            settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
+            settings::set_lyric_offset_enabled, settings::delete_lyric_offset_player,
             betterncm::install_betterncm_support,
             media::media_play_pause, media::media_next, media::media_prev,
             ai::ai_get_settings, ai::ai_save_settings, ai::ai_detect_model_type,
@@ -387,7 +389,11 @@ pub fn run() {
             let lyric_api_search_enabled = Arc::new(AtomicBool::new(settings.lyric_api_search_enabled));
             let lyric_rust_api_enabled = Arc::new(AtomicBool::new(settings.lyric_rust_api_enabled));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
-            let lyric_offset_ms = Arc::new(Mutex::new(settings.lyric_offset_ms.clamp(0, 1500)));
+            // 按播放器存储的歌词补偿，启动时规范化键值
+            let lyric_offsets_by_player: Arc<Mutex<std::collections::HashMap<String, i64>>> =
+                Arc::new(Mutex::new(settings::normalize_lyric_offsets(&settings.lyric_offsets_by_player)));
+            // 当前命中播放器 app_id（供 settings 子页高亮）
+            let active_player_app_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
             let current_view = Arc::new(Mutex::new("time".to_string()));
 
             // AI 相关字段
@@ -443,7 +449,8 @@ pub fn run() {
                 lyric_api_search_enabled: lyric_api_search_enabled.clone(),
                 lyric_rust_api_enabled: lyric_rust_api_enabled.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
-                lyric_offset_ms: lyric_offset_ms.clone(),
+                lyric_offsets_by_player: lyric_offsets_by_player.clone(),
+                active_player_app_id: active_player_app_id.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
                 music_expanded: music_expanded.clone(),
@@ -907,6 +914,11 @@ pub fn run() {
             let lyric_ws_enabled_media = lyric_ws_enabled.clone();
             let lyric_rust_api_enabled_media = lyric_rust_api_enabled.clone();
             let is_music_media = is_music.clone();
+            // 歌词补偿：总开关 + 按播放器表 + 当前命中 app_id；以及 AppHandle 用于持久化/广播事件
+            let lyric_offset_enabled_media = lyric_offset_enabled.clone();
+            let lyric_offsets_media = lyric_offsets_by_player.clone();
+            let active_player_media = active_player_app_id.clone();
+            let app_handle_media = app.handle().clone();
 
             // 歌词异步获取：用 Arc<Mutex> 共享结果 + 代数计数器防止竞态
             let lyrics_result: Arc<Mutex<Option<(u64, Vec<lyrics::LyricLine>, bool)>>> = Arc::new(Mutex::new(None));
@@ -965,7 +977,7 @@ pub fn run() {
                     }
 
                     let info = media::get_smtc_media_info();
-                    let (media_info, position_ms_raw, is_playing) = match info {
+                    let (media_info, position_ms_raw, is_playing, raw_app_id) = match info {
                         Some(v) => {
                             // 拿到有效会话，重置宽限期计数
                             no_session_count = 0;
@@ -992,11 +1004,54 @@ pub fn run() {
                             continue;
                         }
                     };
+                    let app_id = settings::normalize_app_id(&raw_app_id);
 
-                    let offset_enabled = lyric_offset_enabled.load(Ordering::Relaxed);
-                    let offset_ms = *lyric_offset_ms.lock().unwrap();
+                    // --- 活跃播放器变化：更新 state 并广播，供 settings 子页高亮 ---
+                    {
+                        let mut active = active_player_media.lock().unwrap();
+                        let changed = active.as_deref() != Some(app_id.as_str());
+                        if changed {
+                            *active = Some(app_id.clone());
+                            drop(active);
+                            let _ = app_handle_media.emit(
+                                "lyric-offset-active-player-changed",
+                                serde_json::json!({ "app_id": app_id }),
+                            );
+                        }
+                    }
+
+                    // --- 自动发现：新播放器首次出现时，默认 0ms 入表并落盘广播 ---
+                    let offset_ms = {
+                        let needs_insert = !app_id.is_empty() && {
+                            let map = lyric_offsets_media.lock().unwrap();
+                            !map.contains_key(&app_id)
+                        };
+                        if needs_insert {
+                            {
+                                let mut map = lyric_offsets_media.lock().unwrap();
+                                map.entry(app_id.clone()).or_insert(0);
+                            }
+                            // 持久化（通过 Tauri State 访问完整配置）
+                            let state_ref = app_handle_media.state::<IslandState>();
+                            let data = settings::build_settings_data(&state_ref);
+                            if let Err(e) = settings::save_settings_to_file(&data) {
+                                crate::logger::warn(
+                                    "Lyrics",
+                                    &format!("persist lyric_offsets_by_player failed: {}", e),
+                                );
+                            }
+                            let _ = app_handle_media.emit(
+                                "lyric-offset-players-changed",
+                                serde_json::json!({ "new_app_id": app_id }),
+                            );
+                        }
+                        let map = lyric_offsets_media.lock().unwrap();
+                        *map.get(&app_id).unwrap_or(&0)
+                    };
+
+                    let offset_enabled = lyric_offset_enabled_media.load(Ordering::Relaxed);
                     let position_ms = if offset_enabled {
-                        position_ms_raw.saturating_add(offset_ms)
+                        position_ms_raw.saturating_add(offset_ms).max(0)
                     } else {
                         position_ms_raw
                     };
@@ -1299,7 +1354,10 @@ pub struct IslandState {
     pub lyric_api_search_enabled: Arc<AtomicBool>,
     pub lyric_rust_api_enabled: Arc<AtomicBool>,
     pub lyric_offset_enabled: Arc<AtomicBool>,
-    pub lyric_offset_ms: Arc<Mutex<i64>>,
+    /// 按 SMTC app_id 存储的歌词补偿（ms），key 已规范化为小写
+    pub lyric_offsets_by_player: Arc<Mutex<std::collections::HashMap<String, i64>>>,
+    /// 当前命中的播放器 app_id（小写），供 settings 子页高亮
+    pub active_player_app_id: Arc<Mutex<Option<String>>>,
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
     pub agent_expanded: Arc<AtomicBool>,
     pub music_expanded: Arc<AtomicBool>,

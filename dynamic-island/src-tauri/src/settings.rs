@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -5,6 +6,40 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use crate::IslandState;
 use crate::link_handler::LinkHandler;
+
+/// 歌词补偿：按播放器保存时 clamp 的边界与步长（毫秒）
+pub(crate) const LYRIC_OFFSET_MIN_MS: i64 = -3000;
+pub(crate) const LYRIC_OFFSET_MAX_MS: i64 = 3000;
+pub(crate) const LYRIC_OFFSET_STEP_MS: i64 = 500;
+
+/// 将任意 i64 归一化到 [LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS] 并按 LYRIC_OFFSET_STEP_MS 取整。
+pub(crate) fn clamp_lyric_offset_ms(ms: i64) -> i64 {
+    let clamped = ms.clamp(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS);
+    // 就近取整到 step
+    let step = LYRIC_OFFSET_STEP_MS;
+    let rounded = ((clamped as f64) / step as f64).round() as i64 * step;
+    rounded.clamp(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
+}
+
+/// 规范化 SMTC app_id（trim + 小写），与 smtc_app_whitelist 保持一致
+pub(crate) fn normalize_app_id(app_id: &str) -> String {
+    app_id.trim().to_ascii_lowercase()
+}
+
+/// 对一份 map 做整体规范化（键小写 + 值 clamp），返回新 map
+pub(crate) fn normalize_lyric_offsets(
+    map: &HashMap<String, i64>,
+) -> HashMap<String, i64> {
+    let mut out = HashMap::with_capacity(map.len());
+    for (k, v) in map.iter() {
+        let key = normalize_app_id(k);
+        if key.is_empty() {
+            continue;
+        }
+        out.insert(key, clamp_lyric_offset_ms(*v));
+    }
+    out
+}
 
 #[cfg(windows)]
 use winreg::enums::*;
@@ -27,8 +62,9 @@ pub(crate) struct SettingsData {
     pub lyric_rust_api_enabled: bool,
     #[serde(default = "default_lyric_offset_enabled")]
     pub lyric_offset_enabled: bool,
-    #[serde(default = "default_lyric_offset_ms")]
-    pub lyric_offset_ms: i64,
+    /// 按 SMTC app_id 存储的歌词补偿（ms）。默认空表，未配置的播放器视为 0。
+    #[serde(default)]
+    pub lyric_offsets_by_player: HashMap<String, i64>,
     #[serde(default)]
     pub ai_api_url: String,
     #[serde(default)]
@@ -93,10 +129,6 @@ fn default_lyric_offset_enabled() -> bool {
     true
 }
 
-fn default_lyric_offset_ms() -> i64 {
-    200
-}
-
 pub(crate) fn default_indicator_color() -> String {
     "#2edb67".to_string()
 }
@@ -154,7 +186,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         lyric_api_search_enabled: default_lyric_api_search_enabled(),
         lyric_rust_api_enabled: default_lyric_rust_api_enabled(),
         lyric_offset_enabled: default_lyric_offset_enabled(),
-        lyric_offset_ms: default_lyric_offset_ms(),
+        lyric_offsets_by_player: HashMap::new(),
         ai_api_url: String::new(),
         ai_api_key: String::new(),
         ai_model: String::new(),
@@ -194,7 +226,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         lyric_api_search_enabled: state.lyric_api_search_enabled.load(Ordering::Relaxed),
         lyric_rust_api_enabled: state.lyric_rust_api_enabled.load(Ordering::Relaxed),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
-        lyric_offset_ms: *state.lyric_offset_ms.lock().unwrap(),
+        lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
         ai_api_url: state.ai_api_url.lock().unwrap().clone(),
         ai_api_key: state.ai_api_key.lock().unwrap().clone(),
         ai_model: state.ai_model.lock().unwrap().clone(),
@@ -240,7 +272,6 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let lyric_api_search_enabled = state.lyric_api_search_enabled.load(Ordering::Relaxed);
     let lyric_rust_api_enabled = state.lyric_rust_api_enabled.load(Ordering::Relaxed);
     let lyric_offset_enabled = state.lyric_offset_enabled.load(Ordering::Relaxed);
-    let lyric_offset_ms = *state.lyric_offset_ms.lock().unwrap();
     let indicator_color = state.indicator_color.lock().unwrap().clone();
     let agent_window_size = state.agent_window_size.lock().unwrap().clone();
     let weather_city = state.weather_city.lock().unwrap().clone();
@@ -257,7 +288,6 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "lyric_api_search_enabled": lyric_api_search_enabled,
         "lyric_rust_api_enabled": lyric_rust_api_enabled,
         "lyric_offset_enabled": lyric_offset_enabled,
-        "lyric_offset_ms": lyric_offset_ms,
         "indicator_color": indicator_color,
         "agent_window_size": agent_window_size,
         "weather_city": weather_city,
@@ -280,7 +310,6 @@ pub fn save_settings(
     lyric_api_search_enabled: Option<bool>,
     lyric_rust_api_enabled: Option<bool>,
     lyric_offset_enabled: Option<bool>,
-    lyric_offset_ms: Option<i64>,
     indicator_color: String,
     agent_window_size: String,
     weather_city: Option<String>,
@@ -304,10 +333,6 @@ pub fn save_settings(
     }
     if let Some(enabled) = lyric_offset_enabled {
         state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
-    }
-    if let Some(ms) = lyric_offset_ms {
-        let clamped = ms.clamp(0, 1500);
-        *state.lyric_offset_ms.lock().unwrap() = clamped;
     }
     *state.indicator_color.lock().unwrap() = indicator_color.clone();
     *state.agent_window_size.lock().unwrap() = agent_window_size.clone();
@@ -382,9 +407,6 @@ pub fn save_settings(
     if let Some(enabled) = lyric_offset_enabled {
         settings_data.lyric_offset_enabled = enabled;
     }
-    if let Some(ms) = lyric_offset_ms {
-        settings_data.lyric_offset_ms = ms.clamp(0, 1500);
-    }
     settings_data.indicator_color = indicator_color;
     settings_data.agent_window_size = agent_window_size;
     if let Some(city) = weather_city {
@@ -413,6 +435,92 @@ pub fn save_settings(
         settings_data.smtc_app_whitelist = normalized;
     }
     let _ = save_settings_to_file(&settings_data);
+}
+
+// ===== 歌词补偿（按播放器） =====
+
+/// 返回 settings 页子页需要的状态：开关、步进、范围、各播放器 offset、当前命中 app_id
+#[tauri::command]
+pub fn get_lyric_offset_players(state: tauri::State<'_, IslandState>) -> serde_json::Value {
+    let enabled = state.lyric_offset_enabled.load(Ordering::Relaxed);
+    let active = state.active_player_app_id.lock().unwrap().clone();
+    let players_map = state.lyric_offsets_by_player.lock().unwrap().clone();
+    let mut players: Vec<serde_json::Value> = players_map
+        .into_iter()
+        .map(|(app_id, ms)| {
+            serde_json::json!({
+                "app_id": app_id,
+                "ms": ms,
+            })
+        })
+        .collect();
+    // 稳定排序：按 app_id 升序，保证 UI 每次渲染顺序一致
+    players.sort_by(|a, b| {
+        a.get("app_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .cmp(b.get("app_id").and_then(|v| v.as_str()).unwrap_or(""))
+    });
+    serde_json::json!({
+        "enabled": enabled,
+        "active_app_id": active,
+        "min_ms": LYRIC_OFFSET_MIN_MS,
+        "max_ms": LYRIC_OFFSET_MAX_MS,
+        "step_ms": LYRIC_OFFSET_STEP_MS,
+        "players": players,
+    })
+}
+
+/// 设置某个播放器的补偿（ms），clamp 后存盘，返回 clamp 后的值
+#[tauri::command]
+pub fn set_lyric_offset_for_player(
+    state: tauri::State<'_, IslandState>,
+    app_id: String,
+    ms: i64,
+) -> Result<i64, String> {
+    let key = normalize_app_id(&app_id);
+    if key.is_empty() {
+        return Err("app_id 不能为空".to_string());
+    }
+    let clamped = clamp_lyric_offset_ms(ms);
+    {
+        let mut map = state.lyric_offsets_by_player.lock().unwrap();
+        map.insert(key.clone(), clamped);
+    }
+    let data = build_settings_data(&state);
+    save_settings_to_file(&data)?;
+    Ok(clamped)
+}
+
+/// 即时开关歌词补偿总开关（替代 save_settings 的整单保存）
+#[tauri::command]
+pub fn set_lyric_offset_enabled(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
+    let data = build_settings_data(&state);
+    save_settings_to_file(&data)?;
+    Ok(())
+}
+
+/// 删除某播放器的补偿条目
+#[tauri::command]
+pub fn delete_lyric_offset_player(
+    state: tauri::State<'_, IslandState>,
+    app_id: String,
+) -> Result<(), String> {
+    let key = normalize_app_id(&app_id);
+    if key.is_empty() {
+        return Err("app_id 不能为空".to_string());
+    }
+    {
+        let mut map = state.lyric_offsets_by_player.lock().unwrap();
+        map.remove(&key);
+    }
+    let data = build_settings_data(&state);
+    save_settings_to_file(&data)?;
+    Ok(())
 }
 
 #[tauri::command]
