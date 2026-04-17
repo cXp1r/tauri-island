@@ -32,7 +32,7 @@ impl ISearcher for NeteaseSearcher {
                         .filter_map(|a| a.name.clone())
                         .collect();
                     let album = song.album.as_ref().and_then(|a| a.name.clone()).unwrap_or_default();
-                    let duration = song.duration.map(|d| d as i32);
+                    let duration = song.duration.map(|d| d as u32);
                     let id = match &song.id {
                         Some(serde_json::Value::Number(n)) => n.to_string(),
                         Some(serde_json::Value::String(s)) => s.clone(),
@@ -53,14 +53,19 @@ impl ISearcher for NeteaseSearcher {
 
         Ok(results)
     }
+
+    fn get_split_char(&self) -> char {
+        '/'
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct NeteaseSearchResult {
     pub id: String,
     pub title: String,
     pub artists: Vec<String>,
     pub album: String,
-    pub duration_ms: Option<i32>,
+    pub duration_ms: Option<u32>,
     pub match_score: i8,
 }
 
@@ -68,8 +73,34 @@ impl ISearchResult for NeteaseSearchResult {
     fn title(&self) -> &str { &self.title }
     fn artists(&self) -> &[String] { &self.artists }
     fn album(&self) -> &str { &self.album }
-    fn duration_ms(&self) -> Option<i32> { self.duration_ms }
+    fn duration_ms(&self) -> Option<u32> { self.duration_ms }
     fn match_score(&self) -> i8 { self.match_score }
     fn set_match_score(&mut self, score: i8) { self.match_score = score; }
     fn as_any(&self) -> &dyn std::any::Any { self }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "Calls external NetEase API"]
+    async fn search_for_results_by_string_remeber_prints_every_result() {
+        let searcher = NeteaseSearcher::new();
+        let results = searcher
+            .search_for_results_by_string("Remeber yuigot / 早見沙織")
+            .await
+            .expect("Netease search should succeed");
+
+        println!("results count: {}", results.len());
+        for result in results {
+            let netease_result = result
+                .as_any()
+                .downcast_ref::<NeteaseSearchResult>()
+                .expect("Expected NeteaseSearchResult");
+            println!("{:?}",netease_result);
+        }
+    }
+}
+
+

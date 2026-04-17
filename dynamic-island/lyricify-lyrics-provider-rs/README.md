@@ -1,16 +1,14 @@
-# Lyricify Lyrics Provider
+﻿# Lyricify Lyrics Provider
 ## 声明
 
+仓库自用,并提供给自己参与开发的仓库用
+
 逻辑(C#源代码)源于[Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
-
-以下下内容**由ai代笔**
-
-网络歌词获取库，提供音乐平台 API 调用、智能搜索匹配和 SMTC 一站式歌词获取管线。
 
 ## 功能
 
 - **Providers** — 网易云、QQ音乐、酷狗、汽水音乐的 API 客户端
-- **Searchers** — 多轮智能搜索 + 自动评分排序，返回最佳匹配
+- **Searchers** — 弱智评分机制 + 神人匹配字符串，返回最佳匹配
 - **SMTC 歌词管线** — 传入歌曲信息，自动检测运行中的播放器进程，用自家源获取歌词
 
 ## 安装
@@ -23,7 +21,6 @@ lyricify-lyrics-provider = { path = "../lyricify-lyrics-provider-rs" }
 tokio = { version = "1", features = ["full"] }
 ```
 
-> 本库已内置歌词解析、数据模型和辅助工具模块，无需额外声明 `helper` 依赖。
 
 ## 快速上手
 
@@ -62,35 +59,6 @@ let lyrics = smtc_lyrics::get_lyrics_with_player(
 ).await?;
 ```
 
-### 进程检测
-
-```rust
-use lyricify_lyrics_provider::smtc_lyrics;
-
-let players = smtc_lyrics::get_running_players();
-if let Some(first) = smtc_lyrics::get_first_running_player() {
-    println!("将使用: {}", first.display_name());
-}
-```
-
-### 直接调用平台 API
-
-```rust
-use lyricify_lyrics_provider::providers::netease::NeteaseApi;
-
-let api = NeteaseApi::new();
-let result = api.search("晴天 周杰伦", 1).await?;
-let lyric = api.get_lyric("186016").await?;
-```
-
-### 智能搜索
-
-```rust
-use lyricify_lyrics_provider::searchers::{ISearcher, netease::NeteaseSearcher};
-
-let searcher = NeteaseSearcher::new();
-let best = searcher.search_for_result(&track_metadata).await?;
-```
 
 ### 访问解析/模型/工具模块
 
@@ -104,33 +72,54 @@ use lyricify_lyrics_provider::helpers;
 
 | 播放器 | 枚举值 | 进程名 | 歌词源 |
 |--------|--------|--------|--------|
-| 酷狗音乐 | `MusicPlayer::Kugou` | `KGMusic.exe` | 酷狗 API |
+| 酷狗音乐 | `MusicPlayer::Kugou` | `KuGou.exe` | 酷狗 API |
 | 网易云音乐 | `MusicPlayer::Netease` | `cloudmusic.exe` | 网易云 API（优先 YRC 逐字，回退 LRC） |
 | QQ音乐 | `MusicPlayer::QQMusic` | `QQMusic.exe` | QQ音乐 API |
 | 汽水音乐 | `MusicPlayer::SodaMusic` | `SodaMusic.exe` | 汽水音乐 API |
 
 ## 模块结构
 
-```
+```text
 src/
-├── lib.rs              # 入口，导出 models/helpers/parsers/providers/searchers/smtc_lyrics
-├── models/             # 歌词数据模型
-├── helpers/            # 通用辅助工具
-├── parsers/            # LRC / YRC 解析
-├── smtc_lyrics.rs      # SMTC 一站式歌词获取管线
-├── providers/          # 平台 API 客户端
-│   ├── base_api.rs     # HTTP 基础封装
-│   ├── proxy.rs        # 代理配置
-│   ├── netease.rs      # 网易云音乐 API
-│   ├── qqmusic.rs      # QQ音乐 API
-│   ├── kugou.rs        # 酷狗音乐 API
-│   └── soda_music.rs   # 汽水音乐 API
-└── searchers/          # 智能搜索
-    ├── helpers/        # 搜索辅助逻辑
-    │   └── compare.rs  # 匹配算法
+├── lib.rs
+├── smtc_lyrics.rs
+├── helpers/
+│   ├── mod.rs
+│   └── string_helper.rs
+├── models/
+│   ├── mod.rs
+│   ├── additional_file_info.rs
+│   ├── file_info.rs
+│   ├── line_info.rs
+│   ├── lyrics_data.rs
+│   ├── lyrics_types.rs
+│   ├── sync_types.rs
+│   └── track_metadata.rs
+├── parsers/
+│   ├── mod.rs
+│   ├── attributes_helper.rs
+│   ├── kugou.rs
+│   ├── lrc.rs
+│   ├── netease.rs
+│   ├── qqmusic.rs
+│   ├── soda_music.rs
+│   └── decrypt/
+│       ├── mod.rs
+│       ├── krc.rs
+│       └── qrc.rs
+├── providers/
+│   ├── mod.rs
+│   ├── base_api.rs
+│   ├── kugou.rs
+│   ├── netease.rs
+│   ├── proxy.rs
+│   ├── qqmusic.rs
+│   └── soda_music.rs
+└── searchers/
+    ├── mod.rs
+    ├── kugou.rs
     ├── netease.rs
     ├── qqmusic.rs
-    ├── kugou.rs
     └── soda_music.rs
 ```
 

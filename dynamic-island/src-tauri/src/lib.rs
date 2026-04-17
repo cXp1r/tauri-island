@@ -1121,12 +1121,12 @@ pub fn run() {
 
                     if mode == "lyric" {
                         // 构建歌词文本和附近歌词（文本去重，但始终发送位置）
-                        let (text_val, nearby_json) = if fetch_pending && current_lyrics.is_empty() {
+                        let (text_val, nearby_json, line_tokens) = if fetch_pending && current_lyrics.is_empty() {
                             // 正在获取歌词中
-                            (serde_json::json!("♪"), None)
+                            (serde_json::json!("♪"), None, None)
                         } else if lyrics_not_found || (!fetch_pending && current_lyrics.is_empty()) {
                             // 歌词未找到
-                            (serde_json::json!(null), None)
+                            (serde_json::json!(null), None, None)
                         } else if let Some(line) = lyrics::get_current_lyric(&current_lyrics, position_ms) {
                             // 仅在歌词行变化时计算附近歌词
                             let nearby = if line.text != last_lyric_text {
@@ -1138,9 +1138,14 @@ pub fn run() {
                             } else {
                                 None
                             };
-                            (serde_json::json!(line.text), nearby)
+                            let tokens = if line.tokens.is_empty() {
+                                None
+                            } else {
+                                Some(line.tokens.clone())
+                            };
+                            (serde_json::json!(line.text), nearby, tokens)
                         } else {
-                            (serde_json::json!("♪"), None)
+                            (serde_json::json!("♪"), None, None)
                         };
 
                         // 始终发送，确保进度条持续更新
@@ -1156,6 +1161,9 @@ pub fn run() {
                         });
                         if let Some(nearby) = nearby_json {
                             payload["nearby_lyrics"] = serde_json::json!(nearby);
+                        }
+                        if let Some(tokens) = line_tokens {
+                            payload["tokens"] = serde_json::json!(tokens);
                         }
                         let _ = win_media.emit("lyric-update", payload);
                     } else {

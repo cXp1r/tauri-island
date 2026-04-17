@@ -105,6 +105,13 @@ let isShowingUrlList = false;
 let isMusicPlaying = false;
 let isPlaying = false;
 let lyricMode = "lyric"; // "off" | "info" | "lyric"
+type LyricTokenData = { text: string; start_ms: number; end_ms: number };
+let lyricTokenData: LyricTokenData[] = [];
+let compactTokenSpans: HTMLSpanElement[] = [];
+let panelTokenSpans: HTMLSpanElement[] = [];
+let tokenAnimRafId: number | null = null;
+let tokenAnimBaseMs = 0;
+let tokenAnimBaseTs = 0;
 let privacyPopupTimer: number | null = null;
 let privacyPulseCleanupTimer: number | null = null;
 let isMinimized = false;
@@ -370,6 +377,50 @@ function updatePlayIcon() {
     vinylDisc.classList.remove("paused");
   } else {
     vinylDisc.classList.add("paused");
+  }
+}
+
+function updateTokenHighlight(posMs: number) {
+  if (lyricTokenData.length === 0) return;
+  const paint = (spans: HTMLSpanElement[]) => {
+    spans.forEach((s, i) => {
+      const tok = lyricTokenData[i];
+      if (!tok) return;
+      const dur = tok.end_ms - tok.start_ms;
+      const t = dur > 0
+        ? Math.max(0, Math.min(1, (posMs - tok.start_ms) / dur))
+        : (posMs >= tok.start_ms ? 1 : 0);
+      s.style.setProperty("--sweep", `${(t * 100).toFixed(2)}%`);
+    });
+  };
+
+  if (compactTokenSpans.length > 0) paint(compactTokenSpans);
+  if (panelTokenSpans.length > 0) paint(panelTokenSpans);
+}
+
+function createSweepTokenSpan(className: string, text: string): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = className;
+  span.dataset.text = text;
+  span.style.setProperty("--sweep", "0%");
+  span.textContent = text;
+  return span;
+}
+
+function startTokenAnimation() {
+  if (tokenAnimRafId !== null) return;
+  const frame = () => {
+    const posMs = tokenAnimBaseMs + (performance.now() - tokenAnimBaseTs);
+    updateTokenHighlight(posMs);
+    tokenAnimRafId = requestAnimationFrame(frame);
+  };
+  tokenAnimRafId = requestAnimationFrame(frame);
+}
+
+function stopTokenAnimation() {
+  if (tokenAnimRafId !== null) {
+    cancelAnimationFrame(tokenAnimRafId);
+    tokenAnimRafId = null;
   }
 }
 
@@ -644,7 +695,10 @@ function buildLineKeys(nearby: Array<{ text: string; is_current: boolean }>): st
  * 以 FLIP（First-Last-Invert-Play）技术让多行歌词切换时像轨道一样平滑滚动：
  * 复用行做位移过渡，新行从底部淡入，退出行向上淡出。
  */
-function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolean }>) {
+function renderNearbyLyricsFlip(
+  nearby: Array<{ text: string; is_current: boolean }>,
+  currentLineTokens?: LyricTokenData[],
+) {
   // 清理 prevLineMap 中已不在 DOM 的无效引用（可能被其他分支如 textContent="♪" 破坏过）
   for (const [k, el] of Array.from(prevLineMap)) {
     if (!mpLyricText.contains(el)) prevLineMap.delete(k);
@@ -667,6 +721,7 @@ function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolea
   const newMap = new Map<string, HTMLElement>();
   const reusedEls: HTMLElement[] = [];
   const enteringEls: HTMLElement[] = [];
+  let nextPanelTokenSpans: HTMLSpanElement[] = [];
   const fragment = document.createDocumentFragment();
 
   for (let i = 0; i < nearby.length; i++) {
@@ -695,6 +750,30 @@ function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolea
     if (line.is_current) cls += " mp-lyric-current";
     if (isNew) cls += " entering";
     el.className = cls;
+
+    if (line.is_current && currentLineTokens && currentLineTokens.length > 0) {
+      const needRerender =
+        el.dataset.tokenized !== "1"
+        || el.dataset.tokenText !== line.text
+        || el.childElementCount !== currentLineTokens.length;
+      if (needRerender) {
+        el.innerHTML = "";
+        for (const tok of currentLineTokens) {
+          const span = createSweepTokenSpan("mp-lyric-token", tok.text);
+          el.appendChild(span);
+        }
+      }
+      el.dataset.tokenized = "1";
+      el.dataset.tokenText = line.text;
+      nextPanelTokenSpans = Array.from(el.querySelectorAll<HTMLSpanElement>(".mp-lyric-token"));
+    } else {
+      if (el.dataset.tokenized === "1" || el.textContent !== line.text) {
+        el.textContent = line.text;
+      }
+      el.dataset.tokenized = "0";
+      el.dataset.tokenText = "";
+    }
+
     newMap.set(key, el);
     fragment.appendChild(el);
   }
@@ -757,16 +836,22 @@ function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolea
     }
   });
 
+  panelTokenSpans = nextPanelTokenSpans;
   prevLineMap = newMap;
 }
 
 /** 当 mpLyricText 被其他分支覆盖成纯文本（如 "♪"、歌名）时调用，丢弃 FLIP 状态 */
 function resetMpLyricFlipState() {
   prevLineMap.clear();
+  panelTokenSpans = [];
 }
 
-listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}> } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}>; tokens?: Array<{ text: string; start_ms: number; end_ms: number }> } | null>("lyric-update", (event) => {
   if (event.payload === null) {
+    stopTokenAnimation();
+    lyricTokenData = [];
+    compactTokenSpans = [];
+    panelTokenSpans = [];
     const wasPlaying = isMusicPlaying;
     isMusicPlaying = false;
     isPlaying = false;
@@ -783,7 +868,16 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
 
   const wasPlaying = isMusicPlaying;
   isMusicPlaying = true;
-  const { text, title, artist, position_ms, duration_ms } = event.payload;
+  const { text, title, artist, position_ms, duration_ms, tokens } = event.payload;
+
+  currentSongTitle = title;
+  currentArtistName = artist;
+  if (musicPanelSong.textContent !== currentSongTitle) {
+    musicPanelSong.textContent = currentSongTitle;
+  }
+  if (musicPanelArtist.textContent !== currentArtistName) {
+    musicPanelArtist.textContent = currentArtistName;
+  }
 
   // 从 lyric-update 同步播放状态，避免 playback-state 事件丢失
   if (event.payload.is_playing !== undefined && event.payload.is_playing !== isPlaying) {
@@ -813,6 +907,11 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   }
 
   if (lyricMode === "info" || text === null) {
+    stopTokenAnimation();
+    lyricTokenData = [];
+    compactTokenSpans = [];
+    panelTokenSpans = [];
+    lyricText.dataset.lyricText = "";
     lyricText.textContent = "";
     lyricMeta.textContent = title;
     lyricMeta.style.fontSize = "13px";
@@ -821,12 +920,43 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
     lyricMeta.style.fontSize = "";
     lyricMeta.style.color = "";
     lyricMeta.textContent = `${artist} - ${title}`;
-    if (lyricText.textContent !== text) {
-      lyricText.classList.add("fade");
-      window.setTimeout(() => {
-        lyricText.textContent = text;
-        lyricText.classList.remove("fade");
-      }, 140);
+    if (tokens && tokens.length > 0) {
+      if (position_ms !== undefined) {
+        tokenAnimBaseMs = position_ms;
+        tokenAnimBaseTs = performance.now();
+      }
+      const prevText = lyricText.dataset.lyricText ?? "";
+      if (prevText !== (text ?? "")) {
+        lyricText.dataset.lyricText = text ?? "";
+        lyricTokenData = tokens;
+        stopTokenAnimation();
+        lyricText.classList.add("fade");
+        window.setTimeout(() => {
+          lyricText.innerHTML = "";
+          for (const tok of lyricTokenData) {
+            const span = createSweepTokenSpan("lyric-token", tok.text);
+            lyricText.appendChild(span);
+          }
+          compactTokenSpans = Array.from(lyricText.querySelectorAll<HTMLSpanElement>(".lyric-token"));
+          lyricText.classList.remove("fade");
+          startTokenAnimation();
+        }, 140);
+      } else {
+        startTokenAnimation();
+      }
+    } else {
+      stopTokenAnimation();
+      lyricTokenData = [];
+      compactTokenSpans = [];
+      panelTokenSpans = [];
+      lyricText.dataset.lyricText = "";
+      if (lyricText.textContent !== text) {
+        lyricText.classList.add("fade");
+        window.setTimeout(() => {
+          lyricText.textContent = text;
+          lyricText.classList.remove("fade");
+        }, 140);
+      }
     }
   }
 
@@ -838,7 +968,7 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   // 同步歌词到展开面板（多行）— 使用 FLIP 技术做轨道式平滑滚动
   const nearby = event.payload.nearby_lyrics;
   if (nearby && nearby.length > 0) {
-    renderNearbyLyricsFlip(nearby);
+    renderNearbyLyricsFlip(nearby, lyricTokenData.length > 0 ? lyricTokenData : undefined);
   } else if (text !== null && text !== undefined) {
     // 前奏/等待歌词阶段：强制显示音乐符号，避免残留多行歌词造成“提前显示后续歌词”
     if (text === "♪") {
@@ -861,6 +991,10 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
 
 listen<{ title: string; artist: string; genre?: string; thumbnail?: string | null; duration_ms?: number; seekable?: boolean }>("media-changed", (event) => {
   isMusicPlaying = true;
+  stopTokenAnimation();
+  lyricTokenData = [];
+  compactTokenSpans = [];
+  panelTokenSpans = [];
   currentSongTitle = event.payload.title;
   currentArtistName = event.payload.artist;
   console.log(`[SMTC] genre='${event.payload.genre ?? ""}' title='${event.payload.title}' artist='${event.payload.artist}'`);

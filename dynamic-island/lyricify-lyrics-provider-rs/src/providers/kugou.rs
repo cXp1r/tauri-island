@@ -46,16 +46,13 @@ impl KugouApi {
     pub async fn get_search_lyrics(
         &self,
         keywords: Option<&str>,
-        duration: Option<i32>,
         hash: Option<&str>,
     ) -> Result<Option<SearchLyricsResponse>, Box<dyn std::error::Error + Send + Sync>> {
-        let duration_param = duration.map(|d| format!("&duration={}", d)).unwrap_or_default();
         let hash_val = hash.unwrap_or("");
         let keyword_val = keywords.unwrap_or("");
         let url = format!(
-            "https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword={}{}&hash={}",
+            "https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword={}&hash={}",
             urlencoding::encode(keyword_val),
-            duration_param,
             hash_val
         );
         let resp = self.api.get_async(&url).await?;

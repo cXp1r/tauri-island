@@ -6,7 +6,8 @@ target/
 .vscode/
 .kiro/
 .claude/
+.windsurf/
 .agent/
 claude-psmux-team/
 debug-run.bat
-Lyricify-Lyrics-Helper/
+release.md

@@ -4,6 +4,8 @@ use crate::models::{
 };
 
 /// 是否是 Attribute 信息行
+/// [ar:HoneyWorks/夏吉ゆうこ]
+/// [ti:私は、わたしの事が好き。]
 pub fn is_attribute_line(line: &str) -> bool {
     let line = line.trim();
     line.starts_with('[') && line.ends_with(']') && line.contains(':')
@@ -18,6 +20,14 @@ fn get_attribute(line: &str) -> (String, String) {
     (key, value.to_string())
 }
 
+pub fn get_first_lyrics_line_index(original_lines: &Vec<String>) -> Result<usize,String> {
+    for (i, s) in original_lines.iter().enumerate() {
+        if !is_attribute_line(s) {
+            return Ok(i)
+        }        
+    }
+    Err("AttributesHelper: no lyrics found".to_string())
+}
 /// 将 Attributes 信息解析到 LyricsData 中 (从行列表)
 /// 返回 Offset 值
 pub fn parse_general_attributes_to_lyrics_data(
@@ -79,6 +89,9 @@ pub fn parse_general_attributes_to_lyrics_data(
 
     offset
 }
+
+
+
 
 /// 将 Attributes 信息从原始字符串解析到 LyricsData 中
 /// 返回 (offset, 解析结束后的字符位置)

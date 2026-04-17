@@ -33,40 +33,14 @@ impl NeteaseApi {
         params.insert("limit".to_string(), "20".to_string());
         params.insert("offset".to_string(), "0".to_string());
 
-        println!("[netease-api] search: keyword='{}' type={} limit=20 url='https://music.163.com/api/search/get/web'", keyword, search_type);
-
         let resp = self.api.post_form_async(
             "https://music.163.com/api/search/get/web",
             &params,
         ).await?;
 
-        println!("[netease-api] search: response length={} bytes", resp.len());
 
         let parsed: SearchResult = serde_json::from_str(&resp).unwrap_or(SearchResult { code: -1, result: None });
 
-        if let Some(ref data) = parsed.result {
-            let song_count = data.song_count.unwrap_or(0);
-            let songs_len = data.songs.as_ref().map(|s| s.len()).unwrap_or(0);
-            println!("[netease-api] search: code={} song_count={} returned_songs={}", parsed.code, song_count, songs_len);
-            if let Some(ref songs) = data.songs {
-                for (i, song) in songs.iter().enumerate().take(5) {
-                    let id_str = match &song.id {
-                        Some(serde_json::Value::Number(n)) => n.to_string(),
-                        Some(serde_json::Value::String(s)) => s.clone(),
-                        _ => "?".to_string(),
-                    };
-                    let name = song.name.as_deref().unwrap_or("?");
-                    let artists = song.artists.as_ref()
-                        .map(|arr| arr.iter().filter_map(|a| a.name.as_deref()).collect::<Vec<_>>().join("/"))
-                        .unwrap_or_default();
-                    let album = song.album.as_ref().and_then(|a| a.name.as_deref()).unwrap_or("?");
-                    let dur = song.duration.unwrap_or(0);
-                    println!("[netease-api] search:   [{}] id={} name='{}' artists='{}' album='{}' duration={}ms", i, id_str, name, artists, album, dur);
-                }
-            }
-        } else {
-            println!("[netease-api] search: code={} result=None (no data)", parsed.code);
-        }
 
         Ok(parsed)
     }
@@ -83,33 +57,14 @@ impl NeteaseApi {
         params.insert("ytv".to_string(), "-1".to_string());
         params.insert("yrv".to_string(), "-1".to_string());
 
-        println!("[netease-api] get_lyric: id='{}' url='https://interface3.music.163.com/api/song/lyric/v1'", id);
 
         let resp = self.api.post_form_async(
             "https://interface3.music.163.com/api/song/lyric/v1",
             &params,
         ).await?;
 
-        println!("[netease-api] get_lyric: response length={} bytes", resp.len());
-
         let parsed: LyricResult = serde_json::from_str(&resp).unwrap_or(LyricResult::default());
 
-        println!("[netease-api] get_lyric: code={:?} nolyric={:?} uncollected={:?}", parsed.code, parsed.nolyric, parsed.uncollected);
-        if let Some(ref lrc) = parsed.lrc {
-            let len = lrc.lyric.as_ref().map(|s| s.len()).unwrap_or(0);
-            let preview: String = lrc.lyric.as_deref().unwrap_or("").chars().take(120).collect();
-            println!("[netease-api] get_lyric: lrc version={:?} length={} preview='{}'", lrc.version, len, preview);
-        } else {
-            println!("[netease-api] get_lyric: lrc=None");
-        }
-        if let Some(ref tlyric) = parsed.tlyric {
-            let len = tlyric.lyric.as_ref().map(|s| s.len()).unwrap_or(0);
-            println!("[netease-api] get_lyric: tlyric (translation) version={:?} length={}", tlyric.version, len);
-        }
-        if let Some(ref yrc) = parsed.yrc {
-            let len = yrc.lyric.as_ref().map(|s| s.len()).unwrap_or(0);
-            println!("[netease-api] get_lyric: yrc (word-level) version={:?} length={}", yrc.version, len);
-        }
 
         Ok(parsed)
     }
