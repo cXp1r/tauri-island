@@ -1,0 +1,116 @@
+/* ============================================================
+   Classic Dark Theme
+   覆盖 public/themes/base.css 中的视觉属性，使主题可换。
+   切换主题：将 index.html 中的 classic.css 改为其他主题文件。
+   ============================================================ */
+
+/* ── 胶囊 ── */
+#island-capsule {
+    background: #0a0a0a;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    color: white;
+}
+
+/* 隐私检测绿环 */
+#island-capsule::after {
+    border: 1.5px solid rgba(46, 219, 103, 0.8);
+    box-shadow: inset 0 0 14px rgba(46, 219, 103, 0.14),
+                0 0 16px rgba(46, 219, 103, 0.16);
+}
+
+#island-capsule.privacy-active {
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.56),
+                0 0 0 1px rgba(46, 219, 103, 0.28),
+                0 0 22px rgba(46, 219, 103, 0.18);
+}
+
+@keyframes switch-pulse {
+    0%   { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
+    35%  { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+    100% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
+}
+
+/* ── 时间文字 ── */
+.time-side-left  { color: rgba(255, 255, 255, 0.82); }
+.time-side-right { color: rgba(255, 255, 255, 0.65); }
+#time-text       { color: white; }
+
+/* ── 通知 / URL 弹层 ── */
+#notice-area               { background: #000; }
+#notice-area:hover         { background: rgba(0, 0, 0, 0.92); }
+.icon-box                  { background: rgba(255, 255, 255, 0.08); }
+#notice-msg                { color: rgba(255, 255, 255, 0.9); }
+#url-list                  { background: #000; }
+.url-item                  { color: #8ab4f8; }
+.url-item:hover            { background: rgba(255, 255, 255, 0.08); color: #aecbfa; }
+
+/* ── 歌词区 ── */
+#lyric-text  { color: rgba(255, 255, 255, 0.95); }
+#lyric-meta  { color: rgba(255, 255, 255, 0.4); }
+.lyric-token,
+.mp-lyric-token  { color: rgba(255, 255, 255, 0.36) !important; }
+
+/* ── 进度条 ── */
+.progress-bar::before               { background: rgba(255, 255, 255, 0.12); }
+.progress-fill                      { background: rgba(255, 255, 255, 0.6); }
+.progress-thumb                     { background: #fff; }
+.progress-bar:hover .progress-fill  { background: #1ed760; }
+.progress-bar.seeking .progress-fill { background: #1ed760; }
+
+/* ── 媒体控制按钮 ── */
+.media-btn        { background: rgba(255, 255, 255, 0.06); }
+.media-btn:hover  { background: rgba(255, 255, 255, 0.15); }
+.media-btn:active { background: rgba(255, 255, 255, 0.22); }
+.media-btn svg    { fill: rgba(255, 255, 255, 0.85); }
+
+/* ── 视图切换点 ── */
+.view-dot        { background: rgba(255, 255, 255, 0.2); }
+.view-dot:hover  { background: rgba(255, 255, 255, 0.45); }
+.view-dot.active { background: rgba(255, 255, 255, 0.7); }
+
+/* ── 隐私指示层 ── */
+#privacy-indicators { background: #000; }
+.privacy-icon {
+    color: #2edb67;
+    filter: drop-shadow(0 0 10px rgba(46, 219, 103, 0.5));
+}
+
+/* ── 收起绿条 ── */
+#collapsed-indicator {
+    background: linear-gradient(90deg, #22c55e, #2edb67, #22c55e);
+    box-shadow: 0 0 8px rgba(46, 219, 103, 0.5);
+}
+#collapsed-indicator:hover {
+    box-shadow: 0 0 14px rgba(46, 219, 103, 0.7);
+}
+
+/* ── 音乐展开面板 ── */
+#island-capsule.music-expanded #lyric-area { background: #0C0C14; }
+
+#music-panel-song    { color: rgba(255, 255, 255, 0.95); }
+#music-panel-artist  { color: rgba(255, 255, 255, 0.45); }
+#music-panel         { color: white; }
+
+.mp-progress-bar::before,
+.mp-volume-bar::before  { background: rgba(255, 255, 255, 0.1); }
+
+.mp-progress-fill,
+.mp-volume-fill         { background: rgba(255, 255, 255, 0.55); }
+
+.mp-progress-thumb,
+.mp-volume-thumb        { background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); }
+
+.mp-progress-bar:hover .mp-progress-fill,
+.mp-volume-bar:hover .mp-volume-fill    { background: #1ed760; }
+
+.mp-progress-bar.seeking .mp-progress-fill,
+.mp-volume-bar.seeking .mp-volume-fill  { background: #1ed760; }
+
+.mp-btn              { color: rgba(255, 255, 255, 0.7); }
+.mp-btn:hover        { background: rgba(255, 255, 255, 0.06); }
+.mp-play-btn         { background: rgba(255, 255, 255, 0.1); }
+.mp-play-btn:hover   { background: rgba(255, 255, 255, 0.15); }
+
+#mp-lyric-text       { color: rgba(255, 255, 255, 0.85); }
+.mp-lyric-line       { color: rgba(255, 255, 255, 0.3); }
+.mp-lyric-current    { color: rgba(255, 255, 255, 0.95); }

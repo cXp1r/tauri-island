@@ -1,129 +1,57 @@
-use crate::models::*;
-use crate::parsers::attributes_helper;
-use regex::Regex;
-use once_cell::sync::Lazy;
 
-static TIMESTAMP_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\[(\d+:\d+[.:]\d+)\]").unwrap());
+use crate::parsers::{IParsers, LRC_LINE_TIMESTAMP};
+use crate::models::LineInfo;
+use regex::Captures;
+pub struct LrcParsers {}
+impl IParsers for LrcParsers{
+    fn parse_line(&self, caps: Captures<'_>) -> Result<(u32, u32, String), String> {
+        let t1 = caps
+                        .get(1)
+                        .ok_or("Sync Parser: Missing start_time".to_string())?
+                        .as_str()
+                        .parse::<u32>()
+                        .map_err(|_| "Sync Parser: Can't parse start_time".to_string())?;
 
-/// 解析 LRC 歌词
-pub fn parse(lyrics: &str) -> LyricsData {
-    let mut data = LyricsData {
-        track_metadata: Some(TrackMetadata::default()),
-        file: Some(LyricsFileInfo {
-            lyrics_type: LyricsTypes::Lrc,
-            sync_type: SyncTypes::LineSynced,
-            additional_info: Some(AdditionalFileInfo::General(GeneralAdditionalInfo {
-                attributes: Vec::new(),
-            })),
-        }),
-        ..Default::default()
-    };
-
-    let (offset, start_index) =
-        attributes_helper::parse_general_attributes_from_string(&mut data, lyrics);
-
-    let content = if start_index < lyrics.len() {
-        &lyrics[start_index..]
-    } else {
-        ""
-    };
-
-    let lines = parse_lyrics(content);
-    data.lines = lines;
-
-    if let Some(off) = offset {
-        if off != 0 {
-            crate::helpers::offset_helper::add_offset_to_lines(&mut data.lines, off);
-        }
+        let t2 = caps.
+                        get(2)
+                        .ok_or("Sync Parser: Missing duration".to_string())?
+                        .as_str()
+                        .parse::<u32>()
+                        .map_err(|_| "Sync Parser: Can't parse duration".to_string())?;
+        let t3 = caps
+                            .get(3)
+                            .ok_or("Sync Parser: Missing lyrics")?
+                            .as_str()
+                            .parse::<u32>()
+                            .map_err(|_| "Sync Parser: Can't parse duration".to_string())?;
+        let text = caps
+                            .get(4)
+                            .ok_or("Sync Parser: Missing lyrics")?
+                            .as_str()
+                            .to_string();
+        Ok((t1*60000+t2*1000+t3*10, 0, text))
     }
-
-    data
-}
-
-/// 解析 LRC 歌词行
-pub fn parse_lyrics(lyrics: &str) -> Vec<LineInfo> {
-    let mut result: Vec<LineInfo> = Vec::new();
-
-    for raw_line in lyrics.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            continue;
+    fn parse(&self, lyrics: String) -> Result<Vec<LineInfo>, String> {
+        /*use std::time::Instant;
+        let start = Instant::now();*/
+        
+        
+        let mut lineinfo: Vec<LineInfo> = Vec::new();
+        for caps in LRC_LINE_TIMESTAMP.captures_iter(&lyrics) {
+            let (s, d, text) = self.parse_line(caps)?;
+            
+            lineinfo.push(LineInfo {
+                start_time: s,
+                duration: d as u16,
+                text: text,
+                syllables: vec![],
+            });
         }
 
-        let timestamps: Vec<i32> = TIMESTAMP_RE
-            .captures_iter(line)
-            .filter_map(|cap| {
-                let ts_str = cap.get(1)?.as_str();
-                parse_lrc_timestamp(ts_str)
-            })
-            .collect();
+        /*let elapsed = start.elapsed();
+        println!("解析歌词耗时耗时: {:?}", elapsed);*/
 
-        if timestamps.is_empty() {
-            continue;
-        }
 
-        let text = match line.rfind(']') {
-            Some(pos) => line[pos + 1..].to_string(),
-            None => String::new(),
-        };
-
-        for ts in &timestamps {
-            result.push(LineInfo::Basic(BasicLineInfo {
-                text: text.clone(),
-                start_time: Some(*ts),
-                end_time: None,
-                lyrics_alignment: LyricsAlignment::Unspecified,
-                sub_line: None,
-            }));
-        }
+        Ok(lineinfo)
     }
-
-    result.sort_by(|a, b| {
-        let ta = a.start_time().unwrap_or(0);
-        let tb = b.start_time().unwrap_or(0);
-        ta.cmp(&tb)
-    });
-
-    for i in 0..result.len() {
-        if i + 1 < result.len() {
-            let next_start = result[i + 1].start_time();
-            if let LineInfo::Basic(ref mut l) = result[i] {
-                l.end_time = next_start;
-            }
-        }
-    }
-
-    result
-}
-
-/// 解析 LRC 时间戳字符串 "[mm:ss.xxx]" -> 毫秒
-fn parse_lrc_timestamp(s: &str) -> Option<i32> {
-    let s = s.replace(':', ":");
-    let parts: Vec<&str> = s.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let minutes: i32 = parts[0].parse().ok()?;
-    let sec_parts: Vec<&str> = if parts[1].contains('.') {
-        parts[1].splitn(2, '.').collect()
-    } else if parts[1].contains(':') {
-        parts[1].splitn(2, ':').collect()
-    } else {
-        return Some(minutes * 60 * 1000 + parts[1].parse::<i32>().ok()? * 1000);
-    };
-
-    if sec_parts.len() != 2 {
-        return None;
-    }
-    let seconds: i32 = sec_parts[0].parse().ok()?;
-    let ms_str = sec_parts[1];
-    let milliseconds: i32 = match ms_str.len() {
-        1 => ms_str.parse::<i32>().ok()? * 100,
-        2 => ms_str.parse::<i32>().ok()? * 10,
-        3 => ms_str.parse::<i32>().ok()?,
-        _ => ms_str[..3].parse::<i32>().ok()?,
-    };
-
-    Some(minutes * 60 * 1000 + seconds * 1000 + milliseconds)
 }

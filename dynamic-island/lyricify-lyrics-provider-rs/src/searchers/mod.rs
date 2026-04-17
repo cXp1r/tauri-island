@@ -23,7 +23,7 @@ pub trait ISearchResult: Send + Sync {
     fn artists(&self) -> &[String];
     fn album(&self) -> &str;
     fn album_artists(&self) -> Option<&[String]> { None }
-    fn duration_ms(&self) -> Option<i32>;
+    fn duration_ms(&self) -> Option<u32>;
     fn match_score(&self) -> i8;
     fn set_match_score(&mut self, mt: i8);
     fn as_any(&self) -> &dyn std::any::Any;
@@ -41,10 +41,9 @@ pub trait ISearcher: Send + Sync {
     
     async fn make_search_string(&self, track: &dyn ITrackMetadata) -> Option<String> {
         let combined = format!(
-            "{} {} {}",
+            "{} {}",
             track.title().unwrap_or_default(),
             track.artist().unwrap_or_default(),
-            track.album().unwrap_or_default(),
         ).replace(" - ", " ").trim().to_string();
 
         if combined.is_empty() {
@@ -66,9 +65,10 @@ pub trait ISearcher: Send + Sync {
         let mut current_search = search_string.clone();
 
         loop {
-            if let Ok(results) = self.search_for_results_by_string(&current_search).await {
+            let results = self.search_for_results_by_string(&current_search).await?;
                 search_results.extend(results);
-            }
+            
+            
 
             let mut new_title = track.title().unwrap_or_default().to_string();
             if let Some(idx) = new_title.find("(feat.") {
@@ -115,21 +115,33 @@ pub trait ISearcher: Send + Sync {
         Ok(search_results)
     }
 
+    /// 最低匹配分数线，低于此分数的结果将被丢弃（可 override）
+    fn min_score(&self) -> i8 { 4 }
+
     //smtc统一接口调用了这个
     async fn search_for_result(&self, track: &dyn ITrackMetadata) -> Result<Option<Box<dyn ISearchResult>>, Box<dyn std::error::Error + Send + Sync>> {
+        let threshold = self.min_score();
         let search = self.search_for_results(track, false).await?;
-        if !search.is_empty() {
-            return Ok(Some(search.into_iter().next().unwrap()));
+        if let Some(best) = search.into_iter().next() {
+            if best.match_score() >= threshold {
+                return Ok(Some(best));
+            }
+            return Err(format!("Low score: {}/{}; id:{}", best.match_score(), threshold, best.title()).into());
         }
         let search = self.search_for_results(track, true).await?;
-        Ok(search.into_iter().next())
+        if let Some(best) = search.into_iter().next() {
+            return Ok((best.match_score() >= threshold).then_some(best));
+        }
+        Err("Nothing here".into())
     }
-
+    fn get_split_char(&self) -> char {
+        ' '
+    }
     /// 比较曲目与搜索结果的匹配程度（默认通用实现，各 searcher 可 override）
     fn compare_track(&self, track: &dyn ITrackMetadata, result: &dyn ISearchResult) -> i8 {
         let mut score = 0i8;
 
-        // Name match
+        // 第一步没必要覆写,强制留着了
         let track_title = track.title().unwrap_or_default().to_lowercase();
         let result_title = result.title().to_lowercase();
         if !track_title.is_empty() && !result_title.is_empty() {
@@ -147,21 +159,26 @@ pub trait ISearcher: Send + Sync {
                 }
             }
         }
+        //println!("{}:{}",result_title,score);
 
         // Artist match
-        let track_artist = track.artist().unwrap_or_default().to_lowercase();
-        let result_artists = result.artists().to_vec();
-        if !track_artist.is_empty() && !result_artists.is_empty() {
-            for result_artist in result_artists{
-                if result_artist == track_artist {
-                    score += 2;
-                    
-                } else if result_artist.contains(&track_artist) {
-                    score += 1;
-                }
+        let artists: Vec<String> = track
+            .artist()
+            .unwrap_or_default()   // 👈 关键
+            .split(self.get_split_char())
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        for a in &artists {
+            if result.artists().iter().any(|b| {
+                let b = b.to_lowercase();
+                a == &b || a.contains(&b) || b.contains(a)
+            }) {
+                score += 1;
             }
         }
 
+        //println!("{} {}",result.artists().join("||"),score);
         // Album match
         let track_album = track.album().unwrap_or_default().to_lowercase();
         let result_album = result.album().to_lowercase();
@@ -171,6 +188,7 @@ pub trait ISearcher: Send + Sync {
             }
         }
 
+        //println!("{} {}",result_album,score);
         // Album artist match
         let track_album_artist = self.clean_title(&track.album_artist().unwrap_or_default().to_lowercase());
         let result_album_artist = result.album_artists().unwrap_or_default().to_vec();
@@ -178,7 +196,20 @@ pub trait ISearcher: Send + Sync {
         if result_album_artist.iter().any(|s:&String| s.contains(&track_album_artist)) {
             score += 1;
         }
-
+        //println!("(kugou) score:{}",score);
+        if let Some(duration_ms) = track.duration_ms() {
+            if let Some(result_duration_ms) = result.duration_ms() {
+                let diff = duration_ms as i64 - result_duration_ms as i64;
+                if diff == 0 { // 完全匹配
+                    
+                    score += 2;
+                }else if diff <= 1000 { // 1秒内认为时长匹配
+                    score += 1;
+                }
+                
+            }
+        }
+        //println!("{} {}\n",result.duration_ms().unwrap_or_default(),score);
         score
     }
 

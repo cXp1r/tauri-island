@@ -6,7 +6,7 @@ pub trait ITrackMetadata: Send + Sync {
     fn artist(&self) -> Option<&str>;
     fn album(&self) -> Option<&str>;
     fn album_artist(&self) -> Option<&str> { None }
-    fn duration_ms(&self) -> Option<i32> { None }
+    fn duration_ms(&self) -> Option<u32> { None }
 }
 
 impl ITrackMetadata for TrackMetadata {
@@ -14,7 +14,7 @@ impl ITrackMetadata for TrackMetadata {
     fn artist(&self) -> Option<&str> { self.artist.as_deref() }
     fn album(&self) -> Option<&str> { self.album.as_deref() }
     fn album_artist(&self) -> Option<&str> { self.album_artist.as_deref() }
-    fn duration_ms(&self) -> Option<i32> { self.duration_ms }
+    fn duration_ms(&self) -> Option<u32> { self.duration_ms }
 }
 
 /// 曲目元数据类型在此...............
@@ -24,9 +24,10 @@ pub struct TrackMetadata {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
-    pub duration_ms: Option<i32>,
+    pub duration_ms: Option<u32>,
     pub isrc: Option<String>,
     pub language: Option<Vec<String>>,
+    pub note: Option<String>,
 }
 
 /// 多艺术家曲目元数据
@@ -36,7 +37,7 @@ pub struct TrackMultiArtistMetadata {
     pub artists: Option<Vec<String>>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
-    pub duration_ms: Option<i32>,
+    pub duration_ms: Option<u32>,
     pub isrc: Option<String>,
     pub language: Option<Vec<String>>,
 }
@@ -47,16 +48,3 @@ impl TrackMultiArtistMetadata {
     }
 }
 
-/// Spotify 曲目元数据
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SpotifyTrackMetadata {
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub album_artist: Option<String>,
-    pub duration_ms: Option<i32>,
-    pub isrc: Option<String>,
-    pub language: Option<Vec<String>>,
-    pub spotify_id: Option<String>,
-    pub spotify_uri: Option<String>,
-}

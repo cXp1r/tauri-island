@@ -1,0 +1,799 @@
+:root {
+    --font-main: "Segoe UI Variable Display", "SF Pro Display", -apple-system, sans-serif;
+    --collapsed-w: 140px;
+    --collapsed-h: 50px;
+    --lyric-collapsed-w: 320px;
+    --expanded-w: 330px;
+    --expanded-h: 74px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    width: 100vw;
+    height: 100vh;
+    background: transparent;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 5px;
+    font-family: var(--font-main);
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+    pointer-events: none;
+}
+
+#island-capsule {
+    width: var(--collapsed-w);
+    height: var(--collapsed-h);
+    border-radius: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    pointer-events: auto;
+    cursor: grab;
+    transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                height 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                border-radius 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+                box-shadow 0.24s ease;
+    overflow: hidden;
+    will-change: width, height, transform;
+    isolation: isolate;
+}
+
+#island-capsule::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    opacity: 0;
+    transform: scale(0.985);
+    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+}
+
+#island-capsule:active { cursor: grabbing; }
+
+#island-capsule.lyric-collapsed {
+    width: var(--lyric-collapsed-w);
+}
+
+#island-capsule.expanded {
+    width: var(--expanded-w);
+    height: var(--expanded-h);
+    border-radius: 28px;
+}
+
+#island-capsule.switch-pulse {
+    animation: switch-pulse 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+#island-capsule.privacy-active {
+    transform: scale(1.024);
+}
+
+#island-capsule.privacy-active::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
+#island-capsule.privacy-pulse {
+    animation: privacy-capsule-pop 0.42s cubic-bezier(0.22, 0.85, 0.24, 1);
+}
+
+#island-capsule.privacy-pulse::after {
+    animation: privacy-ring-pop 0.52s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes switch-pulse {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
+@keyframes privacy-capsule-pop {
+    0%   { transform: scale(1); }
+    46%  { transform: scale(1.034); }
+    100% { transform: scale(1.024); }
+}
+
+@keyframes privacy-ring-pop {
+    0%   { opacity: 0; transform: scale(0.97); }
+    50%  { opacity: 1; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.content-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    inset: 0;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#island-capsule.privacy-active #view-switcher {
+    padding: 0 18px;
+}
+
+/* --- 时间 --- */
+#time-wrapper {
+    justify-content: center;
+}
+
+.time-side {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    position: absolute;
+    top: 50%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+    transition: opacity 0.32s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+}
+
+.time-side-left {
+    letter-spacing: 0.4px;
+    right: calc(50% + 52px);
+}
+
+.time-side-right {
+    letter-spacing: 0.2px;
+    left: calc(50% + 52px);
+}
+
+#island-capsule.expanded .time-side {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+#time-text {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* --- 通知 --- */
+#notice-area {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 20px;
+    cursor: pointer;
+    border-radius: inherit;
+    z-index: 18;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+}
+#notice-area.active {
+    opacity: 1;
+    pointer-events: auto;
+    display: flex;
+}
+
+.icon-box {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+#notice-msg {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- URL 列表 --- */
+#url-list {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 12px;
+    gap: 2px;
+    overflow-y: auto;
+    border-radius: inherit;
+    z-index: 18;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+}
+#url-list.active {
+    opacity: 1;
+    pointer-events: auto;
+    display: flex;
+}
+.url-item {
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.15s;
+}
+
+/* --- 歌词区域 --- */
+#lyric-area {
+    display: none;
+    align-items: center;
+    width: 100%; height: 100%;
+    padding: 0 12px 0 14px;
+    gap: 8px;
+    overflow: hidden;
+}
+
+/* --- 唱片封面 --- */
+.vinyl-disc {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    position: relative;
+    animation: vinyl-spin 8s linear infinite;
+}
+.vinyl-disc.paused { animation-play-state: paused; }
+
+.vinyl-grooves {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.vinyl-cover {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background-size: cover;
+    background-position: center;
+    z-index: 1;
+}
+
+.vinyl-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+@keyframes vinyl-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+#lyric-text-wrap {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+#lyric-text {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.18s ease;
+}
+#lyric-text.fade { opacity: 0; }
+
+.lyric-token,
+.mp-lyric-token {
+    position: relative;
+    display: inline-block;
+    white-space: pre;
+    color: rgba(255, 255, 255, 0.36) !important;
+    --sweep: 0%;
+}
+
+.lyric-token::after,
+.mp-lyric-token::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--sweep);
+    overflow: hidden;
+    white-space: pre;
+    color: #fff;
+    pointer-events: none;
+}
+
+#lyric-meta {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+
+/* --- 进度条 --- */
+.progress-bar {
+    width: 100%; height: 4px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    margin-top: 2px;
+    cursor: pointer;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+#island-capsule.expanded .progress-bar {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.2s ease 0.15s;
+}
+.progress-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    border-radius: 1px;
+}
+.progress-fill {
+    position: absolute;
+    left: 0;
+    height: 2px;
+    border-radius: 1px;
+    width: 0%;
+    transition: width 0.15s linear;
+}
+.progress-thumb {
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    left: 0%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+    z-index: 1;
+    pointer-events: none;
+}
+.progress-bar:hover .progress-thumb { opacity: 1; }
+.progress-bar.seeking .progress-thumb {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.3);
+}
+.progress-bar.seeking .progress-fill { transition: none; }
+
+/* --- 媒体控制按钮 --- */
+.media-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: max-width 0.01s ease, opacity 0.01s ease;
+}
+#island-capsule.expanded .media-controls {
+    max-width: 200px;
+    opacity: 1;
+    pointer-events: auto;
+    transition: max-width 0.25s cubic-bezier(0.25, 1, 0.5, 1) 0.1s,
+                opacity 0.2s ease 0.15s;
+}
+
+.media-btn {
+    width: 30px; height: 30px;
+    border: none;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s;
+    padding: 0;
+}
+.media-btn.play-btn { width: 34px; height: 34px; }
+
+/* --- 视图切换器 --- */
+#view-switcher {
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+}
+#island-capsule.expanded #view-switcher.has-views { display: flex; }
+
+#view-dots {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    pointer-events: auto;
+}
+.view-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s, width 0.2s, border-radius 0.2s;
+}
+.view-dot.active {
+    width: 14px;
+    border-radius: 4px;
+}
+
+/* --- 隐私指示 --- */
+#privacy-indicators {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    opacity: 0;
+    transform: scale(0.84);
+    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+    z-index: 20;
+    padding: 0;
+    border-radius: inherit;
+}
+#privacy-indicators.active { opacity: 1; transform: scale(1); }
+#privacy-indicators.pulse {
+    animation: privacy-popup-pulse 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes privacy-popup-pulse {
+    0%   { transform: scale(0.86); }
+    48%  { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+
+.privacy-icon {
+    display: none;
+    width: 24px; height: 24px;
+    align-items: center;
+    justify-content: center;
+}
+.privacy-icon svg { width: 17px; height: 17px; }
+.privacy-icon.active { display: flex; }
+
+/* ===== 收起状态小指示条 ===== */
+#collapsed-indicator {
+    display: none;
+    position: fixed;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px; height: 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, width 0.2s ease;
+    z-index: 1000;
+}
+#collapsed-indicator:hover {
+    transform: translateX(-50%) scaleX(1.15);
+    width: 70px;
+}
+#collapsed-indicator:active { transform: translateX(-50%) scaleX(1.05); }
+
+/* --- 最小化动画 --- */
+#island-capsule.minimizing {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: scale(0);
+    opacity: 0;
+    will-change: transform, opacity;
+    pointer-events: none;
+}
+#island-capsule.minimized {
+    width: 0 !important; height: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0);
+}
+#island-capsule.expanding {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: scale(1);
+    opacity: 1;
+    will-change: transform, opacity;
+}
+
+body.minimized { padding-top: 0; }
+body.minimized #collapsed-indicator { display: block; }
+
+/* ============================================================
+   音乐展开面板
+   ============================================================ */
+#island-capsule.music-expanded {
+    width: 380px; height: 420px;
+    border-radius: 24px;
+}
+
+#island-capsule.music-expanded #lyric-area {
+    flex-direction: column;
+    padding: 0;
+    border-radius: inherit;
+}
+
+#island-capsule.music-expanded .vinyl-disc,
+#island-capsule.music-expanded #lyric-text-wrap,
+#island-capsule.music-expanded .media-controls { display: none !important; }
+
+#music-panel {
+    display: none;
+    flex-direction: column;
+    width: 100%; height: 100%;
+    padding: 10px 20px 12px;
+    box-sizing: border-box;
+    gap: 4px;
+}
+#island-capsule.music-expanded #music-panel {
+    display: flex;
+    animation: mp-content-in 0.22s cubic-bezier(0.25, 1, 0.5, 1) 0.2s both;
+}
+
+@keyframes mp-content-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+#music-panel-header {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+}
+
+#music-panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+#music-panel-body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+#music-panel-cover {
+    width: 90px; height: 90px;
+    border-radius: 14px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+#music-panel-cover-img {
+    width: 100%; height: 100%;
+    background-size: cover;
+    background-position: center;
+    transition: background-image 0.3s ease;
+}
+
+#music-panel-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#music-panel-song {
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+#music-panel-artist {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- 进度条（展开面板） --- */
+#music-panel-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.mp-progress-bar,
+.mp-volume-bar {
+    width: 100%;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+}
+.mp-progress-bar::before,
+.mp-volume-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 3px;
+    border-radius: 1.5px;
+}
+.mp-progress-fill,
+.mp-volume-fill {
+    position: absolute;
+    left: 0;
+    height: 3px;
+    border-radius: 1.5px;
+    width: 0%;
+    transition: width 0.15s linear;
+}
+.mp-volume-fill { width: 50%; }
+
+.mp-progress-thumb,
+.mp-volume-thumb {
+    position: absolute;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    left: 0%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+    z-index: 1;
+    pointer-events: none;
+}
+.mp-volume-thumb { left: 50%; }
+
+.mp-progress-bar:hover .mp-progress-thumb,
+.mp-volume-bar:hover .mp-volume-thumb     { opacity: 1; }
+.mp-progress-bar.seeking .mp-progress-thumb,
+.mp-volume-bar.seeking .mp-volume-thumb   { opacity: 1; transform: translateX(-50%) scale(1.2); }
+.mp-progress-bar.seeking .mp-progress-fill,
+.mp-volume-bar.seeking .mp-volume-fill    { transition: none; }
+
+.mp-time {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    padding: 0 2px;
+}
+
+/* --- 播放控制 --- */
+#music-panel-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-shrink: 0;
+    padding: 2px 0;
+}
+
+.mp-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.1s ease, background 0.15s ease;
+    fill: currentColor;
+}
+.mp-btn:active { transform: scale(0.9); }
+.mp-btn svg { fill: currentColor; }
+.mp-play-btn { width: 44px; height: 44px; }
+
+/* --- 音量 --- */
+#music-panel-volume {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 0 2px;
+}
+
+/* --- 歌词显示 --- */
+#music-panel-lyrics {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+#music-panel-lyrics::-webkit-scrollbar { display: none; }
+
+#mp-lyric-text {
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    position: relative;
+}
+
+.mp-lyric-line {
+    font-size: 12px;
+    transition: color 0.35s ease, font-size 0.35s ease,
+                opacity 0.15s ease, transform 0.35s ease, font-weight 0.35s ease;
+    line-height: 1.5;
+    transform: scale(1);
+}
+
+.mp-lyric-current {
+    font-size: 14px;
+    font-weight: 700;
+    transform: scale(1.05);
+}
+
+.mp-lyric-line.entering {
+    opacity: 0;
+    transform: translateY(24px) scale(1);
+}
+
+.mp-lyric-line.mp-lyric-current.entering {
+    transform: translateY(24px) scale(1.05);
+}
+
+.mp-lyric-line.exiting {
+    opacity: 0;
+    transform: translateY(-12px) scale(1);
+    pointer-events: none;
+}
