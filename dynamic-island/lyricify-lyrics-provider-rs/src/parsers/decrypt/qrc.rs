@@ -371,12 +371,12 @@ fn crypt(input: &[u8; 8], output: &mut [u8; 8], key: &[[u8; 6]; 16]) {
     let mut state = [0u32; 2];
     ip(&mut state, input);
 
-    for round in 0..15 {
+    for k in key.iter().take(15) {
         let t = state[1];
-        state[1] = f(state[1], &key[round]) ^ state[0];
+        state[1] = f(state[1], k) ^ state[0];
         state[0] = t;
     }
-    state[0] = f(state[1], &key[15]) ^ state[0];
+    state[0] ^= f(state[1], &key[15]);
 
     inv_ip(&state, output);
 }
@@ -404,15 +404,15 @@ fn triple_des_crypt(input: &[u8; 8], output: &mut [u8; 8], key: &[[[u8; 6]; 16];
 fn inflate_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     let mut zlib_output = Vec::new();
     match ZlibDecoder::new(data).read_to_end(&mut zlib_output) {
-        Ok(_) => return Ok(zlib_output),
+        Ok(_) => Ok(zlib_output),
         Err(zlib_err) => {
             let mut deflate_output = Vec::new();
             match DeflateDecoder::new(data).read_to_end(&mut deflate_output) {
-                Ok(_) => return Ok(deflate_output),
+                Ok(_) => Ok(deflate_output),
                 Err(deflate_err) => {
-                    return Err(format!(
+                    Err(format!(
                         "Decryptor: inflate failed: zlib decode failed ({zlib_err}); raw deflate decode failed ({deflate_err})"
-                    ));
+                    ))
                 }
             }
         }
@@ -420,7 +420,7 @@ fn inflate_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn hex_string_to_byte_array(hex_string: &str) -> Result<Vec<u8>, String> {
-    if hex_string.len() % 2 != 0 {
+    if !hex_string.len().is_multiple_of(2) {
         return Err("Decryptor: hex string has odd length".to_string());
     }
 

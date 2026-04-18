@@ -182,10 +182,8 @@ pub trait ISearcher: Send + Sync {
         // Album match
         let track_album = track.album().unwrap_or_default().to_lowercase();
         let result_album = result.album().to_lowercase();
-        if !track_album.is_empty() && !result_album.is_empty() {
-            if track_album == result_album {
-                score += 1;
-            }
+        if !track_album.is_empty() && !result_album.is_empty() && track_album == result_album {
+            score += 1;
         }
 
         //println!("{} {}",result_album,score);

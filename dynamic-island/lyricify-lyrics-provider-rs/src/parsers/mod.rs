@@ -17,6 +17,7 @@ pub static KEY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[\(<](\d+),(\d+)(?:,\d+)?[\)>]").unwrap()
 });
 
+
 pub static LINE_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(\d+),(\d+)\](.+)").unwrap()
 });
@@ -36,14 +37,9 @@ pub static SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
 pub static PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\u{E000}(?P<s>\d+),(?P<d>\d+)(?:,[^[\)>]]+)?\u{E001}(?P<t>[^\u{E001}\u{E000}]+)").unwrap()//来者不拒~~
     //s:starttime d:duration t:text
-});
-
-
-
-
-
-//谨记一个循环里面不判断,代码多点性能好
+});//谨记一个循环里面不判断,代码多点性能好
 pub trait IParsers {
+
     fn parse_line(&self, caps: Captures<'_>) -> Result<(u32, u32, String), String> {
         let t1 = caps
                         .get(1)
@@ -118,7 +114,7 @@ pub trait IParsers {
             for caps2 in self.get_syllables_re().captures_iter(&text) {
                 let (s1, d1, text1) = self.parse_syllables(caps2)?;
                 textinfo.push(TextInfo {
-                    start_time: self.get_offset_time(s,s1).map_err(|e| e)?,
+                    start_time: self.get_offset_time(s,s1)?,
                     duration: d1 as u16,
                     text: text1,
                 });

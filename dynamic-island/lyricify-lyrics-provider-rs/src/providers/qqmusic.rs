@@ -101,6 +101,12 @@ impl QQMusicApi {
     }
 }
 
+impl Default for QQMusicApi {
+    fn default() -> Self {
+         Self::new()
+    }
+}
+
 fn resolve_resp_json(callback_sign: &str, val: &str) -> String {
     if !val.starts_with(callback_sign) {
         return String::new();

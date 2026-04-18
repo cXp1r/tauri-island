@@ -11,6 +11,13 @@ impl SodaMusicSearcher {
         Self { api: SodaMusicApi::new() }
     }
 }
+
+impl Default for SodaMusicSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //挨千刀的汽水只给两个arg
 //还好给了时长...不像隔壁酷狗
 //为了提高爆率,含泪加上时长匹配

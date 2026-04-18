@@ -10,6 +10,12 @@ impl KugouSearcher {
         Self { api: KugouApi::new() }
     }
 }
+
+impl Default for KugouSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 //酷狗音乐SMTC只提供title artist albumArtist? 
 //duration只能api拿了
 #[async_trait]

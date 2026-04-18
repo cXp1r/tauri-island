@@ -60,6 +60,12 @@ impl KugouApi {
     }
 }
 
+impl Default for KugouApi {
+    fn default() -> Self {
+         Self::new()
+    }
+}
+
 // ===== Response Models =====
 
 #[derive(Debug, Deserialize, Default)]
