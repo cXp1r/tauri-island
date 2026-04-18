@@ -57,6 +57,11 @@
     opacity: 1;
 }
 
+/* 暂停：保留流光但冻结旋转 */
+#island-glow.paused::before {
+    animation-play-state: paused;
+}
+
 @keyframes rotate-glow {
     from { rotate: 0deg; }
     to   { rotate: 360deg; }
@@ -69,19 +74,25 @@
     pointer-events: auto;
 }
 
-/* ===== 同步胶囊各状态尺寸（外层比胶囊大 4px） ===== */
-#island-glow.lyric-collapsed {
+/* ===== 同步胶囊各状态尺寸（外层比胶囊大 4px，纯 CSS 通过 :has() 联动） ===== */
+#island-glow:has(> #island-capsule.lyric-collapsed) {
     width: calc(var(--lyric-collapsed-w, 320px) + 4px);
 }
 
-#island-glow.expanded {
+#island-glow:has(> #island-capsule.expanded) {
     width: calc(var(--expanded-w, 330px) + 4px);
     height: calc(var(--expanded-h, 74px) + 4px);
     border-radius: 30px;
 }
 
-#island-glow.music-expanded {
-    width: calc(var(--music-expanded-w, 330px) + 4px);
-    height: calc(var(--music-expanded-h, 360px) + 4px);
-    border-radius: 30px;
+#island-glow:has(> #island-capsule.music-expanded) {
+    width: calc(var(--music-expanded-w, 380px) + 4px);
+    height: calc(var(--music-expanded-h, 420px) + 4px);
+    border-radius: 28px;
+}
+
+#island-glow:has(> #island-capsule.agent-expanded) {
+    width: calc(var(--agent-expanded-w, 420px) + 4px);
+    height: calc(var(--agent-expanded-h, 480px) + 4px);
+    border-radius: 28px;
 }
