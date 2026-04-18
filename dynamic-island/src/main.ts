@@ -114,7 +114,7 @@ let mpCurrentLyricInner: HTMLSpanElement | null = null;
 let mpCurrentLyricOuter: HTMLElement | null = null;
 
 let mpTokenSpans: HTMLSpanElement[] = [];
-let currentMpLyricTokenKey = "";
+let currentMpLyricTokenKey = '';
 
 let lyricFpsWindowStartMs = 0;
 let lyricFpsFrameCount = 0;
@@ -772,59 +772,80 @@ function updatePlayIcon() {
 
 
 
+/**
+ * 生成 token 列表的稳定标识，用于判断 DOM 是否需要重建。
+ * @param tokens token 序列（含文本与起止时间戳）。
+ * @returns 可用于等值比较的 key 字符串。
+ */
 function buildTokensKey(tokens: Array<{ text: string; start_ms: number; end_ms: number }>): string {
-  return tokens.map((t) => `${t.text}\u0001${t.start_ms}\u0001${t.end_ms}`).join("\u0002");
+  return tokens.map((t) => `${t.text}\u0001${t.start_ms}\u0001${t.end_ms}`).join('\u0002');
 }
 
+/**
+ * 根据当前播放时间更新所有 token span 的 `--sweep` CSS 变量，驱动卡拉OK式逐字高亮。
+ * @param spans 与 tokens 一一对应的 span 元素数组。
+ * @param tokens token 序列（含起止时间戳）。
+ * @param timeMs 当前估计的播放时间（毫秒）。
+ */
 function updateTokenSweep(
   spans: HTMLSpanElement[],
   tokens: Array<{ text: string; start_ms: number; end_ms: number }>,
   timeMs: number,
 ) {
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
+  tokens.forEach((token, i) => {
     const span = spans[i];
-    if (!span) continue;
+    if (!span) return;
 
     if (timeMs >= token.start_ms && timeMs <= token.end_ms) {
       // Currently playing token: calculate sweep progress
       const duration = Math.max(1, token.end_ms - token.start_ms);
       const progress = (timeMs - token.start_ms) / duration;
-      span.style.setProperty("--sweep", Math.min(1, Math.max(0, progress)).toString());
+      span.style.setProperty('--sweep', Math.min(1, Math.max(0, progress)).toString());
     } else if (timeMs > token.end_ms) {
       // Already sung: fully highlighted
-      span.style.setProperty("--sweep", "1");
+      span.style.setProperty('--sweep', '1');
     } else {
       // Not yet sung: no highlight
-      span.style.setProperty("--sweep", "0");
+      span.style.setProperty('--sweep', '0');
     }
-  }
+  });
 }
 
+/**
+ * 以 token 形式渲染灵动岛收起态当前行，并由 `updateTokenSweep` 驱动高亮。
+ * @param container 当前行文本容器（通常为 `#lyric-text-inner`）。
+ * @param tokens 当前行的 token 序列。
+ * @param currentTimeMs 当前估计的播放时间（毫秒）。
+ */
 function renderLyricWithTokens(container: HTMLElement, tokens: Array<{ text: string; start_ms: number; end_ms: number }>, currentTimeMs: number) {
   const nextKey = buildTokensKey(tokens);
 
   // Rebuild DOM only when lyric line/tokens changed
   if (currentLyricTokenKey !== nextKey || tokenSpans.length !== tokens.length || container.children.length !== tokens.length) {
     currentLyricTokenKey = nextKey;
-    container.innerHTML = "";
+    container.innerHTML = '';
     tokenSpans = [];
 
-    for (const token of tokens) {
-      const span = document.createElement("span");
-      span.className = "lyric-token";
+    tokens.forEach((token) => {
+      const span = document.createElement('span');
+      span.className = 'lyric-token';
       span.textContent = token.text;
-      span.setAttribute("data-text", token.text);
-      span.style.whiteSpace = "pre";
+      span.setAttribute('data-text', token.text);
+      span.style.whiteSpace = 'pre';
       container.appendChild(span);
       tokenSpans.push(span);
-    }
+    });
   }
 
   updateTokenSweep(tokenSpans, tokens, currentTimeMs);
 }
 
-/** Render music-panel current line with per-character tokens for karaoke-style sweep. */
+/**
+ * 以 token 形式渲染展开态音乐面板的当前行，实现与收起态一致的逐字 sweep 高亮。
+ * @param container 音乐面板当前行的文本容器（`.mp-lyric-line-inner`）。
+ * @param tokens 当前行的 token 序列。
+ * @param currentTimeMs 当前估计的播放时间（毫秒）。
+ */
 function renderMpLyricWithTokens(
   container: HTMLElement,
   tokens: Array<{ text: string; start_ms: number; end_ms: number }>,
@@ -838,18 +859,18 @@ function renderMpLyricWithTokens(
     container.children.length !== tokens.length
   ) {
     currentMpLyricTokenKey = nextKey;
-    container.textContent = "";
+    container.textContent = '';
     mpTokenSpans = [];
 
-    for (const token of tokens) {
-      const span = document.createElement("span");
-      span.className = "mp-lyric-token";
+    tokens.forEach((token) => {
+      const span = document.createElement('span');
+      span.className = 'mp-lyric-token';
       span.textContent = token.text;
-      span.setAttribute("data-text", token.text);
-      span.style.whiteSpace = "pre";
+      span.setAttribute('data-text', token.text);
+      span.style.whiteSpace = 'pre';
       container.appendChild(span);
       mpTokenSpans.push(span);
-    }
+    });
   }
 
   updateTokenSweep(mpTokenSpans, tokens, currentTimeMs);
@@ -1636,10 +1657,10 @@ function renderNearbyLyricsFlip(
         el.appendChild(inner);
       }
       if (mpCurrentLyricInner !== inner) {
-        inner.style.transform = "";
+        inner.style.transform = '';
         // 新的当前行容器：清除旧 token spans 缓存，强制重建
         mpTokenSpans = [];
-        currentMpLyricTokenKey = "";
+        currentMpLyricTokenKey = '';
       }
       if (tokens && tokens.length > 0) {
         // 使用逐字 token 渲染（卡拉OK式 sweep）
@@ -1650,7 +1671,7 @@ function renderNearbyLyricsFlip(
           inner.textContent = line.text;
         }
         mpTokenSpans = [];
-        currentMpLyricTokenKey = "";
+        currentMpLyricTokenKey = '';
       }
       mpCurrentLyricInner = inner;
       mpCurrentLyricOuter = el;
@@ -1773,7 +1794,7 @@ function resetMpLyricFlipState() {
 
   mpTokenSpans = [];
 
-  currentMpLyricTokenKey = "";
+  currentMpLyricTokenKey = '';
 
 }
 
