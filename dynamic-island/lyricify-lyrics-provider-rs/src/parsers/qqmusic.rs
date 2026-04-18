@@ -1,7 +1,11 @@
+use crate::parsers::lrc::LrcParser;
 use crate::parsers::{IParsers, decrypt::qrc::*};
 use crate::models::LineInfo;
-pub struct QQMusicParsers {}
-impl QQMusicParsers {
+
+pub struct QQMusicLrcParser;
+impl LrcParser for QQMusicLrcParser {}
+pub struct QQMusicParser;
+impl QQMusicParser {
     fn decrypt(&self, lyrics: &str) -> Result<String, String> {
         qrc_decrypt(lyrics)
     }
@@ -11,6 +15,4 @@ impl QQMusicParsers {
         self.parse(lyrics)
     }
 }
-impl IParsers for QQMusicParsers{
-    
-}
+impl IParsers for QQMusicParser {}

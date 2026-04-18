@@ -13,9 +13,8 @@ pub static RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(\d+),(\d+)\]([^\[\n]+)").unwrap()
 });
 
-pub static LRC_LINE_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(\d+):(\d+)[\.:](\d+)\]([^\[\n]+)").unwrap()
-    //你知道吗 网易云的lrc是[mm:ss:xx]而翻译歌词是[mm:ss.xx]
+pub static KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[\(<](\d+),(\d+)(?:,\d+)?[\)>]").unwrap()
 });
 
 pub static LINE_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
@@ -30,12 +29,12 @@ pub static WORD_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 pub static SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?P<t>[^\n\)>\]]+)[\(<](?P<s>\d+),(?P<d>\d+)(?:,[^[\)>]]+)?[\)>]").unwrap()//来者不拒~~
+    Regex::new(r"(?P<t>[^\n\u{E000}\u{E001}\]]+)\u{E000}(?P<s>\d+),(?P<d>\d+)\u{E001}").unwrap()//来者不拒~~
     //歌词 一号时间戳 二号时间戳
 });
 
 pub static PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\(<](?P<s>\d+),(?P<d>\d+)(?:,[^[\)>]]+)?[\)>](?P<t>[^\n\(<]+)").unwrap()//来者不拒~~
+    Regex::new(r"\u{E000}(?P<s>\d+),(?P<d>\d+)(?:,[^[\)>]]+)?\u{E001}(?P<t>[^\u{E001}\u{E000}]+)").unwrap()//来者不拒~~
     //s:starttime d:duration t:text
 });
 
@@ -107,18 +106,17 @@ pub trait IParsers {
     }
 
     fn parse(&self, lyrics: String) -> Result<Vec<LineInfo>, String> {
-        /*use std::time::Instant;
-        let start = Instant::now();*/
-        
+        use std::time::Instant;
+        let start = Instant::now();
+
+        let lyrics= KEY.replace_all(&lyrics, "\u{E000}$1,$2\u{E001}");
         
         let mut lineinfo: Vec<LineInfo> = Vec::new();
         for caps in self.get_line_re().captures_iter(&lyrics) {
             let (s, d, text) = self.parse_line(caps)?;
             let mut textinfo: Vec<TextInfo> = Vec::new();
-            let mut fulltext = String::new();
             for caps2 in self.get_syllables_re().captures_iter(&text) {
                 let (s1, d1, text1) = self.parse_syllables(caps2)?;
-                fulltext.push_str(&text1);
                 textinfo.push(TextInfo {
                     start_time: self.get_offset_time(s,s1).map_err(|e| e)?,
                     duration: d1 as u16,
@@ -128,13 +126,13 @@ pub trait IParsers {
             lineinfo.push(LineInfo {
                 start_time: s,
                 duration: d as u16,
-                text: fulltext,
+                text: String::new(),
                 syllables: textinfo,
             });
         }
 
-        /*let elapsed = start.elapsed();
-        println!("解析歌词耗时耗时: {:?}", elapsed);*/
+        let elapsed = start.elapsed();
+        println!("解析歌词耗时耗时: {:?}", elapsed);
 
 
         Ok(lineinfo)

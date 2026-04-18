@@ -54,12 +54,6 @@ pub(crate) struct SettingsData {
     pub shortcut_key: String,
     #[serde(default = "default_lyric_mode")]
     pub lyric_mode: String,
-    #[serde(default = "default_lyric_ws_enabled")]
-    pub lyric_ws_enabled: bool,
-    #[serde(default = "default_lyric_api_search_enabled")]
-    pub lyric_api_search_enabled: bool,
-    #[serde(default = "default_lyric_rust_api_enabled")]
-    pub lyric_rust_api_enabled: bool,
     #[serde(default = "default_lyric_offset_enabled")]
     pub lyric_offset_enabled: bool,
     /// 按 SMTC app_id 存储的歌词补偿（ms）。默认空表，未配置的播放器视为 0。
@@ -113,17 +107,6 @@ fn default_lyric_mode() -> String {
     "lyric".to_string()
 }
 
-fn default_lyric_ws_enabled() -> bool {
-    true
-}
-
-fn default_lyric_api_search_enabled() -> bool {
-    true
-}
-
-fn default_lyric_rust_api_enabled() -> bool {
-    true
-}
 
 fn default_lyric_offset_enabled() -> bool {
     true
@@ -182,9 +165,6 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
         lyric_mode: default_lyric_mode(),
-        lyric_ws_enabled: default_lyric_ws_enabled(),
-        lyric_api_search_enabled: default_lyric_api_search_enabled(),
-        lyric_rust_api_enabled: default_lyric_rust_api_enabled(),
         lyric_offset_enabled: default_lyric_offset_enabled(),
         lyric_offsets_by_player: HashMap::new(),
         ai_api_url: String::new(),
@@ -222,9 +202,6 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
-        lyric_ws_enabled: state.lyric_ws_enabled.load(Ordering::Relaxed),
-        lyric_api_search_enabled: state.lyric_api_search_enabled.load(Ordering::Relaxed),
-        lyric_rust_api_enabled: state.lyric_rust_api_enabled.load(Ordering::Relaxed),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
         ai_api_url: state.ai_api_url.lock().unwrap().clone(),
@@ -268,9 +245,6 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let shortcut = state.shortcut_key.lock().unwrap().clone();
     let clipboard_enabled = state.clipboard_enabled.load(Ordering::Relaxed);
     let lyric_mode = state.lyric_mode.lock().unwrap().clone();
-    let lyric_ws_enabled = state.lyric_ws_enabled.load(Ordering::Relaxed);
-    let lyric_api_search_enabled = state.lyric_api_search_enabled.load(Ordering::Relaxed);
-    let lyric_rust_api_enabled = state.lyric_rust_api_enabled.load(Ordering::Relaxed);
     let lyric_offset_enabled = state.lyric_offset_enabled.load(Ordering::Relaxed);
     let indicator_color = state.indicator_color.lock().unwrap().clone();
     let agent_window_size = state.agent_window_size.lock().unwrap().clone();
@@ -284,9 +258,6 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
         "lyric_mode": lyric_mode,
-        "lyric_ws_enabled": lyric_ws_enabled,
-        "lyric_api_search_enabled": lyric_api_search_enabled,
-        "lyric_rust_api_enabled": lyric_rust_api_enabled,
         "lyric_offset_enabled": lyric_offset_enabled,
         "indicator_color": indicator_color,
         "agent_window_size": agent_window_size,
@@ -306,9 +277,6 @@ pub fn save_settings(
     clipboard_enabled: bool,
     shortcut_key: String,
     lyric_mode: String,
-    lyric_ws_enabled: Option<bool>,
-    lyric_api_search_enabled: Option<bool>,
-    lyric_rust_api_enabled: Option<bool>,
     lyric_offset_enabled: Option<bool>,
     indicator_color: String,
     agent_window_size: String,
@@ -322,15 +290,6 @@ pub fn save_settings(
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
-    if let Some(enabled) = lyric_ws_enabled {
-        state.lyric_ws_enabled.store(enabled, Ordering::Relaxed);
-    }
-    if let Some(enabled) = lyric_api_search_enabled {
-        state.lyric_api_search_enabled.store(enabled, Ordering::Relaxed);
-    }
-    if let Some(enabled) = lyric_rust_api_enabled {
-        state.lyric_rust_api_enabled.store(enabled, Ordering::Relaxed);
-    }
     if let Some(enabled) = lyric_offset_enabled {
         state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
     }
@@ -395,15 +354,6 @@ pub fn save_settings(
     settings_data.clipboard_enabled = clipboard_enabled;
     settings_data.shortcut_key = shortcut_key;
     settings_data.lyric_mode = lyric_mode;
-    if let Some(enabled) = lyric_ws_enabled {
-        settings_data.lyric_ws_enabled = enabled;
-    }
-    if let Some(enabled) = lyric_api_search_enabled {
-        settings_data.lyric_api_search_enabled = enabled;
-    }
-    if let Some(enabled) = lyric_rust_api_enabled {
-        settings_data.lyric_rust_api_enabled = enabled;
-    }
     if let Some(enabled) = lyric_offset_enabled {
         settings_data.lyric_offset_enabled = enabled;
     }

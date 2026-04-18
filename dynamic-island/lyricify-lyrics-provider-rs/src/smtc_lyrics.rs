@@ -5,7 +5,6 @@
 //! 用该播放器自家的源搜索并获取歌词。
 
 use crate::models::{TrackMetadata, LyricsData};
-use crate::parsers::soda_music::SodaParsers;
 use crate::searchers::{ISearcher,
     netease::NeteaseSearchResult,
     qqmusic::QQMusicSearchResult,
@@ -13,10 +12,11 @@ use crate::searchers::{ISearcher,
     soda_music::SodaMusicSearchResult
 };
 use crate::parsers::{IParsers,
-    netease::NeteaseParsers,
-    qqmusic::QQMusicParsers,
-    lrc::LrcParsers,
-    kugou::KugouParsers,
+    netease::{NeteaseParser, NeteaseLrcParser},
+    qqmusic::{QQMusicParser, QQMusicLrcParser},
+    lrc::LrcParser,
+    kugou::KugouParser,
+    soda_music::SodaParser,
 };
 
 // ===== 播放器定义 =====
@@ -226,22 +226,20 @@ async fn fetch_netease_lyrics(
     if let Some(yrc) = lyric_result.yrc.and_then(|y| y.lyric) {
         if !yrc.is_empty() {
             println!("get yrc");
-            let parser = NeteaseParsers {};
+            let parser = NeteaseParser {};
             data.lines = parser.parse(yrc)?;
             return Ok(data);
         }
     }
-    if let Some(lrc) = lyric_result.lrc.and_then(|l| l.lyric) {
-        if !lrc.is_empty() {
-            println!("get lrc");
-            let parser = LrcParsers {};
-            data.lines = parser.parse(lrc)?;
-            return Ok(data);
-            
-        }
+    let lrc = lyric_result.lrc.ok_or("网易云: LRC也没有哟")?;
+    println!("get lrc");
+    let parser = NeteaseLrcParser { 
+        version: lrc.version.unwrap_or(3) as u8,
+    };
+    data.lines = parser.parse(lrc.lyric.ok_or("网易云: LRC也没有哟")?)?;
+    if !data.lines.is_empty() {
+        return Ok(data);
     }
-
-
     Err("网易云: 未获取到歌词内容".into())
 }
 
@@ -276,7 +274,7 @@ async fn fetch_qqmusic_lyrics(
     };
 
     if let Ok(qrc) = api.get_lyrics_qrc(&id.to_string()).await {
-        let parser = QQMusicParsers {};
+        let parser = QQMusicParser {};
         data.lines = parser.decrypt_and_parse(qrc)?;
         return Ok(data);
     }
@@ -287,7 +285,7 @@ async fn fetch_qqmusic_lyrics(
     
     if let Some(lrc) = lyric_result.lyric {
         if !lrc.is_empty() {
-            let parser = LrcParsers {};
+            let parser = QQMusicLrcParser {};
             data.lines = parser.parse(lrc)?;
             return Ok(data);
         }
@@ -332,7 +330,7 @@ async fn fetch_kugou_lyrics(
     if krc.is_empty() {
         return Err("酷狗: KRC 内容为空".into());
     }
-    let parser = KugouParsers {};
+    let parser = KugouParser {};
     let data = LyricsData {
         file: None,
         lines: parser.decrypt_and_parse(krc)?,
@@ -380,7 +378,7 @@ async fn fetch_soda_music_lyrics(
     if let Some(lyric_info) = detail.lyric {
         if let Some(content) = lyric_info.content {
             if !content.is_empty() {
-                let parser = SodaParsers {};
+                let parser = SodaParser {};
 
                 let data = LyricsData {
                     file: None,
@@ -407,21 +405,35 @@ async fn fetch_soda_music_lyrics(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    fn jtrack() -> TrackMetadata {
+    #[allow(unused_variables)]
+    fn jtrack(s: &str) -> TrackMetadata {
         TrackMetadata {
-            title: Some("Remember".to_string()),
-            artist: Some("yuigot 、 早見沙織".to_string()),
-            album: Some("".to_string()),
+            title: Some("メルト (Melt) (CPK! Remix|かぐや ver.)".to_string()),
+            artist: Some(format!("ryo {} 夏吉ゆうこ", s)),
+            album: Some("超かぐや姫！".to_string()),
             album_artist: Some("超かぐや姫！".to_string()),
-            duration_ms: Some(232616),
+            duration_ms: Some(271627),
             ..Default::default()
         }
     }
-    fn etrack() -> TrackMetadata {
+    #[allow(unused_variables)]
+    fn etrack(s: &str) -> TrackMetadata {
         TrackMetadata {
             title: Some("Is There Someone Else?".to_string()),
-            artist: Some("The Weeknd".to_string()),
+            artist: Some(format!("The Weeknd")),
+            album: Some("".to_string()),
+            album_artist: Some("".to_string()),
+            duration_ms: None,
+            ..Default::default()
+        }
+    }
+    #[allow(unused)]
+    fn ttrack(s: &str) -> TrackMetadata {
+        TrackMetadata {
+            title: Some("Extraordinary".to_string()),
+            artist: Some(format!("Connor Price")),
             album: Some("".to_string()),
             album_artist: Some("".to_string()),
             duration_ms: None,
@@ -431,7 +443,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_netease(){
-        let track = jtrack();
+        let track = etrack("/");
         #[allow(unused_variables)]
         let result = fetch_netease_lyrics(&track).await;
         println!("{:?}",result)
@@ -441,15 +453,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_qqmusic(){
-        let track = etrack();
+        let track = jtrack("/");
         #[allow(unused_variables)]
         let result = fetch_qqmusic_lyrics(&track).await;
-        println!("{:?}",result)        
+        //println!("{:?}",result)        
     }
 
     #[tokio::test]
     async fn test_kugou_music(){
-        let track = jtrack();
+        let track = jtrack("、");
         #[allow(unused_variables)]
         let result = fetch_kugou_lyrics(&track).await;
         println!("{:?}",result)
@@ -457,7 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_soda_music(){
-        let track = jtrack();
+        let track = jtrack(",");
         #[allow(unused_variables)]
         let result = fetch_soda_music_lyrics(&track).await;
         println!("{:?}",result)

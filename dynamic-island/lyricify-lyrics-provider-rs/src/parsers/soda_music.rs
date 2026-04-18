@@ -1,7 +1,7 @@
 use crate::parsers::{IParsers, PREFIX_RE};
 use regex::{Regex};
-pub struct SodaParsers {}
-impl IParsers for SodaParsers{
+pub struct SodaParser;
+impl IParsers for SodaParser{
     fn get_syllables_re(&self) -> &Regex {
         &PREFIX_RE
     }

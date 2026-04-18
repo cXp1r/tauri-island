@@ -1,7 +1,7 @@
 use crate::parsers::{IParsers, decrypt::krc::*};
 use crate::models::LineInfo;
-pub struct KugouParsers {}
-impl KugouParsers {
+pub struct KugouParser;
+impl KugouParser {
     fn decrypt(&self, lyrics: &str) -> Result<String, String> {
         krc_decrypt(lyrics)
     }
@@ -11,7 +11,7 @@ impl KugouParsers {
         self.parse(lyrics)
     }
 }
-impl IParsers for KugouParsers{
+impl IParsers for KugouParser{
     #[allow(unused_variables)]
     fn get_offset_time(&self, t1: u32, t2: u32) -> Result<u16, String> {
         u16::try_from(t2)
