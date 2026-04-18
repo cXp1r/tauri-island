@@ -112,6 +112,10 @@ let lyricScrollNextLineTimeMs: number | null = null;
 let lyricScrollLastX = 0;
 let mpCurrentLyricInner: HTMLSpanElement | null = null;
 let mpCurrentLyricOuter: HTMLElement | null = null;
+
+let mpTokenSpans: HTMLSpanElement[] = [];
+let currentMpLyricTokenKey = "";
+
 let lyricFpsWindowStartMs = 0;
 let lyricFpsFrameCount = 0;
 
@@ -768,8 +772,37 @@ function updatePlayIcon() {
 
 
 
-function renderLyricWithTokens(container: HTMLElement, tokens: Array<{text: string; start_ms: number; end_ms: number}>, currentTimeMs: number) {
-  const nextKey = tokens.map((t) => `${t.text}\u0001${t.start_ms}\u0001${t.end_ms}`).join("\u0002");
+function buildTokensKey(tokens: Array<{ text: string; start_ms: number; end_ms: number }>): string {
+  return tokens.map((t) => `${t.text}\u0001${t.start_ms}\u0001${t.end_ms}`).join("\u0002");
+}
+
+function updateTokenSweep(
+  spans: HTMLSpanElement[],
+  tokens: Array<{ text: string; start_ms: number; end_ms: number }>,
+  timeMs: number,
+) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const span = spans[i];
+    if (!span) continue;
+
+    if (timeMs >= token.start_ms && timeMs <= token.end_ms) {
+      // Currently playing token: calculate sweep progress
+      const duration = Math.max(1, token.end_ms - token.start_ms);
+      const progress = (timeMs - token.start_ms) / duration;
+      span.style.setProperty("--sweep", Math.min(1, Math.max(0, progress)).toString());
+    } else if (timeMs > token.end_ms) {
+      // Already sung: fully highlighted
+      span.style.setProperty("--sweep", "1");
+    } else {
+      // Not yet sung: no highlight
+      span.style.setProperty("--sweep", "0");
+    }
+  }
+}
+
+function renderLyricWithTokens(container: HTMLElement, tokens: Array<{ text: string; start_ms: number; end_ms: number }>, currentTimeMs: number) {
+  const nextKey = buildTokensKey(tokens);
 
   // Rebuild DOM only when lyric line/tokens changed
   if (currentLyricTokenKey !== nextKey || tokenSpans.length !== tokens.length || container.children.length !== tokens.length) {
@@ -788,28 +821,38 @@ function renderLyricWithTokens(container: HTMLElement, tokens: Array<{text: stri
     }
   }
 
-  // Update highlighting
-  const updateHighlight = (timeMs: number) => {
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      const span = tokenSpans[i];
-      
-      if (timeMs >= token.start_ms && timeMs <= token.end_ms) {
-        // Currently playing token: calculate sweep progress
-        const duration = Math.max(1, token.end_ms - token.start_ms);
-        const progress = (timeMs - token.start_ms) / duration;
-        span.style.setProperty("--sweep", Math.min(1, Math.max(0, progress)).toString());
-      } else if (timeMs > token.end_ms) {
-        // Already sung: fully highlighted
-        span.style.setProperty("--sweep", "1");
-      } else {
-        // Not yet sung: no highlight
-        span.style.setProperty("--sweep", "0");
-      }
-    }
-  };
+  updateTokenSweep(tokenSpans, tokens, currentTimeMs);
+}
 
-  updateHighlight(currentTimeMs);
+/** Render music-panel current line with per-character tokens for karaoke-style sweep. */
+function renderMpLyricWithTokens(
+  container: HTMLElement,
+  tokens: Array<{ text: string; start_ms: number; end_ms: number }>,
+  currentTimeMs: number,
+) {
+  const nextKey = buildTokensKey(tokens);
+
+  if (
+    currentMpLyricTokenKey !== nextKey ||
+    mpTokenSpans.length !== tokens.length ||
+    container.children.length !== tokens.length
+  ) {
+    currentMpLyricTokenKey = nextKey;
+    container.textContent = "";
+    mpTokenSpans = [];
+
+    for (const token of tokens) {
+      const span = document.createElement("span");
+      span.className = "mp-lyric-token";
+      span.textContent = token.text;
+      span.setAttribute("data-text", token.text);
+      span.style.whiteSpace = "pre";
+      container.appendChild(span);
+      mpTokenSpans.push(span);
+    }
+  }
+
+  updateTokenSweep(mpTokenSpans, tokens, currentTimeMs);
 }
 
 function getEstimatedLyricPositionMs(nowPerfMs: number): number {
@@ -890,7 +933,12 @@ function ensureLyricTokenAnimationLoop() {
 
     const estimatedPosMs = getEstimatedLyricPositionMs(now);
     if (hasTokens) {
-      renderLyricWithTokens(lyricTextInner, activeLyricTokens as Array<{text: string; start_ms: number; end_ms: number}>, estimatedPosMs);
+      const tokens = activeLyricTokens as Array<{ text: string; start_ms: number; end_ms: number }>;
+      renderLyricWithTokens(lyricTextInner, tokens, estimatedPosMs);
+      // 同步更新音乐面板当前行的逐字 sweep
+      if (mpCurrentLyricInner) {
+        renderMpLyricWithTokens(mpCurrentLyricInner, tokens, estimatedPosMs);
+      }
     }
     applyIslandLyricScroll(estimatedPosMs);
 
@@ -1470,9 +1518,15 @@ function buildLineKeys(nearby: Array<{ text: string; is_current: boolean }>): st
 
  * 复用行做位移过渡，新行从底部淡入，退出行向上淡出。
 
+ * 若 tokens 非空，则为当前行渲染逐字 token spans 以实现卡拉OK式 sweep 高亮。
+
  */
 
-function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolean }>) {
+function renderNearbyLyricsFlip(
+  nearby: Array<{ text: string; is_current: boolean }>,
+  tokens: Array<{ text: string; start_ms: number; end_ms: number }> | null,
+  currentTimeMs: number,
+) {
 
   // 清理 prevLineMap 中已不在 DOM 的无效引用（可能被其他分支如 textContent="♪" 破坏过）
 
@@ -1579,12 +1633,25 @@ function renderNearbyLyricsFlip(nearby: Array<{ text: string; is_current: boolea
         el.textContent = "";
         inner = document.createElement("span");
         inner.className = "mp-lyric-line-inner";
-        inner.textContent = line.text;
         el.appendChild(inner);
-      } else if (inner.textContent !== line.text) {
-        inner.textContent = line.text;
       }
-      if (mpCurrentLyricInner !== inner) inner.style.transform = "";
+      if (mpCurrentLyricInner !== inner) {
+        inner.style.transform = "";
+        // 新的当前行容器：清除旧 token spans 缓存，强制重建
+        mpTokenSpans = [];
+        currentMpLyricTokenKey = "";
+      }
+      if (tokens && tokens.length > 0) {
+        // 使用逐字 token 渲染（卡拉OK式 sweep）
+        renderMpLyricWithTokens(inner, tokens, currentTimeMs);
+      } else {
+        // 无 token：回退到整行纯文本；若上一次是 token 模式，清空缓存并重置内容
+        if (inner.children.length > 0 || inner.textContent !== line.text) {
+          inner.textContent = line.text;
+        }
+        mpTokenSpans = [];
+        currentMpLyricTokenKey = "";
+      }
       mpCurrentLyricInner = inner;
       mpCurrentLyricOuter = el;
     } else {
@@ -1698,11 +1765,21 @@ function resetMpLyricFlipState() {
 
   prevLineMap.clear();
 
+  // mpLyricText 的 children 已被清空，这些引用都已失效；同步清理 token 缓存
+
+  mpCurrentLyricInner = null;
+
+  mpCurrentLyricOuter = null;
+
+  mpTokenSpans = [];
+
+  currentMpLyricTokenKey = "";
+
 }
 
 
 
-listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{text: string; is_current: boolean}>; tokens?: Array<{text: string; start_ms: number; end_ms: number}>; line_start_ms?: number; next_line_time_ms?: number } | null>("lyric-update", (event) => {
+listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{ text: string; is_current: boolean }>; tokens?: Array<{ text: string; start_ms: number; end_ms: number }>; line_start_ms?: number; next_line_time_ms?: number } | null>("lyric-update", (event) => {
 
   if (event.payload === null) {
 
@@ -1884,9 +1961,13 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
 
   const nearby = event.payload.nearby_lyrics;
 
+  const mpTokens = event.payload.tokens ?? null;
+
+  const mpCurrentTimeMs = position_ms ?? activeLyricBasePositionMs;
+
   if (nearby && nearby.length > 0) {
 
-    renderNearbyLyricsFlip(nearby);
+    renderNearbyLyricsFlip(nearby, mpTokens, mpCurrentTimeMs);
 
   } else if (text !== null && text !== undefined) {
 
@@ -3084,11 +3165,11 @@ function updateAgentCSSSize(size: string) {
 
   switch (size) {
 
-    case "small":  w = 380; h = 400; break;
+    case "small": w = 380; h = 400; break;
 
-    case "large":  w = 620; h = 640; break;
+    case "large": w = 620; h = 640; break;
 
-    default:       w = 520; h = 540; break; // medium
+    default: w = 520; h = 540; break; // medium
 
   }
 
