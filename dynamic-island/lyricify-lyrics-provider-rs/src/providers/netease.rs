@@ -87,6 +87,11 @@ impl NeteaseApi {
     }
 }
 
+impl Default for NeteaseApi {
+    fn default() -> Self {
+         Self::new()
+    }
+}
 // ===== Response Models =====
 
 #[derive(Debug, Deserialize, Default)]

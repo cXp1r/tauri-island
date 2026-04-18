@@ -124,8 +124,6 @@ pub fn get_first_running_player() -> Option<MusicPlayer> {
 /// # 返回
 /// - `Ok((MusicPlayer, LyricsData))` — 使用的播放器源 + 歌词数据
 /// - `Err(...)` — 未检测到播放器，或获取歌词失败
-
-
 //如果你发现了kugou的smtc和别的smtc有点不同,你不需要调整smtc信息再传入
 //因为我已经想到了....
 pub async fn get_lyrics(
@@ -175,7 +173,7 @@ pub async fn get_lyrics_with_player(
         ..Default::default()
     };
 
-    Ok(fetch_lyrics_from_player(player, &metadata).await?)
+    fetch_lyrics_from_player(player, &metadata).await
 }
 
 // ===== 内部: 按播放器分发 =====
@@ -258,7 +256,7 @@ async fn fetch_qqmusic_lyrics(
     
 
     let api = QQMusicApi::new();
-    let id = best.id.clone();
+    let id = best.id;
 
     let mut data = LyricsData {
         file: None,
@@ -399,7 +397,7 @@ async fn fetch_soda_music_lyrics(
         }
         return Err("汽水音乐: 无歌曲详细信息".into());
     }
-    return Err("汽水音乐: 歌曲没有歌词".into());
+    Err("汽水音乐: 歌曲没有歌词".into())
 }
 
 
@@ -456,7 +454,7 @@ mod tests {
         let track = jtrack("/");
         #[allow(unused_variables)]
         let result = fetch_qqmusic_lyrics(&track).await;
-        //println!("{:?}",result)        
+        println!("{:?}",result)        
     }
 
     #[tokio::test]

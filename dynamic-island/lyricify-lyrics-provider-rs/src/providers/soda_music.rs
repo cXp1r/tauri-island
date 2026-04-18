@@ -56,6 +56,11 @@ impl SodaMusicApi {
     }
 }
 
+impl Default for SodaMusicApi {
+    fn default() -> Self {
+         Self::new()
+    }
+}
 // ===== Response Models =====
 
 #[derive(Debug, Deserialize, Default)]

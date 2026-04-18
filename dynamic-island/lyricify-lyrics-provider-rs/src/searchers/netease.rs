@@ -12,6 +12,12 @@ impl NeteaseSearcher {
     }
 }
 
+impl Default for NeteaseSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ISearcher for NeteaseSearcher {
     fn name(&self) -> &str { "Netease" }
