@@ -385,9 +385,6 @@ pub fn run() {
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
-            let lyric_ws_enabled = Arc::new(AtomicBool::new(settings.lyric_ws_enabled));
-            let lyric_api_search_enabled = Arc::new(AtomicBool::new(settings.lyric_api_search_enabled));
-            let lyric_rust_api_enabled = Arc::new(AtomicBool::new(settings.lyric_rust_api_enabled));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             // 按播放器存储的歌词补偿，启动时规范化键值
             let lyric_offsets_by_player: Arc<Mutex<std::collections::HashMap<String, i64>>> =
@@ -445,9 +442,6 @@ pub fn run() {
                 pending_url: pending_url.clone(),
                 shortcut_key: shortcut_key.clone(),
                 lyric_mode: lyric_mode.clone(),
-                lyric_ws_enabled: lyric_ws_enabled.clone(),
-                lyric_api_search_enabled: lyric_api_search_enabled.clone(),
-                lyric_rust_api_enabled: lyric_rust_api_enabled.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
                 lyric_offsets_by_player: lyric_offsets_by_player.clone(),
                 active_player_app_id: active_player_app_id.clone(),
@@ -911,8 +905,6 @@ pub fn run() {
             // --- 媒体/歌词监控线程 ---
             let win_media = window.clone();
             let lyric_mode_media = lyric_mode.clone();
-            let lyric_ws_enabled_media = lyric_ws_enabled.clone();
-            let lyric_rust_api_enabled_media = lyric_rust_api_enabled.clone();
             let is_music_media = is_music.clone();
             // 歌词补偿：总开关 + 按播放器表 + 当前命中 app_id；以及 AppHandle 用于持久化/广播事件
             let lyric_offset_enabled_media = lyric_offset_enabled.clone();
@@ -977,7 +969,7 @@ pub fn run() {
                     }
 
                     let info = media::get_smtc_media_info();
-                    let (media_info, position_ms_raw, is_playing, raw_app_id) = match info {
+                    let (status, media_info, position_ms_raw, is_playing, raw_app_id) = match info {
                         Some(v) => {
                             // 拿到有效会话，重置宽限期计数
                             no_session_count = 0;
@@ -1004,6 +996,19 @@ pub fn run() {
                             continue;
                         }
                     };
+                    // Closed (4) 表示会话已关闭，立即清空状态通知前端
+                    if status == 4 {
+                        if was_playing {
+                            crate::logger::warn("Lyrics", "playback state=stopped reason=smtc_session_closed");
+                            was_playing = false;
+                            last_is_playing = false;
+                            current_track.clear();
+                            is_music_media.store(false, Ordering::Relaxed);
+                            let _ = win_media.emit("lyric-update", serde_json::json!(null));
+                        }
+                        continue;
+                    }
+
                     let app_id = settings::normalize_app_id(&raw_app_id);
 
                     // --- 活跃播放器变化：更新 state 并广播，供 settings 子页高亮 ---
@@ -1154,16 +1159,13 @@ pub fn run() {
                             let album_artist = media_info.album_artist.clone();
                             let duration_ms = media_info.duration_ms;
                             let genre = media_info.genre.clone();
-                            let ncm_genre_hit_enabled = lyric_ws_enabled_media.load(Ordering::Relaxed);
-                            let rust_api_enabled = lyric_rust_api_enabled_media.load(Ordering::Relaxed);
-                            let api_search_enabled = true;
                             let gen = current_gen;
                             let result_ref = lyrics_result.clone();
                             let gen_ref = lyrics_generation.clone();
                             fetch_pending = true;
                             crate::logger::info("Lyrics", &format!(
-                                "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid ncm_genre_hit_enabled={} rust_api_enabled={} api_search_enabled={}",
-                                gen, title, artist, genre, ncm_genre_hit_enabled, rust_api_enabled, api_search_enabled
+                                "lyric fetch start gen={} title='{}' artist='{}' genre='{}' strategy=genre_ncmid",
+                                gen, title, artist, genre
                             ));
                             thread::Builder::new()
                                 .name("lyric-fetch".into())
@@ -1176,11 +1178,9 @@ pub fn run() {
                                     &artist,
                                     &album_title,
                                     &album_artist,
+                                    &raw_app_id,
                                     duration_ms,
                                     &genre,
-                                    ncm_genre_hit_enabled,
-                                    rust_api_enabled,
-                                    api_search_enabled,
                                     gen_ref.clone(),
                                     gen,
                                 );
@@ -1228,13 +1228,14 @@ pub fn run() {
 
                     if mode == "lyric" {
                         // 构建歌词文本和附近歌词（文本去重，但始终发送位置）
-                        let (text_val, nearby_json, line_tokens) = if fetch_pending && current_lyrics.is_empty() {
+                        let (text_val, nearby_json, line_tokens, line_start_ms, next_line_time_ms) = if fetch_pending && current_lyrics.is_empty() {
                             // 正在获取歌词中
-                            (serde_json::json!("♪"), None, None)
+                            (serde_json::json!("♪"), None, None, None, None)
                         } else if lyrics_not_found || (!fetch_pending && current_lyrics.is_empty()) {
                             // 歌词未找到
-                            (serde_json::json!(null), None, None)
-                        } else if let Some(line) = lyrics::get_current_lyric(&current_lyrics, position_ms) {
+                            (serde_json::json!(null), None, None, None, None)
+                        } else if let Some(line_idx) = current_lyrics.iter().rposition(|l| l.time_ms <= position_ms) {
+                            let line = &current_lyrics[line_idx];
                             // 仅在歌词行变化时计算附近歌词
                             let nearby = if line.text != last_lyric_text {
                                 last_lyric_text = line.text.clone();
@@ -1250,9 +1251,18 @@ pub fn run() {
                             } else {
                                 Some(line.tokens.clone())
                             };
-                            (serde_json::json!(line.text), nearby, tokens)
+                            let next_switch_ms = if line_idx + 1 < current_lyrics.len() {
+                                current_lyrics[line_idx + 1].time_ms
+                            } else {
+                                line.end_time_ms
+                            };
+                            (serde_json::json!(line.text), nearby, tokens, Some(line.time_ms), Some(next_switch_ms))
                         } else {
-                            (serde_json::json!("♪"), None, None)
+                            let nearby = lyrics::get_nearby_lyrics(&current_lyrics, position_ms);
+                            let nearby_json = Some(nearby.iter().map(|(text, is_current)| {
+                                serde_json::json!({"text": text, "is_current": is_current})
+                            }).collect::<Vec<_>>());
+                            (serde_json::json!("♪"), nearby_json, None, None, None)
                         };
 
                         // 始终发送，确保进度条持续更新
@@ -1271,6 +1281,12 @@ pub fn run() {
                         }
                         if let Some(tokens) = line_tokens {
                             payload["tokens"] = serde_json::json!(tokens);
+                        }
+                        if let Some(v) = line_start_ms {
+                            payload["line_start_ms"] = serde_json::json!(v);
+                        }
+                        if let Some(v) = next_line_time_ms {
+                            payload["next_line_time_ms"] = serde_json::json!(v);
                         }
                         let _ = win_media.emit("lyric-update", payload);
                     } else {
@@ -1350,9 +1366,6 @@ pub struct IslandState {
     pub pending_url: Arc<Mutex<Vec<String>>>,
     pub shortcut_key: Arc<Mutex<String>>,
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
-    pub lyric_ws_enabled: Arc<AtomicBool>,
-    pub lyric_api_search_enabled: Arc<AtomicBool>,
-    pub lyric_rust_api_enabled: Arc<AtomicBool>,
     pub lyric_offset_enabled: Arc<AtomicBool>,
     /// 按 SMTC app_id 存储的歌词补偿（ms），key 已规范化为小写
     pub lyric_offsets_by_player: Arc<Mutex<std::collections::HashMap<String, i64>>>,

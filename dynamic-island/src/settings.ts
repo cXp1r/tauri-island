@@ -55,8 +55,6 @@ const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
-const lyricWsEnabledToggle = document.getElementById("lyric-ws-enabled") as HTMLInputElement;
-const lyricRustApiEnabledToggle = document.getElementById("lyric-rust-api-enabled") as HTMLInputElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
@@ -91,8 +89,6 @@ async function loadSettings() {
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
-  lyricWsEnabledToggle.checked = settings.lyric_ws_enabled ?? true;
-  lyricRustApiEnabledToggle.checked = settings.lyric_rust_api_enabled ?? true;
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
@@ -192,9 +188,6 @@ saveBtn.addEventListener("click", async () => {
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
       lyricMode: lyricModeSelect.value,
-      lyricWsEnabled: lyricWsEnabledToggle.checked,
-      lyricRustApiEnabled: lyricRustApiEnabledToggle.checked,
-      lyricApiSearchEnabled: true,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,

@@ -1,8 +1,8 @@
 [package]
 name = "dynamic-island"
 version = "0.6.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "a dynamic island for windows"
+authors = ["Coding_w", "cXp1r"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

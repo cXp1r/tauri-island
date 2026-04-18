@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use crate::providers::kugou::KugouApi;
 use super::{ISearcher, ISearchResult, SearcherType};
-use crate::models::ITrackMetadata;
 pub struct KugouSearcher {
     api: KugouApi,
 }
@@ -51,20 +50,6 @@ impl ISearcher for KugouSearcher {
         }
 
         Ok(results)
-    }
-    async fn make_search_string(&self, track: &dyn ITrackMetadata) -> Option<String> {
-        let combined = format!(
-            "{} {} {}",
-            track.title().unwrap_or_default(),
-            track.artist().unwrap_or_default(),
-            track.album_artist().unwrap_or_default(),
-        ).replace(" - ", " ").trim().to_string();
-
-        if combined.is_empty() {
-            None
-        } else {
-            Some(combined)
-        }
     }
     fn min_score(&self) -> i8 { 5 }
     fn get_split_char(&self) -> char {

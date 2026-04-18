@@ -1,7 +1,8 @@
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use windows::Win32::Foundation::{HWND, LPARAM};
-use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
+use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus;
+use windows::Media::MediaPlaybackType as PlaybackType;
+use windows::Media::MediaPlaybackAutoRepeatMode;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MediaInfo {
@@ -51,7 +52,6 @@ pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
     [
         // —— 国内音乐平台 ——
         "cloudmusic",   // 网易云音乐
-        "netease",      // 网易云音乐（备用匹配）
         "music.163",    // 网易云音乐（UWP / 网页版 PWA）
         "qqmusic",      // QQ 音乐
         "kugou",        // 酷狗音乐
@@ -62,8 +62,7 @@ pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
         // —— 国际音乐平台 ——
         "spotify",      // Spotify
         "itunes",       // Apple Music / iTunes
-        "applemusic",   // Apple Music
-        "apple.music",  // Apple Music（UWP）
+        "appleinc.applemusicwin_nzyj5cx40ttqa!app",   // Apple Music
         "tidal",        // TIDAL
         "deezer",       // Deezer
         "amazonmusic",  // Amazon Music
@@ -108,199 +107,19 @@ fn is_browser_or_video_app(app_id: &str) -> bool {
         "mpc-hc",       // MPC-HC
         "mpc-be",       // MPC-BE
         "kmplayer",     // KMPlayer
+        "uupc",         // 网易UU远程/加速器
+        "uuplatform",   // 网易UU平台
+        "wangyiyun-uu", // 网易UU（备用）
+        "netease.uu",   // 网易UU（UWP）
+        "neteaseuu",    // 网易UU（备用）
     ]
     .iter()
     .any(|k| id.contains(k))
 }
 
-#[derive(Default)]
-struct CloudMusicWindowContext {
-    titles: Vec<String>,
-    pid_cache: HashMap<u32, bool>,
-}
 
-fn is_generic_cloudmusic_title(title: &str) -> bool {
-    let t = title.trim();
-    t.is_empty()
-        || t == "网易云音乐"
-        || t == "Netease Cloud Music"
-        || t == "CloudMusic"
-        || t == "cloudmusic"
-}
 
-fn split_track_artist(title: &str) -> Option<(String, String)> {
-    for sep in [" - ", " — ", " – ", " / "] {
-        if let Some((left, right)) = title.split_once(sep) {
-            let track = left.trim().to_string();
-            let artist = right.trim().to_string();
-            if !track.is_empty() && !artist.is_empty() {
-                return Some((track, artist));
-            }
-        }
-    }
-    None
-}
 
-fn pick_best_cloudmusic_title(titles: &[String]) -> Option<String> {
-    let mut best: Option<(i32, String)> = None;
-    for raw in titles {
-        let t = raw.trim();
-        if t.is_empty() {
-            continue;
-        }
-        let mut score = 0;
-        if !is_generic_cloudmusic_title(t) {
-            score += 30;
-        }
-        if split_track_artist(t).is_some() {
-            score += 40;
-        }
-        if !t.contains("MediaPlayer") {
-            score += 20;
-        }
-        if (2..=80).contains(&t.chars().count()) {
-            score += 10;
-        }
-
-        let should_replace = best.as_ref().map(|(s, _)| score > *s).unwrap_or(true);
-        if should_replace {
-            best = Some((score, t.to_string()));
-        }
-    }
-    best.and_then(|(_, t)| if is_generic_cloudmusic_title(&t) { None } else { Some(t) })
-}
-
-fn is_cloudmusic_process(pid: u32) -> bool {
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    use windows::core::PWSTR;
-
-    unsafe {
-        let handle = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
-            Ok(h) => h,
-            Err(_) => return false,
-        };
-
-        let mut buf = vec![0u16; 260];
-        let mut size = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(
-            handle,
-            PROCESS_NAME_FORMAT(0),
-            PWSTR(buf.as_mut_ptr()),
-            &mut size,
-        )
-        .is_ok();
-        let _ = CloseHandle(handle);
-
-        if !ok || size == 0 {
-            return false;
-        }
-
-        let full_path = String::from_utf16_lossy(&buf[..size as usize]).to_ascii_lowercase();
-        full_path.ends_with("\\cloudmusic.exe")
-            || full_path.ends_with("/cloudmusic.exe")
-            || full_path.contains("cloudmusic")
-            || full_path.contains("netease")
-    }
-}
-
-unsafe extern "system" fn enum_cloudmusic_windows(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
-    let ctx = &mut *(lparam.0 as *mut CloudMusicWindowContext);
-
-    let len = GetWindowTextLengthW(hwnd);
-    if len <= 0 {
-        return windows::core::BOOL(1);
-    }
-
-    let mut buf = vec![0u16; len as usize + 1];
-    let copied = GetWindowTextW(hwnd, &mut buf);
-    if copied <= 0 {
-        return windows::core::BOOL(1);
-    }
-
-    let title = String::from_utf16_lossy(&buf[..copied as usize]).trim().to_string();
-    if title.is_empty() {
-        return windows::core::BOOL(1);
-    }
-
-    let mut pid = 0u32;
-    let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == 0 {
-        return windows::core::BOOL(1);
-    }
-
-    let is_cloud = if let Some(v) = ctx.pid_cache.get(&pid) {
-        *v
-    } else {
-        let v = is_cloudmusic_process(pid);
-        ctx.pid_cache.insert(pid, v);
-        v
-    };
-
-    if is_cloud {
-        ctx.titles.push(title);
-    }
-
-    windows::core::BOOL(1)
-}
-
-fn parse_cloudmusic_window_title(raw: &str) -> Option<MediaInfo> {
-    let mut title = raw.trim().to_string();
-    if title.is_empty() {
-        return None;
-    }
-
-    for suffix in [" - 网易云音乐", " - Netease Cloud Music"] {
-        if title.ends_with(suffix) {
-            title = title.trim_end_matches(suffix).trim().to_string();
-        }
-    }
-
-    if let Some((track_title, mut artist)) = split_track_artist(&title) {
-        if artist == "网易云音乐" || artist == "Netease Cloud Music" {
-            artist.clear();
-        }
-        if !track_title.trim().is_empty() {
-            return Some(MediaInfo {
-                title: track_title.trim().to_string(),
-                artist,
-                album_title: String::new(),
-                album_artist: String::new(),
-                duration_ms: 0,
-                genre: String::new(),
-                seekable: false,
-            });
-        }
-    }
-
-    Some(MediaInfo {
-        title,
-        artist: String::new(),
-        album_title: String::new(),
-        album_artist: String::new(),
-        duration_ms: 0,
-        genre: String::new(),
-        seekable: false,
-    })
-}
-
-fn get_cloudmusic_fallback_info() -> Option<(MediaInfo, i64, bool)> {
-    let mut ctx = CloudMusicWindowContext::default();
-
-    unsafe {
-        let _ = EnumWindows(
-            Some(enum_cloudmusic_windows),
-            LPARAM((&mut ctx as *mut CloudMusicWindowContext) as isize),
-        );
-    }
-
-    let title = pick_best_cloudmusic_title(&ctx.titles)?;
-
-    let media = parse_cloudmusic_window_title(&title)?;
-    Some((media, 0, true))
-}
 
 /// 从 SMTC 媒体属性中提取封面图片并编码为 base64
 fn extract_thumbnail(
@@ -480,10 +299,7 @@ fn read_smtc_session_info(
 
 /// 将当前 SMTC 会话的所有可读字段打印到日志，用于排查不同播放器行为差异
 pub(crate) fn dump_smtc_session(app_id: &str) {
-    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
-    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus;
-    use windows::Media::MediaPlaybackType as PlaybackType;
-    use windows::Media::MediaPlaybackAutoRepeatMode;
+    
 
     let Ok(manager) = MediaSessionManager::RequestAsync().ok().and_then(|a| a.get().ok()).ok_or(()) else {
         crate::logger::warn("SMTC-Dump", "RequestAsync failed");
@@ -598,7 +414,7 @@ pub(crate) fn select_best_smtc_session(
         .ok()
         .and_then(|s| s.SourceAppUserModelId().ok())
         .map(|s| s.to_string_lossy().to_ascii_lowercase());
-
+    //println!("current_app_id: {:?}", current_app_id.clone().unwrap_or_default());
     let sessions = session_manager.GetSessions().ok()?;
     let size = sessions.Size().ok()?;
 
@@ -629,6 +445,10 @@ pub(crate) fn select_best_smtc_session(
             .map(|s| s.to_string_lossy())
             .unwrap_or_default();
         let app_id_lc = app_id.to_ascii_lowercase();
+
+        if app_id_lc.trim().is_empty() {
+            continue;
+        }
 
         if whitelist.enabled {
             let allowed = !whitelist.app_ids.is_empty()
@@ -735,52 +555,28 @@ pub fn media_seek(position_ms: i64) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn get_smtc_media_info() -> Option<(MediaInfo, i64, bool, String)> {
-    // 惰性调用 cloud_fallback，避免每次轮询都枚举窗口
-    // cloud 回退默认归属到 "cloudmusic.exe"，让上层能按播放器管理配置
-    let cloud_fallback = || -> Option<(MediaInfo, i64, bool, String)> {
-        get_cloudmusic_fallback_info()
-            .map(|(m, p, play)| (m, p, play, "cloudmusic.exe".to_string()))
-    };
+pub(crate) fn get_smtc_media_info() -> Option<(u8, MediaInfo, i64, bool, String)> {
 
-    if let Some((_, media, position_ms, is_playing, app_id)) = select_best_smtc_session() {
-        let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
+
+    if let Some((session, media, position_ms, is_playing, app_id)) = select_best_smtc_session() {
+        let status = session.GetPlaybackInfo().ok().and_then(|info| info.PlaybackStatus().ok()).map(|s| match s {
+                PlaybackStatus::Playing  => 0,
+                PlaybackStatus::Paused   => 1,
+                PlaybackStatus::Stopped  => 2,
+                PlaybackStatus::Changing => 3,
+                PlaybackStatus::Closed   => 4,
+                PlaybackStatus::Opened   => 5,
+                _ => 6,
+        });
+        //println!("app_id: {} position_ms: {}", app_id, position_ms);
         let is_preferred = is_preferred_music_app(&app_id);
-
-        // SMTC 有元数据且来自首选音乐应用：信任 SMTC 的播放状态
-        if has_meta && is_preferred {
-            return Some((media, position_ms, is_playing, app_id));
-        }
-
-        // SMTC 缺少元数据，但来自首选应用：用网易云窗口标题补充元数据，但保留 SMTC 的播放状态
-        if !has_meta && is_preferred {
-            if let Some((fallback_media, _, _, _)) = cloud_fallback() {
-                return Some((fallback_media, position_ms, is_playing, app_id));
-            }
-        }
-
-        // 非首选应用：仅当白名单启用且该应用通过了白名单筛选时才接受
-        if has_meta {
-            let whitelist = get_smtc_whitelist();
-            if whitelist.enabled {
-                // 白名单启用，能到达此处说明通过了 select_best_smtc_session 的筛选
-                return Some((media, position_ms, is_playing, app_id));
-            }
-            // 白名单未启用，非首选应用不当作音乐
-            if let Some(fb) = cloud_fallback() {
-                return Some(fb);
-            }
-            return None;
-        }
-
-        // 非首选应用且无元数据：回退到网易云窗口标题
-        if let Some(fb) = cloud_fallback() {
-            return Some(fb);
+        if is_preferred {
+            return Some((status?, media, position_ms, is_playing, app_id));
         }
         return None;
     }
 
-    cloud_fallback()
+    None
 }
 
 /// 仅获取封面（歌曲切换时调用，避免每次轮询都读流）
