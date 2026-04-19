@@ -254,7 +254,7 @@ pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
 pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64) {
     // 展开/收起动画进行中，跳过 ResizeObserver 驱动的同步
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
-    let new_h = height.max(60.0).min(600.0);
+    let new_h = height.max(60.0).min(700.0);
     if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;

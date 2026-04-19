@@ -3320,9 +3320,9 @@ function updateAgentCSSSize(size: string) {
 
   }
 
-  capsule.style.setProperty("--agent-w", `${w}px`);
+  document.documentElement.style.setProperty("--agent-w", `${w}px`);
 
-  capsule.style.setProperty("--agent-h", `${h}px`);
+  document.documentElement.style.setProperty("--agent-h", `${h}px`);
 
 }
 

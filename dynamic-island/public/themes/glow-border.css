@@ -92,7 +92,7 @@
 }
 
 #island-glow:has(> #island-capsule.agent-expanded) {
-    width: calc(var(--agent-expanded-w, 420px) + 4px);
-    height: calc(var(--agent-expanded-h, 480px) + 4px);
+    width: calc(var(--agent-w, 520px) + 4px);
+    height: calc(var(--agent-h, 540px) + 4px);
     border-radius: 28px;
 }
