@@ -5,6 +5,8 @@
     --lyric-collapsed-w: 320px;
     --expanded-w: 330px;
     --expanded-h: 74px;
+    --music-expanded-w: 380px;
+    --music-expanded-h: 420px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -550,7 +552,8 @@ body.minimized #collapsed-indicator { display: block; }
    音乐展开面板
    ============================================================ */
 #island-capsule.music-expanded {
-    width: 380px; height: 420px;
+    width: var(--music-expanded-w);
+    height: var(--music-expanded-h);
     border-radius: 24px;
 }
 

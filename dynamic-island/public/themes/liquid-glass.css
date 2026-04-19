@@ -14,6 +14,7 @@
     --glass-edge: rgba(255, 255, 255, 0.5);
     --glass-shadow: rgba(18, 20, 24, 0.45);
     --glass-accent: rgba(80, 200, 255, 0.45);
+    --music-glow-rgb: 80 200 255;
 }
 
 /* ── 胶囊（仅视觉属性，尺寸/定位/过渡由 base.css 提供） ── */
@@ -112,10 +113,10 @@
 .vinyl-center { background: rgba(20, 30, 50, 0.45); }
 
 /* ── 歌词区 ── */
-#lyric-text { color: rgba(10, 20, 40, 0.85); }
-#lyric-meta { color: rgba(10, 20, 40, 0.45); }
+#lyric-text { color: rgba(255, 255, 255, 0.90); }
+#lyric-meta { color: rgba(200, 210, 225, 0.70); }
 .lyric-token,
-.mp-lyric-token { color: rgba(10, 18, 32, 0.36) !important; }
+.mp-lyric-token { color: rgba(200, 210, 225, 0.55) !important; }
 
 /* ── 进度条 ── */
 .progress-bar::before      { background: rgba(10, 18, 32, 0.18); }
@@ -176,6 +177,6 @@
 #music-panel-lyrics              { scrollbar-width: none; -ms-overflow-style: none; }
 #music-panel-lyrics::-webkit-scrollbar { display: none; }
 
-#mp-lyric-text    { color: rgba(10, 18, 32, 0.85); }
-.mp-lyric-line    { color: rgba(10, 18, 32, 0.4); }
-.mp-lyric-current { color: rgba(10, 18, 32, 0.95); }
+#mp-lyric-text    { color: rgba(255, 255, 255, 0.85); }
+.mp-lyric-line    { color: rgba(200, 210, 225, 0.75); }
+.mp-lyric-current { color: rgba(255, 255, 255, 0.95); }
