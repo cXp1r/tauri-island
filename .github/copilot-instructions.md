@@ -29,6 +29,3 @@
 
 ## References
 - Product and architecture details: [dynamic-island/README.md](dynamic-island/README.md)
-- AI Agent requirements: [dynamic-island/docs/requirements-ai-agent-mode.md](dynamic-island/docs/requirements-ai-agent-mode.md)
-- AI Agent implementation summary: [dynamic-island/docs/AI_AGENT_IMPLEMENTATION_SUMMARY.md](dynamic-island/docs/AI_AGENT_IMPLEMENTATION_SUMMARY.md)
-- Development plan: [dynamic-island/docs/DEVELOPMENT_PLAN.md](dynamic-island/docs/DEVELOPMENT_PLAN.md)
