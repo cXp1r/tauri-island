@@ -14,7 +14,6 @@
     --glass-edge: rgba(255, 255, 255, 0.5);
     --glass-shadow: rgba(18, 20, 24, 0.45);
     --glass-accent: rgba(80, 200, 255, 0.45);
-    --music-glow-rgb: 80 200 255;
 }
 
 /* ── 胶囊（仅视觉属性，尺寸/定位/过渡由 base.css 提供） ── */

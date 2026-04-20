@@ -76,107 +76,6 @@ hljs.registerLanguage("md", markdown);
 
 const capsule = document.getElementById("island-capsule") as HTMLDivElement;
 
-const islandGlow = document.getElementById("island-glow") as HTMLDivElement | null;
-
-const setGlowActive = (active: boolean) => {
-  if (islandGlow) islandGlow.classList.toggle("active", active);
-};
-
-const setGlowPaused = (paused: boolean) => {
-  if (islandGlow) islandGlow.classList.toggle("paused", paused);
-};
-
-// 从封面图像中提取主色，设置为 --music-glow-rgb
-let lastGlowCoverUrl = "";
-function applyGlowFromCover(url: string | null | undefined) {
-  if (!islandGlow) return;
-  if (!url) {
-    lastGlowCoverUrl = "";
-    document.documentElement.style.removeProperty("--music-glow-rgb");
-    return;
-  }
-  if (url === lastGlowCoverUrl) return;
-  lastGlowCoverUrl = url;
-  const urlPreview = url.length > 80 ? url.slice(0, 60) + "..." + url.slice(-16) : url;
-  console.log(`[glow] start extract cover=${urlPreview} len=${url.length}`);
-  const t0 = performance.now();
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    if (lastGlowCoverUrl !== url) {
-      console.log(`[glow] skip stale extract (cover changed)`);
-      return;
-    }
-    try {
-      const size = 32;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) { console.warn("[glow] no 2d ctx"); return; }
-      ctx.drawImage(img, 0, 0, size, size);
-      const { data } = ctx.getImageData(0, 0, size, size);
-      let bestR = 255, bestG = 140, bestB = 50, bestScore = -1;
-      let sumR = 0, sumG = 0, sumB = 0, sumCount = 0;
-      let totalPixels = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        totalPixels++;
-        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
-        if (a < 200) continue;
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const l = (max + min) / 2;
-        if (l < 35 || l > 230) continue;
-        const sat = max === 0 ? 0 : (max - min) / max;
-        if (sat < 0.25) continue;
-        sumR += r; sumG += g; sumB += b; sumCount++;
-        const score = sat * (max - min);
-        if (score > bestScore) { bestScore = score; bestR = r; bestG = g; bestB = b; }
-      }
-      let r = bestR, g = bestG, b = bestB;
-      let mode: string;
-      if (bestScore >= 0) {
-        mode = `dominant score=${bestScore.toFixed(1)}`;
-      } else if (sumCount > 0) {
-        r = sumR / sumCount; g = sumG / sumCount; b = sumB / sumCount;
-        mode = `average (no vibrant)`;
-      } else {
-        mode = `fallback (no valid pixels)`;
-      }
-      const rawRgb: [number, number, number] = [Math.round(r), Math.round(g), Math.round(b)];
-      // 提亮：把颜色往亮度 ~0.6 方向拉，保证在深色背景上可见
-      const max = Math.max(r, g, b);
-      let boost = 1;
-      if (max < 180 && max > 0) {
-        boost = 180 / max;
-        r = Math.min(255, r * boost);
-        g = Math.min(255, g * boost);
-        b = Math.min(255, b * boost);
-      }
-      const outRgb: [number, number, number] = [Math.round(r), Math.round(g), Math.round(b)];
-      document.documentElement.style.setProperty(
-        "--music-glow-rgb",
-        `${outRgb[0]} ${outRgb[1]} ${outRgb[2]}`,
-      );
-      const dt = (performance.now() - t0).toFixed(1);
-      console.log(
-        `[glow] done mode=${mode} pixels valid=${sumCount}/${totalPixels} raw=rgb(${rawRgb.join(",")}) boost=${boost.toFixed(2)} out=rgb(${outRgb.join(",")}) in ${dt}ms`,
-      );
-      // 直观一点：往控制台塞一块色块预览
-      console.log(
-        `%c  COLOR  %c rgb(${outRgb.join(",")})`,
-        `background:rgb(${outRgb.join(",")});color:#000;padding:2px 8px;border-radius:3px;font-weight:bold`,
-        "color:inherit",
-      );
-    } catch (e) {
-      console.warn("[glow] extract color failed", e);
-    }
-  };
-  img.onerror = (e) => {
-    console.warn(`[glow] image load failed cover=${urlPreview}`, e);
-  };
-  img.src = url;
-}
 
 const timeWrapper = document.getElementById("time-wrapper") as HTMLDivElement;
 
@@ -228,21 +127,6 @@ const vinylDisc = document.getElementById("vinyl-disc") as HTMLDivElement;
 
 const vinylCover = document.getElementById("vinyl-cover") as HTMLDivElement;
 
-// 监听封面变化，自动刷新流光主题色（唯一入口，各业务只需设置 backgroundImage 即可）
-{
-  const extractUrlFromBg = (bg: string): string | null => {
-    const m = bg.match(/url\((['"]?)([^'")]+)\1\)/);
-    return m ? m[2] : null;
-  };
-  const syncGlowFromVinyl = () => {
-    applyGlowFromCover(extractUrlFromBg(vinylCover.style.backgroundImage || ""));
-  };
-  syncGlowFromVinyl();
-  new MutationObserver(syncGlowFromVinyl).observe(vinylCover, {
-    attributes: true,
-    attributeFilter: ["style"],
-  });
-}
 
 const progressBar = document.getElementById("progress-bar") as HTMLDivElement;
 
@@ -1620,7 +1504,6 @@ listen<string>("agent-window-size-changed", async (event) => {
 listen<boolean>("playback-state", (event) => {
 
   isPlaying = event.payload;
-  setGlowPaused(!isPlaying);
 
   updatePlayIcon();
 
@@ -1926,7 +1809,6 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
     const wasPlaying = isMusicPlaying;
 
     isMusicPlaying = false;
-    setGlowActive(false);
 
     isPlaying = false;
 
@@ -1958,7 +1840,6 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   const wasPlaying = isMusicPlaying;
 
   isMusicPlaying = true;
-  setGlowActive(true);
 
   const { text, title, artist, position_ms, duration_ms } = event.payload;
 
@@ -1974,7 +1855,6 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
   if (event.payload.is_playing !== undefined && event.payload.is_playing !== isPlaying) {
 
     isPlaying = event.payload.is_playing;
-    setGlowPaused(!isPlaying);
 
     updatePlayIcon();
 
@@ -2155,8 +2035,6 @@ listen<{ text: string | null; title: string; artist: string; genre?: string; pos
 listen<{ title: string; artist: string; genre?: string; thumbnail?: string | null; duration_ms?: number; seekable?: boolean }>("media-changed", (event) => {
 
   isMusicPlaying = true;
-  setGlowActive(true);
-  setGlowPaused(!isPlaying);
 
   currentSongTitle = event.payload.title;
 
@@ -2255,8 +2133,6 @@ listen<{ title: string; artist: string; genre?: string; thumbnail?: string | nul
 listen<{ title: string; artist: string }>("media-paused", () => {
 
   isMusicPlaying = true;
-  setGlowActive(true);
-  setGlowPaused(true);
 
 });
 

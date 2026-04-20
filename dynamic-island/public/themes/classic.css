@@ -4,10 +4,6 @@
    切换主题：将 index.html 中的 classic.css 改为其他主题文件。
    ============================================================ */
 
-:root {
-    --music-glow-rgb: 255 140 50;
-}
-
 /* ── 胶囊 ── */
 #island-capsule {
     background: #0a0a0a;
