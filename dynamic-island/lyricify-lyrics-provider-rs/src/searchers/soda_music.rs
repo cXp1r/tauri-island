@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use crate::providers::soda_music::SodaMusicApi;
 use super::{ISearcher, ISearchResult, SearcherType};
-
+use crate::searchers::ITrackMetadata;
 pub struct SodaMusicSearcher {
     api: SodaMusicApi,
 }
@@ -69,6 +69,15 @@ impl ISearcher for SodaMusicSearcher {
     fn min_score(&self) -> i8 { 5 }
     fn get_split_char(&self) -> char {
         ','
+    }
+    async fn make_search_string(&self, track: &dyn ITrackMetadata) -> Option<String> {
+        let combined = track.title().unwrap_or_default().to_string();
+
+        if combined.is_empty() {
+            None
+        } else {
+            Some(combined)
+        }
     }
 }
 
