@@ -5,93 +5,10 @@ pub mod soda_music;
 pub mod kugou;
 pub mod lrc;
 pub mod decrypt;
-
-use regex::{Captures, Regex};
+use memchr::memchr;
 use crate::models::*;
-use std::sync::LazyLock;
-pub static RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(\d+),(\d+)\]([^\[\n]+)").unwrap()
-});
-
-pub static KEY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\(<](\d+),(\d+)(?:,\d+)?[\)>]").unwrap()
-});
-
-
-pub static LINE_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(\d+),(\d+)\](.+)").unwrap()
-});
-
-pub static WORD_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\(<](\d+),(\d+)(?:,[^[\)>]]+)?[\)>]").unwrap()
-    //来者不拒~~
-    //(st,et,x,x,x)
-    //<st,et,x,x,x>
-});
-
-pub static SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?P<t>[^\n\u{E000}\u{E001}\]]+)\u{E000}(?P<s>\d+),(?P<d>\d+)\u{E001}").unwrap()//来者不拒~~
-    //歌词 一号时间戳 二号时间戳
-});
-
-pub static PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\u{E000}(?P<s>\d+),(?P<d>\d+)(?:,[^[\)>]]+)?\u{E001}(?P<t>[^\u{E001}\u{E000}]+)").unwrap()//来者不拒~~
-    //s:starttime d:duration t:text
-});//谨记一个循环里面不判断,代码多点性能好
 pub trait IParsers {
 
-    fn parse_line(&self, caps: Captures<'_>) -> Result<(u32, u32, String), String> {
-        let t1 = caps
-                        .get(1)
-                        .ok_or("Sync Parser: Missing line start_time".to_string())?
-                        .as_str()
-                        .parse::<u32>()
-                        .map_err(|_| "Sync Parser: Can't parse line start_time".to_string())?;
-
-        let t2 = caps.
-                        get(2)
-                        .ok_or("Sync Parser: Missing line duration".to_string())?
-                        .as_str()
-                        .parse::<u32>()
-                        .map_err(|_| "Sync Parser: Can't parse line duration".to_string())?;
-        let text = caps
-                            .get(3)
-                            .ok_or("Sync Parser: Missing line lyrics")?
-                            .as_str()
-                            .to_string();
-        Ok((t1, t2, text))
-    }
-    //依旧神秘变量名
-    fn parse_syllables(&self, caps: Captures<'_>) -> Result<(u32, u32, String), String> {
-        let t1 = caps
-                        .name("s")
-                        .ok_or("Sync Parser: Missing start_time".to_string())?
-                        .as_str()
-                        .parse::<u32>()
-                        .map_err(|_| "Sync Parser: Can't parse start_time".to_string())?;
-
-        let t2 = caps
-                        .name("d")
-                        .ok_or("Sync Parser: Missing duration".to_string())?
-                        .as_str()
-                        .parse::<u32>()
-                        .map_err(|_| "Sync Parser: Can't parse duration".to_string())?;
-        let text = caps
-                            .name("t")
-                            .ok_or("Sync Parser: Missing lyrics")?
-                            .as_str()
-                            .to_string();
-        Ok((t1, t2, text))
-    }
-    
-    fn get_line_re(&self) -> &Regex {
-        &RE
-    }
-
-    fn get_syllables_re(&self) -> &Regex {
-        &SUFFIX_RE
-    }
-    
     fn get_offset_time(&self, t1: u32, t2: u32) -> Result<u16, String> {
         let diff = t2
             .checked_sub(t1)
@@ -100,37 +17,124 @@ pub trait IParsers {
         u16::try_from(diff)
             .map_err(|_| format!("Parsers: offset overflow({})",diff))
     }
-
     fn parse(&self, lyrics: String) -> Result<Vec<LineInfo>, String> {
-        use std::time::Instant;
-        let start = Instant::now();
+        let start = std::time::Instant::now();
+        let result = self.parse_without_re(lyrics);
+        println!("parse took: {:?}", start.elapsed());
+        result
+    }
+    fn parse_syllables(&self, s: u32, content: &str) -> Result<Vec<TextInfo>, String> {
+        let cbytes = content.as_bytes();
+        let clen = cbytes.len();
+        let mut cpos = 0;
+        let mut result: Vec<TextInfo> = Vec::new();
 
-        let lyrics= KEY.replace_all(&lyrics, "\u{E000}$1,$2\u{E001}");
-        
-        let mut lineinfo: Vec<LineInfo> = Vec::new();
-        for caps in self.get_line_re().captures_iter(&lyrics) {
-            let (s, d, text) = self.parse_line(caps)?;
-            let mut textinfo: Vec<TextInfo> = Vec::new();
-            for caps2 in self.get_syllables_re().captures_iter(&text) {
-                let (s1, d1, text1) = self.parse_syllables(caps2)?;
-                textinfo.push(TextInfo {
-                    start_time: self.get_offset_time(s,s1)?,
-                    duration: d1 as u16,
-                    text: text1,
-                });
+        while cpos < clen {
+            // 找 '<'
+            let Some(la) = memchr(b'<', &cbytes[cpos..]) else { break };
+
+            let after_la = cpos + la + 1;
+            if after_la >= clen || !cbytes[after_la].is_ascii_digit() {
+                cpos += la + 1;
+                continue;
             }
+            cpos += la + 1;
+
+            // s1
+            let Some(c1) = memchr(b',', &cbytes[cpos..]) else { break };
+            let s1 = content[cpos..cpos + c1]
+                .parse::<u32>()
+                .map_err(|e| format!("s1: {:?} raw={:?}", e, &content[cpos..cpos + c1]))?;
+            cpos += c1 + 1;
+
+            // d1，兼容 <s,d> 和 <s,d,x>
+            let next_comma = memchr(b',', &cbytes[cpos..]).map(|x| cpos + x);
+            let next_angle = memchr(b'>', &cbytes[cpos..]).map(|x| cpos + x);
+            let d1_end = match (next_comma, next_angle) {
+                (Some(nc), Some(na)) => nc.min(na),
+                (Some(nc), None)     => nc,
+                (None, Some(na))     => na,
+                (None, None)         => break,
+            };
+            let d1 = content[cpos..d1_end]
+                .parse::<u16>()
+                .map_err(|e| format!("d1: {:?} raw={:?}", e, &content[cpos..d1_end]))?;
+
+            // 跳到 '>' 后面
+            let Some(ra) = memchr(b'>', &cbytes[cpos..]) else { break };
+            cpos += ra + 1;
+
+            // 文字在 '>' 到下一个 '<' 之间
+            let text_end = memchr(b'<', &cbytes[cpos..])
+                .map(|x| cpos + x)
+                .unwrap_or(clen);
+            let text_raw = content[cpos..text_end].to_string();
+            cpos = text_end;
+
+            result.push(TextInfo {
+                start_time: self.get_offset_time(s, s1)?,
+                duration: d1,
+                text: text_raw,
+            });
+        }
+
+        Ok(result)
+    }
+    
+
+    
+    fn parse_without_re(&self, lyrics: String) -> Result<Vec<LineInfo>, String> {
+        let mut lineinfo: Vec<LineInfo> = Vec::new();
+        let src = lyrics.as_bytes();
+        let len = src.len();
+        let mut pos = 0;
+
+        while pos < len {
+            // 1. 找 '['
+            let Some(lb) = memchr(b'[', &src[pos..]) else { break };
+            pos += lb + 1;
+
+            // 2. tag1 必须是纯数字，否则跳过整个 [...]
+            let Some(cm) = memchr(b',', &src[pos..]) else { break };
+            let tag1_str = &lyrics[pos..pos + cm];
+            if !tag1_str.bytes().all(|b| b.is_ascii_digit()) {
+                if let Some(rb) = memchr(b']', &src[pos..]) {
+                    pos += rb + 1;
+                } else {
+                    break;
+                }
+                continue;
+            }
+            let s = tag1_str.parse::<u32>().map_err(|e| e.to_string())?;
+            pos += cm + 1;
+
+            // 3. tag2 → d
+            let Some(rb) = memchr(b']', &src[pos..]) else { break };
+            let d = lyrics[pos..pos + rb]
+                .parse::<u32>()
+                .map_err(|e| format!("d parse error: {:?} raw={:?}", e, &lyrics[pos..pos + rb]))?;
+            pos += rb + 1;
+
+            // 4. content 到下一个 '[' 或末尾
+            let content_end = memchr(b'[', &src[pos..])
+                .map(|x| pos + x)
+                .unwrap_or(len);
+            let content = lyrics[pos..content_end].trim();
+            pos = content_end;
+
+
+            
+            
             lineinfo.push(LineInfo {
                 start_time: s,
                 duration: d as u16,
                 text: String::new(),
-                syllables: textinfo,
+                syllables: self.parse_syllables(s, content)?,
             });
         }
 
-        let elapsed = start.elapsed();
-        println!("解析歌词耗时耗时: {:?}", elapsed);
-
-
         Ok(lineinfo)
     }
+
 }
+

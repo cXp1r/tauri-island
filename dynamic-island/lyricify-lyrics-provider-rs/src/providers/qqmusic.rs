@@ -1,13 +1,11 @@
 use super::base_api::BaseApi;
 use serde::Deserialize;
-use std::{collections::HashMap, sync::LazyLock};
-use regex::Regex;
+use std::{collections::HashMap};
+use memchr::memchr;
 pub struct QQMusicApi {
     api: BaseApi,
 }
-static CDATA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"CDATA\[([0-9A-F]+)\]").unwrap()
-});
+
 
 
 
@@ -94,10 +92,23 @@ impl QQMusicApi {
             &params,
         ).await?;
         
-        
-        // XML parsing and QRC decryption would go here
-        // This is a simplified version - full implementation needs XML parsing + QRC decrypter
-        Ok(CDATA.captures(&resp).ok_or("QQMusicApi: No match qrc")?.get(1).ok_or("QQMusicApi: Nothing here")?.as_str().to_string())
+        let len = resp.len();
+        let content = resp.as_bytes();
+        let mut cpos = 0;
+
+        while cpos < len {
+            let Some(cc) = memchr(b'[', &content[cpos..]) else { break };
+            cpos += cc + 1; // 跳过 '['
+
+            // 判断是不是 CDATA[
+            if cpos + 6 <= len && &resp[cpos..cpos + 6] == "CDATA[" {
+                cpos += 6; // 跳过 "CDATA["
+                // 找结束的 ]]>
+                let Some(end) = memchr(b']', &content[cpos..]) else { break };
+                return Ok(resp[cpos..cpos + end].to_string());
+            }
+        }
+        Err("QQMuiscApi: not found qrc".into())
     }
 }
 

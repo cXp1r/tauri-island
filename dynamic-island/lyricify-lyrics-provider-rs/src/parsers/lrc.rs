@@ -1,55 +1,66 @@
 use crate::models::LineInfo;
-use regex::{Captures, Regex};
-use std::sync::LazyLock;
-
-pub static LRC_LINE_TIMESTAMP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(\d+):(\d+)[\.:](\d+)\]([^\[\n]+)").unwrap()
-});
+use memchr::memchr;
 
 pub trait LrcParser {
-    fn calc_timestamp(&self, t1: u32, t2: u32, t3: u32) -> u32 {
-        t1 * 60000 + t2 * 1000 + t3 * 10
-    }
-    fn parse_line(&self, caps: Captures<'_>) -> Result<(u32, u32, String), String> {
-        let t1 = caps
-            .get(1)
-            .ok_or("Sync Parser: Missing start_time".to_string())?
-            .as_str()
-            .parse::<u32>()
-            .map_err(|_| "Sync Parser: Can't parse start_time".to_string())?;
+    fn parse_lrc_time(&self, tag: &str) -> Result<u32, String> {
+        let tbytes = tag.as_bytes();
+        // 找 ':'
+        let Some(col) = memchr(b':', tbytes) else {
+            return Err(format!("no ':' in time tag: {:?}", tag));
+        };
+        // 找 '.'
+        let Some(dot) = memchr(b'.', tbytes) else {
+            return Err(format!("no '.' in time tag: {:?}", tag));
+        };
 
-        let t2 = caps
-            .get(2)
-            .ok_or("Sync Parser: Missing duration".to_string())?
-            .as_str()
-            .parse::<u32>()
-            .map_err(|_| "Sync Parser: Can't parse duration".to_string())?;
+        let minutes = tag[..col].parse::<u32>()
+            .map_err(|e| format!("minutes: {:?} raw={:?}", e, &tag[..col]))?;
+        let seconds = tag[col + 1..dot].parse::<u32>()
+            .map_err(|e| format!("seconds: {:?} raw={:?}", e, &tag[col+1..dot]))?;
+        let centis = tag[dot + 1..].parse::<u32>()
+            .map_err(|e| format!("centis: {:?} raw={:?}", e, &tag[dot+1..]))?;
 
-        let t3 = caps
-            .get(3)
-            .ok_or("Sync Parser: Missing lyrics")?
-            .as_str()
-            .parse::<u32>()
-            .map_err(|_| "Sync Parser: Can't parse duration".to_string())?;
-
-        let text = caps
-            .get(4)
-            .ok_or("Sync Parser: Missing lyrics")?
-            .as_str()
-            .to_string();
-
-        Ok((self.calc_timestamp(t1, t2, t3), 0, text))
+        Ok(minutes * 60_000 + seconds * 1_000 + centis * 10)
     }
 
     fn parse(&self, lyrics: String) -> Result<Vec<LineInfo>, String> {
         let mut lineinfo: Vec<LineInfo> = Vec::new();
+        let len = lyrics.len();
+        let cbytes = lyrics.as_bytes();
+        let mut c = 0;
 
-        for caps in LRC_LINE_TIMESTAMP.captures_iter(&lyrics) {
-            let (s, d, text) = self.parse_line(caps)?;
+        while c < len {
+            let Some(lb) = memchr(b'[', &cbytes[c..]) else { break };
+            c += lb + 1;
+
+            if c >= len || !cbytes[c].is_ascii_digit() {
+                // 跳过整个 [...] 块
+                if let Some(rb) = memchr(b']', &cbytes[c..]) {
+                    c += rb + 1;
+                } else {
+                    break;
+                }
+                continue;
+            }
+
+            // 解析 mm:ss.xx 格式时间戳 → 毫秒
+            let Some(rb) = memchr(b']', &cbytes[c..]) else { break };
+            let tag = &lyrics[c..c + rb];
+            let s = self.parse_lrc_time(tag)?;
+            c += rb + 1;
+
+            // content 到下一个 '[' 或末尾，trim 换行
+            let content_end = memchr(b'[', &cbytes[c..])
+                .map(|x| c + x)
+                .unwrap_or(len);
+            let text = lyrics[c..content_end]
+                .trim_matches(|ch| ch == '\r' || ch == '\n')
+                .to_string();
+            c = content_end;
 
             lineinfo.push(LineInfo {
                 start_time: s,
-                duration: d as u16,
+                duration: 0, // LRC 格式没有 duration，后面可以用下一行的 start_time 补
                 text,
                 syllables: vec![],
             });
@@ -57,4 +68,6 @@ pub trait LrcParser {
 
         Ok(lineinfo)
     }
+
+    
 }
