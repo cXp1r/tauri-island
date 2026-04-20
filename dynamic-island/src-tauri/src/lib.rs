@@ -10,7 +10,6 @@ pub mod ai;
 mod window;
 mod updater;
 
-use std::collections::HashSet;
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -60,12 +59,6 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
 pub(crate) const SNAP_FRAME_MS: u64 = 10;
 const PRIVACY_POLL_MS: u64 = 1200;
 
-fn check_internet() -> bool {
-    use windows::Win32::Networking::WinInet::{InternetGetConnectedState, INTERNET_CONNECTION};
-    let mut flags = INTERNET_CONNECTION::default();
-    unsafe { InternetGetConnectedState(&mut flags, None).is_ok() }
-}
-
 /// PowerShell 带超时执行，超时自动 kill 进程
 fn run_powershell_with_timeout(args: &[&str], timeout: Duration) -> Option<String> {
     use std::io::Read;
@@ -104,20 +97,6 @@ fn run_powershell_with_timeout(args: &[&str], timeout: Duration) -> Option<Strin
             }
         }
     }
-}
-
-fn get_bt_devices() -> HashSet<String> {
-    let mut devices = HashSet::new();
-    let ps = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Object -ExpandProperty FriendlyName"#;
-    if let Some(stdout) = run_powershell_with_timeout(&["-NoProfile", "-Command", ps], Duration::from_secs(5)) {
-        for line in stdout.lines() {
-            let name = line.trim().to_string();
-            if !name.is_empty() {
-                devices.insert(name);
-            }
-        }
-    }
-    devices
 }
 
 /// 位置信息
@@ -695,57 +674,6 @@ pub fn run() {
                     }
                 }).ok();
             }
-
-            // --- 硬件监控线程 ---
-            let win_hw = window.clone();
-            let noti_hw = is_notifying.clone();
-            let exp_hw = is_expanded.clone();
-
-            thread::spawn(move || {
-                thread::sleep(Duration::from_secs(2));
-                let mut was_online = check_internet();
-                let mut last_bt = get_bt_devices();
-                let mut offline_streak: u32 = 0;
-                const OFFLINE_CONFIRM: u32 = 3;
-                let mut bt_counter: u32 = 0;
-                const BT_CHECK_EVERY: u32 = 4; // 每 4 轮（~32 秒）检测一次蓝牙
-
-                loop {
-                    thread::sleep(Duration::from_secs(8));
-
-                    // 网络状态检测（每轮）
-                    let online = check_internet();
-                    if !online {
-                        offline_streak = offline_streak.saturating_add(1);
-                        if was_online && offline_streak >= OFFLINE_CONFIRM {
-                            was_online = false;
-                            trigger_notification(&win_hw, &noti_hw, &exp_hw, "网络已断开");
-                        }
-                    } else {
-                        offline_streak = 0;
-                        if !was_online {
-                            was_online = true;
-                            trigger_notification(&win_hw, &noti_hw, &exp_hw, "网络已连接");
-                        }
-                    }
-
-                    // 蓝牙检测（每 BT_CHECK_EVERY 轮）
-                    bt_counter += 1;
-                    if bt_counter >= BT_CHECK_EVERY {
-                        bt_counter = 0;
-                        let bt = get_bt_devices();
-                        let new_devs: Vec<_> = bt.difference(&last_bt).cloned().collect();
-                        if let Some(name) = new_devs.first() {
-                            trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已连接: {}", name));
-                        }
-                        let lost_devs: Vec<_> = last_bt.difference(&bt).cloned().collect();
-                        if let Some(name) = lost_devs.first() {
-                            trigger_notification(&win_hw, &noti_hw, &exp_hw, &format!("蓝牙已断开: {}", name));
-                        }
-                        last_bt = bt;
-                    }
-                }
-            });
 
             // --- 麦克风/摄像头使用状态监控 ---
             let win_privacy = window.clone();
