@@ -1,27 +1,30 @@
-//! SMTC 歌词获取管线
-//!
-//! 调用方提供歌曲名、歌手名、专辑名等信息，
-//! 库内部自动检测运行中的音乐播放器进程，按首字母排序取第一个，
-//! 用该播放器自家的源搜索并获取歌词。
-
-use crate::models::{TrackMetadata, LyricsData};
-use crate::searchers::{ISearcher,
+use crate::models::{
+    TrackMetadata,
+    LyricsData
+};
+use crate::searchers::{
+    ISearcher,
     netease::NeteaseSearchResult,
     qqmusic::QQMusicSearchResult,
     kugou::KugouSearchResult,
     soda_music::SodaMusicSearchResult
 };
-use crate::parsers::{IParsers,
-    netease::{NeteaseParser, NeteaseLrcParser},
-    qqmusic::{QQMusicParser, QQMusicLrcParser},
+use crate::parsers::{
+    IParsers,
     lrc::LrcParser,
+    netease::{
+        NeteaseParser,
+        NeteaseLrcParser
+    },
+    qqmusic::{
+        QQMusicParser,
+        QQMusicLrcParser
+    },
     kugou::KugouParser,
     soda_music::SodaParser,
 };
 
-// ===== 播放器定义 =====
 
-/// 音乐播放器类型 (枚举值已按首字母排序: K, N, Q, S)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MusicPlayer {
     /// 酷狗音乐
@@ -66,96 +69,20 @@ impl MusicPlayer {
     }
 }
 
-// ===== 进程检测 (Windows) =====
-
-/// 检测指定进程名是否正在运行
-#[cfg(target_os = "windows")]
-fn is_process_running(process_name: &str) -> bool {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let output = std::process::Command::new("tasklist")
-        .args(["/FI", &format!("IMAGENAME eq {}", process_name), "/NH"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.contains(process_name)
-        }
-        Err(_) => false,
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn is_process_running(_process_name: &str) -> bool {
-    false
-}
-
-/// 获取当前正在运行的音乐播放器 (按首字母排序)
-pub fn get_running_players() -> Vec<MusicPlayer> {
-    MusicPlayer::all_sorted()
-        .iter()
-        .filter(|p| is_process_running(p.process_name()))
-        .copied()
-        .collect()
-}
-
-/// 获取排序后的第一个正在运行的音乐播放器
-pub fn get_first_running_player() -> Option<MusicPlayer> {
-    MusicPlayer::all_sorted()
-        .iter()
-        .find(|p| is_process_running(p.process_name()))
-        .copied()
-}
 
 // ===== 公开接口 =====
 
 /// 获取歌词
-///
-/// 调用方提供歌曲信息，库自动检测正在运行的播放器进程，
-/// 按首字母排序取第一个，用该播放器自家的源搜索并返回歌词。
-///
 /// # 参数
 /// - `title` — 歌曲名 (必填)
 /// - `artist` — 歌手名 (可选，推荐提供)
 /// - `album` — 专辑名 (可选)
+/// - `album_artist` — 专辑艺术家 (可选)
 /// - `duration_ms` — 时长毫秒 (可选)
 ///
 /// # 返回
 /// - `Ok((MusicPlayer, LyricsData))` — 使用的播放器源 + 歌词数据
 /// - `Err(...)` — 未检测到播放器，或获取歌词失败
-//如果你发现了kugou的smtc和别的smtc有点不同,你不需要调整smtc信息再传入
-//因为我已经想到了....
-pub async fn get_lyrics(
-    title: &str,
-    artist: Option<&str>,
-    album: Option<&str>,
-    album_artist: Option<&str>,
-    duration_ms: u32,
-) -> Result<(MusicPlayer, LyricsData), Box<dyn std::error::Error + Send + Sync>> {
-    let player = get_first_running_player()
-        .ok_or("未检测到支持的音乐播放器")?;
-
-    let metadata = TrackMetadata {
-        title: Some(title.to_string()),
-        artist: artist.map(|s| s.to_string()),
-        album: album.map(|s| s.to_string()),
-        album_artist: album_artist.map(|s| s.to_string()),
-        duration_ms: Some(duration_ms),
-        ..Default::default()
-    };
-
-    let lyrics = fetch_lyrics_from_player(&player, &metadata).await?;
-    Ok((player, lyrics))
-}
-
-/// 指定播放器源获取歌词
-///
-/// 当调用方已知要使用哪个播放器源时，可直接指定，跳过进程检测。
-///
-/// # 返回
-/// - `Ok(LyricsData)` — 歌词数据
-/// - `Err(...)` — 获取歌词失败
 pub async fn get_lyrics_with_player(
     player: &MusicPlayer,
     title: &str,
@@ -176,8 +103,37 @@ pub async fn get_lyrics_with_player(
     fetch_lyrics_from_player(player, &metadata).await
 }
 
-// ===== 内部: 按播放器分发 =====
+pub async fn get_lyrics_with_appid(
+    app_id: &str,
+    title: &str,
+    artist: Option<&str>,
+    album: Option<&str>,
+    album_artist: Option<&str>,
+    duration_ms: u32,
+) -> Result<LyricsData, Box<dyn std::error::Error + Send + Sync>> {
+    let player = match app_id {
+        "cloudmusic.exe" => MusicPlayer::Netease,
+        "qqmusic.exe" => MusicPlayer::QQMusic,
+        "kugou" => MusicPlayer::Kugou,
+        "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}" => MusicPlayer::SodaMusic,
+        _ => {
+            return Err(format!("Unsupported appid: {}", app_id).into());
+        }
+    };
+    let metadata = TrackMetadata {
+        title: Some(title.to_string()),
+        artist: artist.map(|s| s.to_string()),
+        album: album.map(|s| s.to_string()),
+        album_artist: album_artist.map(|s| s.to_string()),
+        duration_ms: Some(duration_ms),
+        ..Default::default()
+    };
 
+    fetch_lyrics_from_player(&player, &metadata).await
+}
+
+
+//分发
 async fn fetch_lyrics_from_player(
     player: &MusicPlayer,
     track: &TrackMetadata,
@@ -220,7 +176,6 @@ async fn fetch_netease_lyrics(
                 ..Default::default()
             }),
     };
-    // 优先 YRC (逐字), 其次 LRC (逐行)
     if let Some(yrc) = lyric_result.yrc.and_then(|y| y.lyric) {
         if !yrc.is_empty() {
             println!("get yrc");
@@ -241,23 +196,20 @@ async fn fetch_netease_lyrics(
     Err("网易云: 未获取到歌词内容".into())
 }
 
+
 async fn fetch_qqmusic_lyrics(
     track: &TrackMetadata,
 ) -> Result<LyricsData, Box<dyn std::error::Error + Send + Sync>> {
     use crate::searchers::qqmusic::QQMusicSearcher;
     use crate::providers::qqmusic::QQMusicApi;
-
     let searcher = QQMusicSearcher::new();
     let result = searcher.search_for_result(track).await?
         .ok_or("QQ音乐: 未找到匹配的歌曲")?;
     let best = result.as_any()
         .downcast_ref::<QQMusicSearchResult>()
         .ok_or("QQ音乐: 搜索结果类型不匹配")?;
-    
-
     let api = QQMusicApi::new();
     let id = best.id;
-
     let mut data = LyricsData {
         file: None,
         lines: vec![],
@@ -270,17 +222,14 @@ async fn fetch_qqmusic_lyrics(
                 ..Default::default()
             }),
     };
-
     if let Ok(qrc) = api.get_lyrics_qrc(&id.to_string()).await {
         let parser = QQMusicParser {};
         data.lines = parser.decrypt_and_parse(qrc)?;
         return Ok(data);
     }
-
     let mid = best.mid.clone();
     let lyric_result = api.get_lyric(&mid).await?
         .ok_or("QQ音乐: 获取歌词失败")?;
-    
     if let Some(lrc) = lyric_result.lyric {
         if !lrc.is_empty() {
             let parser = QQMusicLrcParser {};
@@ -288,9 +237,9 @@ async fn fetch_qqmusic_lyrics(
             return Ok(data);
         }
     }
-
     Err("QQ音乐: 未获取到歌词内容".into())
 }
+
 
 async fn fetch_kugou_lyrics(
     track: &TrackMetadata,
@@ -401,6 +350,7 @@ async fn fetch_soda_music_lyrics(
 }
 
 
+//bro 懂我的歌品
 #[cfg(test)]
 mod tests {
 
@@ -416,6 +366,7 @@ mod tests {
             ..Default::default()
         }
     }
+
     #[allow(unused_variables)]
     fn etrack(s: &str) -> TrackMetadata {
         TrackMetadata {
@@ -427,6 +378,7 @@ mod tests {
             ..Default::default()
         }
     }
+
     #[allow(unused)]
     fn ttrack(s: &str) -> TrackMetadata {
         TrackMetadata {
@@ -445,8 +397,6 @@ mod tests {
         #[allow(unused_variables)]
         let result = fetch_netease_lyrics(&track).await;
         println!("{:?}",result)
-        
-        
     }
 
     #[tokio::test]

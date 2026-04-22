@@ -2,15 +2,16 @@
 ## 声明
 
 仓库自用,并提供给自己参与开发的仓库用
-parsers实现µs级别解析(<1ms无需预热)
+µs级别解析
 
-Api接口抓取歌词源于[Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
+smtc信息请在外部处理好,对照接口传入
+最终返回只有歌词...
 
 ## 功能
 
-- **Providers** — 网易云、QQ音乐、酷狗、汽水音乐的 API 客户端
-- **Searchers** — 弱智评分机制 + 神人匹配字符串，返回最佳匹配
-- **SMTC 歌词管线** — 传入歌曲信息，自动检测运行中的播放器进程，用自家源获取歌词
+- **Providers** — 网易云、QQ音乐、酷狗、汽水音乐的 API 客户端,源于[Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
+- **Searchers** — 弱智评分机制 + 神人匹配字符串,返回最佳匹配
+- **Parsers** — µs级别解析网易云,汽水,QQ音乐,酷狗音乐歌词,可解析**逐字高亮歌词**
 
 ## 安装
 
@@ -25,40 +26,16 @@ tokio = { version = "1", features = ["full"] }
 
 ## 快速上手
 
-### SMTC 一站式获取歌词
+照着你的smtc获取到的传就是了,酷狗提供album_artist而不是album
 
-```rust
-use lyricify_lyrics_provider::smtc_lyrics;
-
-#[tokio::main]
-async fn main() {
-    match smtc_lyrics::get_lyrics(
-        "晴天",              // 歌曲名（必填）
-        Some("周杰伦"),      // 歌手名（可选）
-        Some("叶惠美"),      // 专辑名（可选）
-        None,                // 时长毫秒（可选）
-    ).await {
-        Ok((player, lyrics)) => {
-            println!("通过 {} 获取到 {} 行歌词",
-                player.display_name(), lyrics.lines.len());
-        }
-        Err(e) => eprintln!("获取失败: {}", e),
-    }
-}
-```
-
-**内部流程**：检测进程 → 按首字母排序 (K→N→Q→S) → 取第一个 → 用自家源搜索+获取歌词 → 返回 `LyricsData`
-
-### 指定播放器源
-
-```rust
-use lyricify_lyrics_provider::smtc_lyrics::{self, MusicPlayer};
-
-let lyrics = smtc_lyrics::get_lyrics_with_player(
-    &MusicPlayer::Netease,
-    "晴天", Some("周杰伦"), None, None,
-).await?;
-```
+指定参数
+get_lyrics(
+    title: &str,
+    artist: Option<&str>,
+    album: Option<&str>,
+    album_artist: Option<&str>,
+    duration_ms: u32,
+)
 
 
 ### 访问解析/模型/工具模块
