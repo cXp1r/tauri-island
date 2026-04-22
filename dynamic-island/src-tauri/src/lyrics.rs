@@ -1,5 +1,5 @@
 use lyricify_lyrics_provider::models::LyricsData;
-use lyricify_lyrics_provider::smtc_lyrics::MusicPlayer;
+use lyricify_lyrics_provider::smtc_lyrics;
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct LyricToken {
     pub text: String,
@@ -29,7 +29,7 @@ fn fetch_lyrics_by_rust_api(
     gen_ref: &std::sync::Arc<std::sync::atomic::AtomicU64>,
     gen: u64,
 ) -> Option<LyricsData> {
-    use lyricify_lyrics_provider::smtc_lyrics;
+   
 
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -57,14 +57,7 @@ fn fetch_lyrics_by_rust_api(
             "kugou" => smtc_lyrics::MusicPlayer::Kugou,
             "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}" => smtc_lyrics::MusicPlayer::SodaMusic,
             _ => {
-                let players: Vec<MusicPlayer> = smtc_lyrics::get_running_players();
-                crate::logger::info("Lyrics", &format!(
-                    "rust-api: running players=[{}]", players.iter().map(|p: &MusicPlayer| p.display_name()).collect::<Vec<_>>().join(", ")
-                ));
-                match players.get(1) {
-                    Some(player) => player.clone(),
-                    None => return None,
-                }
+                smtc_lyrics::MusicPlayer::SodaMusic
             }
         };
         
