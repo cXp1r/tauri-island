@@ -19,6 +19,7 @@ type SettingsResponse = {
   weather_lat: number;
   weather_lon: number;
   auto_start: boolean;
+  log_level: string;
 };
 
 type AISettingsResponse = {
@@ -60,6 +61,7 @@ const indicatorColorInput = document.getElementById("indicator-color") as HTMLIn
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const autoStartToggle = document.getElementById("auto-start-toggle") as HTMLInputElement;
+const logLevelSelect = document.getElementById("log-level-select") as HTMLSelectElement | null;
 
 const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInputElement;
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
@@ -93,6 +95,11 @@ async function loadSettings() {
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   autoStartToggle.checked = settings.auto_start || false;
+
+  // 加载日志等级
+  if (logLevelSelect) {
+    logLevelSelect.value = settings.log_level || "info";
+  }
 
   // 加载 AI 设置
   try {
@@ -192,6 +199,7 @@ saveBtn.addEventListener("click", async () => {
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,
+      logLevel: logLevelSelect ? logLevelSelect.value : undefined,
     });
 
     // 保存 AI 设置

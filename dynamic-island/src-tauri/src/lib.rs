@@ -9,6 +9,7 @@ pub mod settings;
 pub mod ai;
 mod window;
 mod updater;
+mod ceverything;
 
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
@@ -17,6 +18,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::image::Image;
@@ -25,18 +27,19 @@ use windows::Win32::Foundation::HWND;
 use ai::ChatMessage;
 use link_handler::LinkHandler;
 
-pub(crate) const WIN_W: f64 = 340.0;
+pub(crate) const WIN_W: f64 = 420.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
 pub(crate) const TOP_MARGIN: f64 = 0.0;
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0;
-pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;
-pub(crate) const CAPSULE_LYRIC_W: f64 = 320.0;
-pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;
-pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;
-pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;
+// ── 胶囊尺寸（与 base.css :root 变量对应） ──
+pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0; // CSS --collapsed-w
+pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;  // CSS --collapsed-h
+pub(crate) const CAPSULE_LYRIC_W: f64 = 340.0;     // CSS --lyric-collapsed-w
+pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;  // CSS --expanded-w
+pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
+pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
 
-pub(crate) const WIN_H_DEFAULT: f64 = 84.0;
+pub(crate) const WIN_H_DEFAULT: f64 = 84.0;        // CAPSULE_EXPANDED_H + padding
 
 // 收起态（绿条）尺寸
 pub(crate) const MINIMIZED_W: f64 = 70.0;
@@ -313,7 +316,7 @@ pub fn run() {
             window::start_drag, window::end_drag, window::drag_move,
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
-            window::set_agent_expanded, window::sync_window_height, window::set_minimized, window::show_context_menu,
+            window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
@@ -324,6 +327,7 @@ pub fn run() {
             ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
+            ceverything::search_query, ceverything::search_execute,
             get_location, get_weather, refresh_weather, save_weather_city, settings::search_city,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
@@ -336,7 +340,8 @@ pub fn run() {
             settings::get_preview_updates, settings::set_preview_updates,
             settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
-            logger::get_log_path, logger::open_log_dir
+            logger::get_log_path, logger::open_log_dir,
+            logger::get_log_level, logger::set_log_level
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -360,6 +365,7 @@ pub fn run() {
 
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
+            logger::set_level(&settings.log_level);
             let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
@@ -500,6 +506,25 @@ pub fn run() {
                 });
             }
 
+            // --- Alt+Space 快捷键激活搜索 ---
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+                let win_search = window.clone();
+                let hwnd_search = hwnd.0 as usize;
+                let _ = app.global_shortcut().on_shortcut("Alt+Space", move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let h = HWND(hwnd_search as *mut _);
+                        // 仅当窗口不在前台时才抢焦点，避免覆盖 webview 内部 input focus
+                        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+                        if fg != h {
+                            window::force_foreground(h);
+                            let _ = win_search.set_focus();
+                        }
+                        let _ = win_search.emit("activate-search", ());
+                    }
+                });
+            }
+
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
             let noti_m = is_notifying.clone();
@@ -533,34 +558,36 @@ pub fn run() {
                         let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
-                        let (cw, ch, cur_win_w) = if is_minimized_m.load(Ordering::Relaxed) {
-                            (MINIMIZED_W, MINIMIZED_H, MINIMIZED_W)
-                        } else if music_exp && view == "lyric" {
-                            // 音乐面板展开态：使用实际窗口尺寸
-                            if let Some(r) = window::get_window_rect(hwnd) {
-                                let w = (r.right - r.left) as f64 / scale;
-                                let h = (r.bottom - r.top) as f64 / scale;
-                                (w, h, w)
-                            } else {
-                                (380.0, 360.0, 380.0)
-                            }
-                        } else if agent_exp && view == "agent" {
-                            let size_setting = agent_window_size_m.lock().unwrap().clone();
-                            let (aw, ah) = window::get_agent_window_size(&size_setting);
-                            (aw, ah, aw)
-                        } else if expanded {
-                            (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, WIN_W)
-                        } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
-                            (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, WIN_W)
-                        } else {
-                            (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H, WIN_W)
-                        };
-
+                        // 直接用实际窗口矩形判断鼠标是否在胶囊上
                         let rect = window::get_window_rect(hwnd);
                         let on_capsule = if let Some(rect) = rect {
+                            let win_w = (rect.right - rect.left) as f64 / scale;
+                            let win_h = (rect.bottom - rect.top) as f64 / scale;
+
+                            let (cw, ch) = if is_minimized_m.load(Ordering::Relaxed) {
+                                (MINIMIZED_W, MINIMIZED_H)
+                            } else if music_exp && view == "lyric" {
+                                // 音乐大面板：占满窗口
+                                (win_w, win_h)
+                            } else if agent_exp && view == "agent" {
+                                let size_setting = agent_window_size_m.lock().unwrap().clone();
+                                let (aw, ah) = window::get_agent_window_size(&size_setting);
+                                (aw, ah)
+                            } else if expanded {
+                                (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
+                            } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
+                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H)
+                            } else if view == "search" {
+                                // 搜索视图：宽度=窗口宽度，高度=实际窗口高度（结果展开后会变大）
+                                (win_w, win_h)
+                            } else {
+                                // time 等收起态
+                                (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H)
+                            };
+
                             let win_x = rect.left as f64;
                             let win_y = rect.top as f64;
-                            let capsule_x = win_x + (cur_win_w * scale - cw * scale) / 2.0;
+                            let capsule_x = win_x + (win_w * scale - cw * scale) / 2.0;
                             let capsule_y = win_y + CAPSULE_TOP_PAD * scale;
                             let fmx = mx as f64;
                             let fmy = my as f64;
@@ -568,9 +595,11 @@ pub fn run() {
                         } else { false };
 
                         if on_capsule && !was_on_capsule {
+                            logger::debug("HitTest", "mouse ON capsule -> click-through OFF");
                             window::set_click_through(hwnd, false);
                             was_on_capsule = true;
                         } else if !on_capsule && was_on_capsule {
+                            logger::debug("HitTest", "mouse OFF capsule -> click-through ON");
                             window::set_click_through(hwnd, true);
                             was_on_capsule = false;
                         }

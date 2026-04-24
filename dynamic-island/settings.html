@@ -464,6 +464,19 @@
             </div>
             <div class="setting-item">
               <div class="setting-label">
+                <h3>日志等级</h3>
+                <p>等级越低输出越详细，debug 包含所有日志。</p>
+              </div>
+              <div class="setting-control">
+                <select id="log-level-select" class="select">
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warning</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
                 <h3>最后一次日志</h3>
                 <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
               </div>

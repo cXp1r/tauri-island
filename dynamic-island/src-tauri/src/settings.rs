@@ -93,10 +93,16 @@ pub(crate) struct SettingsData {
     pub preview_updates: bool,
     #[serde(default = "default_show_preview_toggle")]
     pub show_preview_toggle: bool,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 }
 
 fn default_show_preview_toggle() -> bool {
     false
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 fn default_shortcut() -> String {
@@ -184,6 +190,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         smtc_app_whitelist: default_smtc_app_whitelist(),
         preview_updates: false,
         show_preview_toggle: false,
+        log_level: default_log_level(),
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -221,6 +228,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         smtc_app_whitelist: state.smtc_app_whitelist.lock().unwrap().clone(),
         preview_updates: state.preview_updates.load(Ordering::Relaxed),
         show_preview_toggle: state.show_preview_toggle.load(Ordering::Relaxed),
+        log_level: crate::logger::get_level(),
     }
 }
 
@@ -266,7 +274,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "weather_lon": weather_lon,
         "auto_start": auto_start,
         "smtc_whitelist_enabled": smtc_whitelist_enabled,
-        "smtc_app_whitelist": smtc_app_whitelist
+        "smtc_app_whitelist": smtc_app_whitelist,
+        "log_level": crate::logger::get_level()
     })
 }
 
@@ -286,7 +295,11 @@ pub fn save_settings(
     auto_start: Option<bool>,
     smtc_whitelist_enabled: Option<bool>,
     smtc_app_whitelist: Option<Vec<String>>,
+    log_level: Option<String>,
 ) {
+    if let Some(ref level) = log_level {
+        crate::logger::set_level(level);
+    }
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();

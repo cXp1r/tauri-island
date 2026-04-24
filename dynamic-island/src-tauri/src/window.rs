@@ -263,6 +263,50 @@ pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, 
 }
 
 #[tauri::command]
+pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, _width: f64, height: f64) {
+    if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
+    // 宽度固定为 WIN_W，只调整高度
+    let new_h = height.max(60.0).min(700.0);
+    let _ = window.set_size(tauri::LogicalSize::new(WIN_W, new_h));
+}
+
+/// 强制窗口成为前台窗口，绕过 Windows 前台锁（AttachThreadInput 技巧）
+pub(crate) fn force_foreground(hwnd: HWND) {
+    use windows::Win32::System::Threading::{GetCurrentThreadId, AttachThreadInput};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, BringWindowToTop,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            let _ = SetForegroundWindow(hwnd);
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetFocus(Some(hwnd));
+            return;
+        }
+        let fg_thread = GetWindowThreadProcessId(fg, None);
+        let cur_thread = GetCurrentThreadId();
+        let target_thread = GetWindowThreadProcessId(hwnd, None);
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, true);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, true);
+        }
+        let _ = SetForegroundWindow(hwnd);
+        let _ = BringWindowToTop(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, false);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, false);
+        }
+    }
+}
+
+#[tauri::command]
 pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
     state.agent_expanded.store(expanded, Ordering::Relaxed);
     let screen_w = state.screen_w;
@@ -494,8 +538,9 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "lyric" | "agent" => view,
+        "time" | "lyric" | "agent" | "search" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
 }
+

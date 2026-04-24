@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { capsule } from "../dom";
-import { skipResizeSync, setLyricMode } from "../state";
+import { setLyricMode } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
 // 根据窗口大小档位更新 CSS 变量
@@ -30,27 +30,8 @@ export function updateAgentCSSSize(size: string) {
 
 export function initResizeObserver() {
 
-  // 监听胶囊尺寸变化，动态调整窗口高度（agent 展开/收起由 set_agent_expanded 处理）
-
-  const capsuleObserver = new ResizeObserver((entries) => {
-
-    if (skipResizeSync) return;
-
-    for (const entry of entries) {
-
-      const h = entry.contentRect.height;
-
-      // 胶囊高度 + padding-top(5px) + 底部余量(5px)
-
-      const windowH = h + 10;
-
-      void invoke("sync_window_height", { height: windowH });
-
-    }
-
-  });
-
-  capsuleObserver.observe(capsule);
+  // 窗口宽度固定为 WIN_W(420)，透明区域自动穿透，不再需要 ResizeObserver 同步宽度
+  // agent/music 展开由各自的 set_agent_expanded / set_music_expanded 命令处理
 
   invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {
 

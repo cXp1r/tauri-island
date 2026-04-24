@@ -20,6 +20,7 @@ import { showContextMenu } from "./minimize-drag";
 export function initCapsuleInteraction() {
 
   capsule.addEventListener("click", (e: MouseEvent) => {
+    console.log("[Capsule] click", e.target, "currentView:", currentView);
 
     const target = e.target as HTMLElement;
 
@@ -242,6 +243,7 @@ export function initCapsuleInteraction() {
 
 
   capsule.addEventListener("dblclick", (e: MouseEvent) => {
+    console.log("[Capsule] dblclick", e.target, "currentView:", currentView);
 
     const target = e.target as HTMLElement;
 
