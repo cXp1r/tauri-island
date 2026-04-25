@@ -336,11 +336,7 @@ export function initSearch() {
   });
 
   // 失去前台焦点时自动复原搜索
-  window.addEventListener("blur", () => {
-    if (currentView === "search") {
-      dismissSearch();
-    }
-  });
+
 
   // Backend shortcut toggle
   listen("activate-search", () => {
