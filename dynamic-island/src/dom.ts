@@ -106,6 +106,9 @@ export const agentConfirmOk = document.getElementById("agent-confirm-ok") as HTM
 export const searchArea = document.getElementById("search-area") as HTMLDivElement;
 export const searchInput = document.getElementById("search-input") as HTMLInputElement;
 export const searchResults = document.getElementById("search-results") as HTMLDivElement;
+export const searchPrevBtn = document.getElementById("search-prev-btn") as HTMLButtonElement;
+export const searchNextBtn = document.getElementById("search-next-btn") as HTMLButtonElement;
+export const searchPageLabel = document.getElementById("search-page-label") as HTMLSpanElement;
 
 
 

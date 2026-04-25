@@ -369,6 +369,7 @@ pub fn run() {
             let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
+            let search_shortcut = Arc::new(Mutex::new(settings.search_shortcut.clone()));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             // 按播放器存储的歌词补偿，启动时规范化键值
@@ -426,6 +427,7 @@ pub fn run() {
                 clipboard_enabled: clipboard_enabled.clone(),
                 pending_url: pending_url.clone(),
                 shortcut_key: shortcut_key.clone(),
+                search_shortcut: search_shortcut.clone(),
                 lyric_mode: lyric_mode.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
                 lyric_offsets_by_player: lyric_offsets_by_player.clone(),
@@ -506,12 +508,13 @@ pub fn run() {
                 });
             }
 
-            // --- Alt+Space 快捷键激活搜索 ---
+            // --- 搜索快捷键（从设置读取键位） ---
             {
                 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
                 let win_search = window.clone();
                 let hwnd_search = hwnd.0 as usize;
-                let _ = app.global_shortcut().on_shortcut("Alt+Space", move |_app, _shortcut, event| {
+                let search_sc = settings.search_shortcut.clone();
+                let _ = app.global_shortcut().on_shortcut(search_sc.as_str(), move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         let h = HWND(hwnd_search as *mut _);
                         // 仅当窗口不在前台时才抢焦点，避免覆盖 webview 内部 input focus
@@ -519,6 +522,20 @@ pub fn run() {
                         if fg != h {
                             window::force_foreground(h);
                             let _ = win_search.set_focus();
+                            // 强制 DWM 重组合窗口，修复 WebView2 透明窗口黑屏问题
+                            unsafe {
+                                use windows::Win32::UI::WindowsAndMessaging::SetWindowPos;
+                                let _ = SetWindowPos(
+                                    h,
+                                    None,
+                                    0, 0, 0, 0,
+                                    windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
+                                );
+                            }
                         }
                         let _ = win_search.emit("activate-search", ());
                     }
@@ -604,7 +621,7 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        if !agent_exp && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                        if !agent_exp && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -1322,6 +1339,7 @@ pub struct IslandState {
     pub clipboard_enabled: Arc<AtomicBool>,
     pub pending_url: Arc<Mutex<Vec<String>>>,
     pub shortcut_key: Arc<Mutex<String>>,
+    pub search_shortcut: Arc<Mutex<String>>,
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
     pub lyric_offset_enabled: Arc<AtomicBool>,
     /// 按 SMTC app_id 存储的歌词补偿（ms），key 已规范化为小写

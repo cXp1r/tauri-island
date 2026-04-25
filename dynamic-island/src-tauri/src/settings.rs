@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use crate::IslandState;
 use crate::link_handler::LinkHandler;
+use windows::Win32::Foundation::HWND;
 
 /// 歌词补偿：按播放器保存时 clamp 的边界与步长（毫秒）
 pub(crate) const LYRIC_OFFSET_MIN_MS: i64 = -3000;
@@ -52,6 +53,8 @@ pub(crate) struct SettingsData {
     pub clipboard_enabled: bool,
     #[serde(default = "default_shortcut")]
     pub shortcut_key: String,
+    #[serde(default = "default_search_shortcut")]
+    pub search_shortcut: String,
     #[serde(default = "default_lyric_mode")]
     pub lyric_mode: String,
     #[serde(default = "default_lyric_offset_enabled")]
@@ -107,6 +110,10 @@ fn default_log_level() -> String {
 
 fn default_shortcut() -> String {
     "Alt+O".to_string()
+}
+
+fn default_search_shortcut() -> String {
+    "Alt+Space".to_string()
 }
 
 fn default_lyric_mode() -> String {
@@ -170,6 +177,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
     let defaults = SettingsData {
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
+        search_shortcut: default_search_shortcut(),
         lyric_mode: default_lyric_mode(),
         lyric_offset_enabled: default_lyric_offset_enabled(),
         lyric_offsets_by_player: HashMap::new(),
@@ -208,6 +216,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     SettingsData {
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
+        search_shortcut: state.search_shortcut.lock().unwrap().clone(),
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
@@ -265,6 +274,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
+        "search_shortcut": state.search_shortcut.lock().unwrap().clone(),
         "lyric_mode": lyric_mode,
         "lyric_offset_enabled": lyric_offset_enabled,
         "indicator_color": indicator_color,
@@ -285,6 +295,7 @@ pub fn save_settings(
     state: tauri::State<'_, IslandState>,
     clipboard_enabled: bool,
     shortcut_key: String,
+    search_shortcut: String,
     lyric_mode: String,
     lyric_offset_enabled: Option<bool>,
     indicator_color: String,
@@ -302,6 +313,7 @@ pub fn save_settings(
     }
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
+    *state.search_shortcut.lock().unwrap() = search_shortcut.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
     if let Some(enabled) = lyric_offset_enabled {
         state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
@@ -362,10 +374,42 @@ pub fn save_settings(
         }
     });
 
+    // 搜索快捷键（从设置读取键位）
+    {
+        let hwnd_val = state.hwnd;
+        let hwnd_search = hwnd_val.0 as usize;
+        let search_sc = search_shortcut.clone();
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = app.global_shortcut().on_shortcut(search_sc.as_str(), move |_app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    let h = HWND(hwnd_search as *mut _);
+                    let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+                    if fg != h {
+                        crate::window::force_foreground(h);
+                        let _ = win.set_focus();
+                        unsafe {
+                            use windows::Win32::UI::WindowsAndMessaging::SetWindowPos;
+                            let _ = SetWindowPos(
+                                h, None, 0, 0, 0, 0,
+                                windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
+                                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE
+                                    | windows::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
+                            );
+                        }
+                    }
+                    let _ = win.emit("activate-search", ());
+                }
+            });
+        }
+    }
+
     // 持久化到文件
     let mut settings_data = build_settings_data(&state);
     settings_data.clipboard_enabled = clipboard_enabled;
     settings_data.shortcut_key = shortcut_key;
+    settings_data.search_shortcut = search_shortcut;
     settings_data.lyric_mode = lyric_mode;
     if let Some(enabled) = lyric_offset_enabled {
         settings_data.lyric_offset_enabled = enabled;

@@ -10,8 +10,10 @@ use std::{
 type EverythingSetSearchW = unsafe extern "system" fn(*const u16);
 type EverythingSetMax = unsafe extern "system" fn(u32);
 type EverythingSetOffset = unsafe extern "system" fn(u32);
+type EverythingSetSort = unsafe extern "system" fn(u32);
 type EverythingQueryW = unsafe extern "system" fn(i32) -> i32;
 type EverythingGetNumResults = unsafe extern "system" fn() -> u32;
+type EverythingGetTotResults = unsafe extern "system" fn() -> u32;
 type EverythingGetLastError = unsafe extern "system" fn() -> u32;
 type EverythingIsFileResult = unsafe extern "system" fn(u32) -> i32;
 type EverythingIsFolderResult = unsafe extern "system" fn(u32) -> i32;
@@ -30,6 +32,12 @@ pub enum EntryType {
 pub struct SearchEntry {
     pub r#type: EntryType,
     pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchPage {
+    pub entries: Vec<SearchEntry>,
+    pub has_next: bool,
 }
 
 fn dll_path() -> Result<PathBuf, String> {
@@ -82,7 +90,7 @@ fn get_result_path(
     }
 }
 
-pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<Vec<SearchEntry>, String> {
+pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<SearchPage, String> {
     let dll_path = dll_path()?;
     let lib = unsafe { Library::new(&dll_path) }
         .map_err(|err| format!("failed to load {}: {err}", dll_path.display()))?;
@@ -90,9 +98,12 @@ pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<Vec<Sea
     let set_search: Symbol<EverythingSetSearchW> = load_symbol(&lib, b"Everything_SetSearchW")?;
     let set_max: Symbol<EverythingSetMax> = load_symbol(&lib, b"Everything_SetMax")?;
     let set_offset: Symbol<EverythingSetOffset> = load_symbol(&lib, b"Everything_SetOffset")?;
+    let set_sort: Symbol<EverythingSetSort> = load_symbol(&lib, b"Everything_SetSort")?;
     let query: Symbol<EverythingQueryW> = load_symbol(&lib, b"Everything_QueryW")?;
     let get_count: Symbol<EverythingGetNumResults> =
         load_symbol(&lib, b"Everything_GetNumResults")?;
+    let get_total_count: Symbol<EverythingGetTotResults> =
+        load_symbol(&lib, b"Everything_GetTotResults")?;
     let get_last_error: Symbol<EverythingGetLastError> =
         load_symbol(&lib, b"Everything_GetLastError")?;
     let is_file: Symbol<EverythingIsFileResult> = load_symbol(&lib, b"Everything_IsFileResult")?;
@@ -111,6 +122,7 @@ pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<Vec<Sea
         set_search(search_text.as_ptr());
         set_max(max);
         set_offset(offset);
+        set_sort(2);
 
         if query(1) == 0 {
             return Err(format!(
@@ -120,6 +132,7 @@ pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<Vec<Sea
         }
 
         let count = get_count();
+        let total_count = get_total_count();
         let mut entries = Vec::with_capacity(count as usize);
 
         for index in 0..count {
@@ -140,7 +153,10 @@ pub fn search_everything(keyword: &str, max: u32, offset: u32) -> Result<Vec<Sea
             });
         }
 
-        Ok(entries)
+        Ok(SearchPage {
+            entries,
+            has_next: offset.saturating_add(count) < total_count,
+        })
     }
 }
 
@@ -156,24 +172,33 @@ pub struct SearchResultItem {
     pub action: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchQueryResponse {
+    pub items: Vec<SearchResultItem>,
+    pub has_next: bool,
+}
+
 /// 搜索文件，返回 count 条（默认 10），offset 翻页（子线程执行，不阻塞主线程）
 #[tauri::command]
-pub async fn search_query(query: String, offset: Option<usize>, count: Option<usize>) -> Result<Vec<SearchResultItem>, String> {
+pub async fn search_query(query: String, offset: Option<usize>, count: Option<usize>) -> Result<SearchQueryResponse, String> {
     let count = count.unwrap_or(10);
     let offset = offset.unwrap_or(0);
 
     if query.trim().is_empty() {
-        return Ok(vec![]);
+        return Ok(SearchQueryResponse {
+            items: vec![],
+            has_next: false,
+        });
     }
 
     println!("[Everything] search_query: query='{}' offset={} count={}", query, offset, count);
 
-    let items = tokio::task::spawn_blocking(move || -> Result<Vec<SearchResultItem>, String> {
-        let entries = search_everything(&query, count as u32, offset as u32)?;
+    let response = tokio::task::spawn_blocking(move || -> Result<SearchQueryResponse, String> {
+        let page = search_everything(&query, count as u32, offset as u32)?;
 
-        println!("[Everything] SDK returned {} entries (max={}, offset={})", entries.len(), count, offset);
+        println!("[Everything] SDK returned {} entries (max={}, offset={}, has_next={})", page.entries.len(), count, offset, page.has_next);
 
-        let items: Vec<SearchResultItem> = entries
+        let items: Vec<SearchResultItem> = page.entries
             .into_iter()
             .map(|entry| {
                 let full_path = entry.path.to_string_lossy().to_string();
@@ -200,13 +225,16 @@ pub async fn search_query(query: String, offset: Option<usize>, count: Option<us
             })
             .collect();
 
-        println!("[Everything] returning {} items (offset={}, count={})", items.len(), offset, count);
-        Ok(items)
+        println!("[Everything] returning {} items (offset={}, count={}, has_next={})", items.len(), offset, count, page.has_next);
+        Ok(SearchQueryResponse {
+            items,
+            has_next: page.has_next,
+        })
     })
     .await
     .map_err(|e| format!("搜索线程异常: {e}"))??;
 
-    Ok(items)
+    Ok(response)
 }
 
 /// 执行搜索结果：用系统默认程序打开文件/文件夹

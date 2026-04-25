@@ -8,6 +8,7 @@ import { initLyricOffset } from "./settings-lyric-offset";
 type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
+  search_shortcut: string;
   lyric_mode: string;
   lyric_ws_enabled: boolean;
   lyric_api_search_enabled: boolean;
@@ -55,6 +56,7 @@ const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
+const searchShortcutInput = document.getElementById("search-shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
@@ -90,6 +92,7 @@ async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
+  searchShortcutInput.value = settings.search_shortcut;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
@@ -180,6 +183,39 @@ shortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
+// 搜索快捷键录制
+searchShortcutInput.addEventListener("click", () => {
+  isRecording = true;
+  searchShortcutInput.value = shortcutHint;
+  searchShortcutInput.classList.add("recording");
+});
+
+searchShortcutInput.addEventListener("blur", () => {
+  if (!isRecording) return;
+  isRecording = false;
+  searchShortcutInput.classList.remove("recording");
+  void loadSettings();
+});
+
+searchShortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!isRecording) return;
+  e.preventDefault();
+
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Super");
+
+  const ignored = ["Control", "Alt", "Shift", "Meta"];
+  if (!ignored.includes(e.key)) {
+    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    searchShortcutInput.value = parts.join("+");
+    searchShortcutInput.classList.remove("recording");
+    isRecording = false;
+  }
+});
+
 // 歌词偏移补偿总开关及按播放器子页的所有交互，集中在 settings-lyric-offset 模块处理
 initLyricOffset();
 
@@ -190,10 +226,16 @@ saveBtn.addEventListener("click", async () => {
     return;
   }
 
+  const searchShortcut = searchShortcutInput.value.trim();
+  if (!searchShortcut || searchShortcut === shortcutHint) {
+    searchShortcutInput.value = "Alt+Space";
+  }
+
   try {
     await invoke("save_settings", {
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
+      searchShortcut: searchShortcutInput.value,
       lyricMode: lyricModeSelect.value,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
       indicatorColor: indicatorColorInput.value,

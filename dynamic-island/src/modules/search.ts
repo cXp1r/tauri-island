@@ -1,8 +1,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { capsule, searchInput, searchResults } from "../dom";
-import { currentView } from "../state";
+import { capsule, searchInput, searchNextBtn, searchPageLabel, searchPrevBtn, searchResults } from "../dom";
+import { currentView, isMinimized } from "../state";
 import { setView } from "./view-switcher";
+import { expandFromMinimized } from "./minimize-drag";
 
 // ===== Types =====
 
@@ -14,14 +15,25 @@ interface SearchResult {
   action: string;
 }
 
+interface SearchQueryResponse {
+  items: SearchResult[];
+  has_next: boolean;
+}
+
 // ===== State =====
 
 let activeIndex = -1;
 let results: SearchResult[] = [];
 let debounceTimer: number | null = null;
+let dismissSyncTimer: number | null = null;
+let isDismissingSearch = false;
 const DEBOUNCE_MS = 400;
 const PAGE_SIZE = 10;
 let previousView: "time" | "lyric" | "agent" = "time";
+let currentQuery = "";
+let currentOffset = 0;
+let hasNextPage = false;
+let searchRequestId = 0;
 
 // ===== Window height sync =====
 
@@ -41,12 +53,68 @@ function syncSearchWindowHeight() {
   });
 }
 
+function updatePagination() {
+  const visible = currentQuery.length > 0 && (results.length > 0 || currentOffset > 0);
+  searchPrevBtn.hidden = !visible;
+  searchNextBtn.hidden = !visible;
+  searchPageLabel.hidden = !visible;
+  searchPageLabel.textContent = `第 ${Math.floor(currentOffset / PAGE_SIZE) + 1} 页`;
+  searchPrevBtn.disabled = currentOffset === 0;
+  searchNextBtn.disabled = !hasNextPage;
+}
+
+function resetSearchPagination() {
+  currentQuery = "";
+  currentOffset = 0;
+  hasNextPage = false;
+  updatePagination();
+}
+
+async function fetchSearchPage(query: string, offset: number) {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    searchRequestId += 1;
+    resetSearchPagination();
+    renderResults([], 0, false);
+    return;
+  }
+
+  currentQuery = trimmed;
+  currentOffset = offset;
+  hasNextPage = false;
+  updatePagination();
+
+  const requestId = ++searchRequestId;
+
+  try {
+    const res = await invoke<SearchQueryResponse>("search_query", {
+      query: trimmed,
+      offset,
+      count: PAGE_SIZE,
+    });
+    if (requestId !== searchRequestId || currentView !== "search" || trimmed !== currentQuery) {
+      return;
+    }
+    renderResults(res.items, offset, res.has_next);
+  } catch (err: any) {
+    if (requestId !== searchRequestId || currentView !== "search" || trimmed !== currentQuery) {
+      return;
+    }
+    const errStr = String(err);
+    console.error("[Search] search_query failed:", errStr, err);
+    renderError(errStr);
+  }
+}
+
 // ===== Render =====
 
-function renderResults(items: SearchResult[]) {
+function renderResults(items: SearchResult[], offset = 0, nextPageAvailable = false) {
   results = items;
   activeIndex = items.length > 0 ? 0 : -1;
+  currentOffset = offset;
+  hasNextPage = nextPageAvailable;
   searchResults.innerHTML = "";
+  updatePagination();
 
   if (items.length === 0) {
     capsule.classList.remove("search-expanded");
@@ -60,7 +128,9 @@ function renderResults(items: SearchResult[]) {
 
   items.forEach((item, i) => {
     const el = document.createElement("div");
-    el.className = "search-result-item" + (i === 0 ? " active" : "");
+    el.className = "search-result-item"
+      + (i === 0 ? " active" : "")
+      + (item.desc ? " has-desc" : "");
     el.innerHTML = `
       <div class="search-result-icon">${item.icon || "📄"}</div>
       <div class="search-result-text">
@@ -81,7 +151,11 @@ function renderResults(items: SearchResult[]) {
 function renderError(msg: string) {
   results = [];
   activeIndex = -1;
+  hasNextPage = false;
   searchResults.innerHTML = "";
+  searchPrevBtn.hidden = true;
+  searchNextBtn.hidden = true;
+  searchPageLabel.hidden = true;
 
   capsule.classList.remove("search-active");
   capsule.classList.add("search-expanded");
@@ -120,33 +194,30 @@ function updateActiveHighlight() {
 function doSearch(query: string) {
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (!query.trim()) {
+    void fetchSearchPage("", 0);
+    return;
   }
   debounceTimer = window.setTimeout(async () => {
     debounceTimer = null;
-    if (!query.trim()) {
-      renderResults([]);
-      return;
-    }
-    try {
-      const res = await invoke<SearchResult[]>("search_query", {
-        query,
-        offset: 0,
-        count: PAGE_SIZE,
-      });
-      if (currentView === "search") {
-        renderResults(res);
-      }
-    } catch (err: any) {
-      const errStr = String(err);
-      console.error("[Search] search_query failed:", errStr, err);
-      renderError(errStr);
-    }
+    void fetchSearchPage(query, 0);
   }, DEBOUNCE_MS);
 }
 
 // ===== Activate / Dismiss =====
 
 export function activateSearch() {
+  if (isDismissingSearch) return;
+
+  // 如果窗口处于收起状态（小绿条），先展开再激活搜索
+  if (isMinimized) {
+    expandFromMinimized();
+    setTimeout(() => activateSearch(), 350);
+    return;
+  }
+
   // Remember where we came from so we can go back
   if (currentView !== "search") {
     previousView = currentView as "time" | "lyric" | "agent";
@@ -155,22 +226,44 @@ export function activateSearch() {
   capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded", "search-expanded");
   capsule.classList.add("search-active");
   setView("search", false);
+  searchRequestId += 1;
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
   searchInput.value = "";
   searchResults.innerHTML = "";
+  results = [];
+  activeIndex = -1;
+  resetSearchPagination();
   searchInput.focus();
   // 延迟再次 focus，防止后端 set_focus 与 webview input focus 竞争
   setTimeout(() => searchInput.focus(), 50);
 }
 
 export function dismissSearch() {
+  if (currentView !== "search" || isDismissingSearch) return;
+  isDismissingSearch = true;
+  searchRequestId += 1;
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
   searchInput.value = "";
   searchInput.blur();
   searchResults.innerHTML = "";
   results = [];
   activeIndex = -1;
+  resetSearchPagination();
   capsule.classList.remove("search-active", "search-expanded");
   setView(previousView, true);
-  syncSearchWindowHeight();
+  // 等 CSS transition(350ms) 完成后再同步窗口高度，否则 offsetHeight 仍是展开态的值
+  if (dismissSyncTimer !== null) clearTimeout(dismissSyncTimer);
+  dismissSyncTimer = window.setTimeout(() => {
+    dismissSyncTimer = null;
+    isDismissingSearch = false;
+    syncSearchWindowHeight();
+  }, 360);
 }
 
 // ===== Init =====
@@ -179,6 +272,24 @@ export function initSearch() {
   // Input listener
   searchInput.addEventListener("input", () => {
     doSearch(searchInput.value);
+  });
+
+  [searchPrevBtn, searchNextBtn].forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
+  });
+
+  searchPrevBtn.addEventListener("click", () => {
+    if (!currentQuery || currentOffset === 0) return;
+    void fetchSearchPage(currentQuery, Math.max(0, currentOffset - PAGE_SIZE));
+    searchInput.focus();
+  });
+
+  searchNextBtn.addEventListener("click", () => {
+    if (!currentQuery || !hasNextPage) return;
+    void fetchSearchPage(currentQuery, currentOffset + PAGE_SIZE);
+    searchInput.focus();
   });
 
   // 拦截 Alt+Space，防止浏览器默认行为干扰搜索激活

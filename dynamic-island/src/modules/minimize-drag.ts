@@ -61,7 +61,7 @@ export function minimizeIsland() {
 
 
 
-function expandFromMinimized() {
+export function expandFromMinimized() {
 
   if (!isMinimized || isMinimizeAnimating) return;
 
