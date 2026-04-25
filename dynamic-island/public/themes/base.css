@@ -36,7 +36,7 @@
 
 html, body {
     width: 100vw;
-    height: 100vh;
+    height: fit-content;
     background: transparent;
     display: flex;
     justify-content: center;
