@@ -1,5 +1,5 @@
-use lyricify_lyrics_provider::models::LyricsData;
-use lyricify_lyrics_provider::smtc_lyrics;
+use lyrix::models::LyricsData;
+use lyrix::smtc_lyrics;
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct LyricToken {
     pub text: String,
@@ -133,7 +133,7 @@ fn line_end_ms(data: &LyricsData, sorted_indices: &[usize], sorted_pos: usize, s
     start_ms + 4000
 }
 
-fn tokens_from_line(line: &lyricify_lyrics_provider::models::LineInfo, line_start_ms: i64, line_end_ms: i64) -> Vec<LyricToken> {
+fn tokens_from_line(line: &lyrix::models::LineInfo, line_start_ms: i64, line_end_ms: i64) -> Vec<LyricToken> {
     if !line.syllables.is_empty() {
         let mut tokens = Vec::with_capacity(line.syllables.len());
         for (i, s) in line.syllables.iter().enumerate() {

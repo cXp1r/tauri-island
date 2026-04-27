@@ -34,7 +34,7 @@ base64 = "0.22"
 flate2 = "1"
 tokio = { version = "1", features = ["rt"] }
 libloading = "0.8"
-lyricify-lyrics-provider = { path = "../lyricify-lyrics-provider-rs" }
+lyrix = { path = "../lyrix" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
