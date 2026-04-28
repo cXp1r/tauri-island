@@ -10,6 +10,7 @@ pub mod ai;
 mod window;
 mod updater;
 mod ceverything;
+mod sadb;
 
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
@@ -317,6 +318,8 @@ pub fn run() {
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
             window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
+            window::set_sadb_expanded,
+            window::sadb_set_idle,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
@@ -341,7 +344,12 @@ pub fn run() {
             settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
             logger::get_log_path, logger::open_log_dir,
-            logger::get_log_level, logger::set_log_level
+            logger::get_log_level, logger::set_log_level,
+            sadb::sadb_start_mirroring, sadb::sadb_stop_mirroring,
+            sadb::sadb_send_touch_event, sadb::sadb_send_scroll_event,
+            sadb::sadb_send_keycode, sadb::sadb_inject_text,
+            sadb::sadb_set_clipboard,
+            sadb::sadb_connect_device, sadb::sadb_disconnect_device,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -390,6 +398,9 @@ pub fn run() {
             let ai_generating = Arc::new(AtomicBool::new(false));
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
+            let sadb_expanded = Arc::new(AtomicBool::new(false));
+            let sadb_idle = Arc::new(AtomicBool::new(false));
+            let sadb_mirroring = Arc::new(AtomicBool::new(false));
             let music_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
@@ -420,6 +431,9 @@ pub fn run() {
             );
 
             app.manage(IslandState {
+                sadb_session: tokio::sync::Mutex::new(None),
+                sadb_ip: Arc::new(Mutex::new(settings.sadb_ip.clone())),
+                sadb_port: Arc::new(Mutex::new(settings.sadb_port)),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
@@ -434,6 +448,9 @@ pub fn run() {
                 active_player_app_id: active_player_app_id.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
+                sadb_expanded: sadb_expanded.clone(),
+                sadb_idle: sadb_idle.clone(),
+                sadb_mirroring: sadb_mirroring.clone(),
                 music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
@@ -551,6 +568,8 @@ pub fn run() {
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
             let agent_expanded_m = agent_expanded.clone();
+            let sadb_expanded_m = sadb_expanded.clone();
+            let sadb_idle_m = sadb_idle.clone();
             let music_expanded_m = music_expanded.clone();
             let agent_window_size_m = agent_window_size.clone();
             let expand_anim_id_m = expand_anim_id.clone();
@@ -572,6 +591,7 @@ pub fn run() {
                         // 根据当前状态确定胶囊宽度
                         let expanded = exp_m.load(Ordering::Relaxed);
                         let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
+                        let sadb_exp = sadb_expanded_m.load(Ordering::Relaxed);
                         let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
@@ -590,6 +610,11 @@ pub fn run() {
                                 let size_setting = agent_window_size_m.lock().unwrap().clone();
                                 let (aw, ah) = window::get_agent_window_size(&size_setting);
                                 (aw, ah)
+                            } else if sadb_exp && view == "sadb" {
+                                (win_w, win_h)
+                            } else if sadb_idle_m.load(Ordering::Relaxed) && view == "sadb" {
+                                // 待机面板：380×420 居中于 420px 窗口内
+                                (380.0, 420.0)
                             } else if expanded {
                                 (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
                             } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
@@ -621,7 +646,8 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        if !agent_exp && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
+                        let sadb_idle = sadb_idle_m.load(Ordering::Relaxed);
+                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -1390,6 +1416,15 @@ pub struct IslandState {
     pub preview_updates: Arc<AtomicBool>,
     // 是否显示预览版开关（UI 可见性）
     pub show_preview_toggle: Arc<AtomicBool>,
+    // ADB / 屏幕镜像 相关
+    pub sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
+    pub sadb_ip: Arc<Mutex<String>>,
+    pub sadb_port: Arc<Mutex<u16>>,
+    pub sadb_expanded: Arc<AtomicBool>,
+    /// 待机面板展开中（已点击展开但尚未开始镜像，或镜像结束后回退）
+    pub sadb_idle: Arc<AtomicBool>,
+    /// 镜像流正常推送中（视频帧在传输），用于允许拖动不回弹
+    pub sadb_mirroring: Arc<AtomicBool>,
 }
 
 unsafe impl Send for IslandState {}

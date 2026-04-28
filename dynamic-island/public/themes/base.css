@@ -1469,3 +1469,192 @@ body.minimized #collapsed-indicator { display: block; }
 }
 .search-init-btn:hover { background: rgba(255,255,255,0.18); }
 .search-init-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ===== sadb 镜像视图 ===== */
+
+#sadb-area {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+#sadb-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    flex-shrink: 0;
+    height: 16px;
+}
+
+#sadb-device-name {
+    color: rgba(255,255,255,0.65);
+}
+
+#sadb-resolution {
+    color: rgba(255,255,255,0.45);
+}
+
+#sadb-fps {
+    color: rgba(255,255,255,0.45);
+    font-variant-numeric: tabular-nums;
+}
+
+#sadb-canvas {
+    flex: 1;
+    min-height: 0;
+    object-fit: contain;
+    border-radius: 8px;
+    cursor: default;
+    pointer-events: auto;
+    background: #0a0a0a;
+    contain: layout paint;
+    isolation: isolate;
+}
+
+#sadb-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 2px 0;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    transform: translateZ(0);
+}
+
+#sadb-btn-start,
+#sadb-btn-stop {
+    padding: 2px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.82);
+    cursor: pointer;
+    font-size: 10px;
+    font-family: var(--font-main);
+    transition: background 0.15s;
+}
+
+#sadb-btn-start:hover:not(:disabled),
+#sadb-btn-stop:hover:not(:disabled) {
+    background: rgba(255,255,255,0.14);
+}
+
+#sadb-btn-start:disabled,
+#sadb-btn-stop:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#sadb-status {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+}
+
+#sadb-resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    z-index: 2;
+    isolation: isolate;
+    transform: translateZ(0);
+    display: none;
+}
+#island-capsule.sadb-expanded #sadb-resize-handle {
+    display: block;
+}
+
+/* 收起态：sadb 占满视图 */
+#island-capsule:not(.sadb-expanded) #sadb-area {
+    flex-direction: row;
+    padding: 0 12px;
+    gap: 6px;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-status-bar,
+#island-capsule:not(.sadb-expanded) #sadb-controls {
+    display: none;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-canvas {
+    display: none;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-area::before {
+    content: "sadb";
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* 展开态 — 尺寸由 JS 根据手机分辨率动态设置 */
+#island-capsule.sadb-expanded {
+    border-radius: 24px;
+    flex-shrink: 0; /* 禁止 flex 压缩，允许胶囊超出 100vw，由后端同步窗口宽度 */
+}
+
+#island-capsule.sadb-expanded #sadb-area {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 10px 8px;
+    gap: 4px;
+}
+
+#island-capsule.sadb-expanded #sadb-area::before {
+    display: none;
+}
+
+#island-capsule.sadb-expanded #sadb-canvas {
+    display: block;
+    border-radius: 12px;
+}
+
+#island-capsule.sadb-expanded #sadb-status-bar,
+#island-capsule.sadb-expanded #sadb-controls {
+    display: flex;
+}
+
+/* ── sadb 待机面板：已展开但未镜像（或镜像结束后回退） ── */
+#island-capsule.sadb-idle {
+    width: 380px;
+    height: 420px;
+    border-radius: 24px;
+}
+
+#island-capsule.sadb-idle #sadb-area {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 10px 8px;
+    gap: 4px;
+}
+
+#island-capsule.sadb-idle #sadb-status-bar,
+#island-capsule.sadb-idle #sadb-controls {
+    display: flex;
+}
+
+#island-capsule.sadb-idle #sadb-canvas {
+    flex: 1;
+    min-height: 0;
+    display: block;
+    border-radius: 12px;
+}
+
+#island-capsule.sadb-idle #sadb-area::before {
+    display: none;
+}
+
+#island-capsule.sadb-idle #sadb-resize-handle {
+    display: none;
+}

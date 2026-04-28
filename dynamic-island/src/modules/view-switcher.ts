@@ -19,6 +19,7 @@ import {
   setIsExpandAnimating,
   setSkipResizeSync,
 } from "../state";
+import { onSadbViewEntered } from "./sadb";
 
 // ---------------------------------------------------------------------------
 // 可用视图列表（search 不参与循环切换和底部 dots）
@@ -32,6 +33,7 @@ export function getAvailableViews(): ViewMode[] {
   if (aiEnabled) {
     views.push("agent");
   }
+  views.push("sadb");
   return views;
 }
 
@@ -52,7 +54,7 @@ export function updateSwitcherUI() {
   views.forEach((v) => {
     const dot = document.createElement("div");
     dot.className = "view-dot" + (v === currentView ? " active" : "");
-    dot.title = v === "time" ? "时间视图" : v === "lyric" ? "歌词视图" : "Agent";
+    dot.title = v === "time" ? "时间视图" : v === "lyric" ? "歌词视图" : v === "agent" ? "Agent" : "ADB";
     dot.addEventListener("click", (e) => {
       e.stopPropagation();
       setUserChosenView(v);
@@ -185,8 +187,8 @@ function animateViewSwitch(from: ViewMode, to: ViewMode) {
 // ---------------------------------------------------------------------------
 
 export function updateCapsuleSize() {
-  // 搜索视图由 search.ts 自行管理 search-active / search-expanded
-  if (currentView === "search") {
+  // 搜索/sadb 视图各自管理自己的尺寸 class
+  if (currentView === "search" || currentView === "sadb") {
     capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded");
     return;
   }
@@ -239,9 +241,32 @@ export function setView(mode: ViewMode, animated = true) {
     window.setTimeout(() => { setSkipResizeSync(false); }, 500);
   }
 
+  // 如果从 sadb 切走，终止镜像并清理所有 sadb 态
+  if (previous === "sadb" && mode !== "sadb") {
+    void invoke("sadb_stop_mirroring");
+    capsule.style.width = "";
+    capsule.style.height = "";
+    if (capsule.classList.contains("sadb-expanded")) {
+      capsule.classList.remove("sadb-expanded");
+      void invoke("set_sadb_expanded", { expanded: false });
+    }
+    if (capsule.classList.contains("sadb-idle")) {
+      capsule.classList.remove("sadb-idle");
+      // 后端动画回默认尺寸并 snap 回顶部
+      window.setTimeout(() => {
+        void invoke("sadb_set_idle", { idle: false });
+      }, 200);
+    }
+  }
+
   // 如果从搜索切走，清理搜索态 class
   if (previous === "search" && mode !== "search") {
     capsule.classList.remove("search-active", "search-expanded");
+  }
+
+  // 切入 sadb 视图：恢复 idle / expanded 状态和窗口位置
+  if (mode === "sadb" && previous !== "sadb") {
+    window.setTimeout(() => onSadbViewEntered(), 50);
   }
 
   if (animated) {

@@ -19,6 +19,7 @@
         <div class="nav-item" data-page="weather">天气</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
         <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
+        <div class="nav-item" data-page="sadb">ADB 镜像</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
         <div class="nav-item" data-page="blacklist">黑名单</div>
         <div class="nav-item" data-page="about">关于与更新</div>
@@ -358,6 +359,38 @@
             </div>
           </div>
         </div>
+        <!-- ADB 镜像页面 -->
+        <div class="page" id="page-sadb">
+          <div class="setting-group">
+            <div class="setting-group-title">连接设置</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>默认 IP 地址</h3>
+                <p>WiFi 连接时的目标设备 IP，留空则仅使用 USB。</p>
+              </div>
+              <input id="sadb-ip" class="input path" placeholder="192.168.1.100" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>默认端口</h3>
+                <p>ADB WiFi 连接端口，默认 5555。</p>
+              </div>
+              <input id="sadb-port" class="input path" type="number" placeholder="5555" min="1" max="65535" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-group-title">说明</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <p>连接优先级：USB → WiFi。有 USB 设备时优先使用 USB，无 USB 设备时自动使用 IP:Port 进行 WiFi 连接。</p>
+                <p style="margin-top: 8px;">需要 adb 和 scrcpy-server (v3.3.4) 支持。首次使用请确保已安装 adb 工具。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 黑名单页面 -->
         <div class="page" id="page-blacklist">
           <div class="setting-group">
@@ -545,6 +578,7 @@ const pageInfo = {
   ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
   "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
   plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
+  sadb:             { title: "ADB 镜像",     desc: "配置 Android 设备屏幕镜像连接参数。" },
   blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
   about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
 };

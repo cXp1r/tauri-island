@@ -10,6 +10,7 @@ import { initCapsuleInteraction } from "./modules/capsule-interaction";
 import { initAgent } from "./modules/agent";
 import { initResizeObserver } from "./modules/resize-observer";
 import { initSearch } from "./modules/search";
+import { initSadb } from "./modules/sadb";
 
 initNoticeUrl();
 initWeather();
@@ -21,6 +22,7 @@ initMinimizeDrag();
 initCapsuleInteraction();
 initAgent();
 initSearch();
+initSadb();
 initResizeObserver();
 
 showOnlyView("time");

@@ -9,6 +9,7 @@ import {
   dragStarted, setDragStarted,
   musicClickTimer, setMusicClickTimer,
   agentClickTimer, setAgentClickTimer,
+  sadbClickTimer, setSadbClickTimer,
   isExpandAnimating, setIsExpandAnimating,
   setSkipResizeSync,
   currentSongTitle, currentArtistName, currentThumbnailUrl,
@@ -238,6 +239,44 @@ export function initCapsuleInteraction() {
 
     }
 
+    // sadb 视图三态：胶囊 → 待机面板(idle) → 镜像(expanded)
+    if (currentView === "sadb") {
+      // 镜像中：所有操作由面板内按钮（Stop）处理，胶囊层不响应点击
+      if (capsule.classList.contains("sadb-expanded")) return;
+
+      // 待机面板：点击状态栏才收起回胶囊
+      if (capsule.classList.contains("sadb-idle")) {
+        if (!target.closest("#sadb-status-bar")) return;
+        e.stopPropagation();
+        if (sadbClickTimer) { clearTimeout(sadbClickTimer); setSadbClickTimer(null); return; }
+        setSadbClickTimer(window.setTimeout(() => {
+          setSadbClickTimer(null);
+          if (isExpandAnimating) return;
+          setIsExpandAnimating(true);
+          setSkipResizeSync(true);
+          capsule.classList.remove("sadb-idle");
+          void invoke("sadb_set_idle", { idle: false });
+          window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
+        }, 250));
+        return;
+      }
+
+      // 胶囊态：点击任意区域（排除按钮/canvas）→ 展开待机面板
+      if (target.closest("#sadb-btn-start") || target.closest("#sadb-btn-stop") || target.closest("#sadb-canvas")) return;
+      e.stopPropagation();
+      if (sadbClickTimer) { clearTimeout(sadbClickTimer); setSadbClickTimer(null); return; }
+      setSadbClickTimer(window.setTimeout(() => {
+        setSadbClickTimer(null);
+        if (isExpandAnimating) return;
+        setIsExpandAnimating(true);
+        setSkipResizeSync(true);
+        capsule.classList.add("sadb-idle");
+        void invoke("sadb_set_idle", { idle: true });
+        window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
+      }, 250));
+      return;
+    }
+
   });
 
 
@@ -247,7 +286,7 @@ export function initCapsuleInteraction() {
 
     const target = e.target as HTMLElement;
 
-    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot") || target.closest("#agent-input") || target.closest("#agent-send-btn") || target.closest("#agent-stop-btn") || target.closest("#agent-clear-btn")) {
+    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot") || target.closest("#agent-input") || target.closest("#agent-send-btn") || target.closest("#agent-stop-btn") || target.closest("#agent-clear-btn") || target.closest("#sadb-btn-start") || target.closest("#sadb-btn-stop") || target.closest("#sadb-canvas")) {
 
       return;
 
@@ -272,6 +311,14 @@ export function initCapsuleInteraction() {
       clearTimeout(musicClickTimer);
 
       setMusicClickTimer(null);
+
+    }
+    // 取消 sadb 单击延时
+    if (sadbClickTimer) {
+
+      clearTimeout(sadbClickTimer);
+
+      setSadbClickTimer(null);
 
     }
 

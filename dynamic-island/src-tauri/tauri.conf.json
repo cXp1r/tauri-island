@@ -37,7 +37,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "resources/Everything64.dll"
+      "resources/Everything64.dll",
+      "resources/scrcpy-server-v3.3.4"
     ],
     "icon": [
       "icons/32x32.png",

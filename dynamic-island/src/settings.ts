@@ -21,6 +21,8 @@ type SettingsResponse = {
   weather_lon: number;
   auto_start: boolean;
   log_level: string;
+  sadb_ip: string;
+  sadb_port: number;
 };
 
 type AISettingsResponse = {
@@ -75,6 +77,8 @@ const aiModelInput = document.getElementById("ai-model") as HTMLInputElement;
 const aiDetectBtn = document.getElementById("ai-detect-btn") as HTMLButtonElement;
 const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTMLParagraphElement;
 const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
+const sadbIpInput = document.getElementById("sadb-ip") as HTMLInputElement;
+const sadbPortInput = document.getElementById("sadb-port") as HTMLInputElement;
 
 let isRecording = false;
 let statusTimer: number | null = null;
@@ -97,6 +101,8 @@ async function loadSettings() {
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
+  sadbIpInput.value = settings.sadb_ip || "";
+  sadbPortInput.value = settings.sadb_port?.toString() || "5555";
   autoStartToggle.checked = settings.auto_start || false;
 
   // 加载日志等级
@@ -242,6 +248,8 @@ saveBtn.addEventListener("click", async () => {
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,
       logLevel: logLevelSelect ? logLevelSelect.value : undefined,
+      sadbIp: sadbIpInput.value.trim(),
+      sadbPort: parseInt(sadbPortInput.value) || 5555,
     });
 
     // 保存 AI 设置

@@ -1,4 +1,4 @@
-export type ViewMode = "time" | "lyric" | "agent" | "search";
+export type ViewMode = "time" | "lyric" | "agent" | "search" | "sadb";
 
 export type PrivacyUsagePayload = {
 

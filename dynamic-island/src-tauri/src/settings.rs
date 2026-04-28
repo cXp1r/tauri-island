@@ -98,6 +98,14 @@ pub(crate) struct SettingsData {
     pub show_preview_toggle: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default)]
+    pub sadb_ip: String,
+    #[serde(default = "default_sadb_port")]
+    pub sadb_port: u16,
+}
+
+fn default_sadb_port() -> u16 {
+    5555
 }
 
 fn default_show_preview_toggle() -> bool {
@@ -199,6 +207,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         preview_updates: false,
         show_preview_toggle: false,
         log_level: default_log_level(),
+        sadb_ip: String::new(),
+        sadb_port: default_sadb_port(),
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -238,6 +248,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         preview_updates: state.preview_updates.load(Ordering::Relaxed),
         show_preview_toggle: state.show_preview_toggle.load(Ordering::Relaxed),
         log_level: crate::logger::get_level(),
+        sadb_ip: state.sadb_ip.lock().unwrap().clone(),
+        sadb_port: *state.sadb_port.lock().unwrap(),
     }
 }
 
@@ -271,6 +283,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let auto_start = state.auto_start.load(Ordering::Relaxed);
     let smtc_whitelist_enabled = state.smtc_whitelist_enabled.load(Ordering::Relaxed);
     let smtc_app_whitelist = state.smtc_app_whitelist.lock().unwrap().clone();
+    let sadb_ip = state.sadb_ip.lock().unwrap().clone();
+    let sadb_port = *state.sadb_port.lock().unwrap();
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
@@ -285,7 +299,9 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "auto_start": auto_start,
         "smtc_whitelist_enabled": smtc_whitelist_enabled,
         "smtc_app_whitelist": smtc_app_whitelist,
-        "log_level": crate::logger::get_level()
+        "log_level": crate::logger::get_level(),
+        "sadb_ip": sadb_ip,
+        "sadb_port": sadb_port,
     })
 }
 
@@ -307,6 +323,8 @@ pub fn save_settings(
     smtc_whitelist_enabled: Option<bool>,
     smtc_app_whitelist: Option<Vec<String>>,
     log_level: Option<String>,
+    sadb_ip: Option<String>,
+    sadb_port: Option<u16>,
 ) {
     if let Some(ref level) = log_level {
         crate::logger::set_level(level);
@@ -440,6 +458,14 @@ pub fn save_settings(
             .filter(|s| !s.is_empty())
             .collect();
         settings_data.smtc_app_whitelist = normalized;
+    }
+    if let Some(ip) = sadb_ip {
+        settings_data.sadb_ip = ip.clone();
+        *state.sadb_ip.lock().unwrap() = ip;
+    }
+    if let Some(port) = sadb_port {
+        settings_data.sadb_port = port;
+        *state.sadb_port.lock().unwrap() = port;
     }
     let _ = save_settings_to_file(&settings_data);
 }

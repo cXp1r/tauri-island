@@ -110,6 +110,15 @@ export const searchPrevBtn = document.getElementById("search-prev-btn") as HTMLB
 export const searchNextBtn = document.getElementById("search-next-btn") as HTMLButtonElement;
 export const searchPageLabel = document.getElementById("search-page-label") as HTMLSpanElement;
 
+export const sadbArea = document.getElementById("sadb-area") as HTMLDivElement;
+export const sadbCanvas = document.getElementById("sadb-canvas") as HTMLCanvasElement;
+export const sadbBtnStart = document.getElementById("sadb-btn-start") as HTMLButtonElement;
+export const sadbBtnStop = document.getElementById("sadb-btn-stop") as HTMLButtonElement;
+export const sadbStatus = document.getElementById("sadb-status") as HTMLSpanElement;
+export const sadbDeviceName = document.getElementById("sadb-device-name") as HTMLSpanElement;
+export const sadbResolution = document.getElementById("sadb-resolution") as HTMLSpanElement;
+export const sadbFps = document.getElementById("sadb-fps") as HTMLSpanElement;
+
 
 
 export const btnPrev = document.getElementById("btn-prev") as HTMLButtonElement;
@@ -141,4 +150,5 @@ export const viewElements: Record<ViewMode, HTMLElement> = {
   lyric: lyricArea,
   agent: agentArea,
   search: searchArea,
+  sadb: sadbArea,
 };

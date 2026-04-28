@@ -192,6 +192,9 @@ export function setSkipResizeSync(v: boolean) { skipResizeSync = v; }
 export let agentClickTimer: number | null = null;
 export function setAgentClickTimer(v: number | null) { agentClickTimer = v; }
 
+export let sadbClickTimer: number | null = null;
+export function setSadbClickTimer(v: number | null) { sadbClickTimer = v; }
+
 export let volThrottleTimer: number | null = null;
 export function setVolThrottleTimer(v: number | null) { volThrottleTimer = v; }
 
