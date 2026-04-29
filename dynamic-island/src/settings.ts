@@ -23,6 +23,11 @@ type SettingsResponse = {
   log_level: string;
   sadb_ip: string;
   sadb_port: number;
+  email_poll_interval_secs: number;
+  email_username: string;
+  email_auth: string;
+  email_address: string;
+  email_port: number;
 };
 
 type AISettingsResponse = {
@@ -79,6 +84,11 @@ const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTM
 const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
 const sadbIpInput = document.getElementById("sadb-ip") as HTMLInputElement;
 const sadbPortInput = document.getElementById("sadb-port") as HTMLInputElement;
+const emailPollIntervalInput = document.getElementById("email-poll-interval") as HTMLInputElement;
+const emailUsernameInput = document.getElementById("email-username") as HTMLInputElement;
+const emailAuthInput = document.getElementById("email-auth") as HTMLInputElement;
+const emailAddressInput = document.getElementById("email-address") as HTMLInputElement;
+const emailPortInput = document.getElementById("email-port") as HTMLInputElement;
 
 let isRecording = false;
 let statusTimer: number | null = null;
@@ -103,6 +113,11 @@ async function loadSettings() {
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   sadbIpInput.value = settings.sadb_ip || "";
   sadbPortInput.value = settings.sadb_port?.toString() || "5555";
+  emailPollIntervalInput.value = Math.max(1, settings.email_poll_interval_secs || 1).toString();
+  emailUsernameInput.value = settings.email_username || "";
+  emailAuthInput.value = settings.email_auth || "";
+  emailAddressInput.value = settings.email_address || "";
+  emailPortInput.value = (settings.email_port || 993).toString();
   autoStartToggle.checked = settings.auto_start || false;
 
   // 加载日志等级
@@ -250,6 +265,11 @@ saveBtn.addEventListener("click", async () => {
       logLevel: logLevelSelect ? logLevelSelect.value : undefined,
       sadbIp: sadbIpInput.value.trim(),
       sadbPort: parseInt(sadbPortInput.value) || 5555,
+      emailPollIntervalSecs: Math.max(1, parseInt(emailPollIntervalInput.value) || 1),
+      emailUsername: emailUsernameInput.value.trim(),
+      emailAuth: emailAuthInput.value.trim(),
+      emailAddress: emailAddressInput.value.trim(),
+      emailPort: parseInt(emailPortInput.value) || 993,
     });
 
     // 保存 AI 设置

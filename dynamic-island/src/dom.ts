@@ -17,10 +17,6 @@ export const weatherText = document.getElementById("weather-text") as HTMLDivEle
 
 export const noticeArea = document.getElementById("notice-area") as HTMLDivElement;
 
-export const noticeMsg = document.getElementById("notice-msg") as HTMLDivElement;
-
-export const urlList = document.getElementById("url-list") as HTMLDivElement;
-
 export const lyricArea = document.getElementById("lyric-area") as HTMLDivElement;
 
 

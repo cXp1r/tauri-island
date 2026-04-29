@@ -102,6 +102,26 @@ pub(crate) struct SettingsData {
     pub sadb_ip: String,
     #[serde(default = "default_sadb_port")]
     pub sadb_port: u16,
+    #[serde(default)]
+    pub email_username: String,
+    #[serde(default)]
+    pub email_auth: String,
+    #[serde(default)]
+    pub email_address: String,
+    #[serde(default = "default_email_port")]
+    pub email_port: u16,
+    #[serde(default = "default_email_poll_interval_secs")]
+    pub email_poll_interval_secs: u64,
+    #[serde(default = "default_email_shortcut")]
+    pub email_shortcut: String,
+}
+
+fn default_email_poll_interval_secs() -> u64 {
+    1
+}
+
+fn default_email_port() -> u16 {
+    993
 }
 
 fn default_sadb_port() -> u16 {
@@ -122,6 +142,10 @@ fn default_shortcut() -> String {
 
 fn default_search_shortcut() -> String {
     "Alt+Space".to_string()
+}
+
+fn default_email_shortcut() -> String {
+    "Alt+E".to_string()
 }
 
 fn default_lyric_mode() -> String {
@@ -209,6 +233,12 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         log_level: default_log_level(),
         sadb_ip: String::new(),
         sadb_port: default_sadb_port(),
+        email_username: String::new(),
+        email_auth: String::new(),
+        email_address: String::new(),
+        email_port: default_email_port(),
+        email_poll_interval_secs: default_email_poll_interval_secs(),
+        email_shortcut: default_email_shortcut(),
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -223,6 +253,12 @@ pub(crate) fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
 
 /// 从 IslandState 构建完整 SettingsData 用于持久化
 pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
+    let ec = state.email_config.lock().unwrap();
+    let ec_username = ec.username.clone();
+    let ec_auth = ec.auth.clone();
+    let ec_address = ec.address.clone();
+    let ec_port = ec.port;
+    drop(ec);
     SettingsData {
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
@@ -250,6 +286,12 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         log_level: crate::logger::get_level(),
         sadb_ip: state.sadb_ip.lock().unwrap().clone(),
         sadb_port: *state.sadb_port.lock().unwrap(),
+        email_username: ec_username,
+        email_auth: ec_auth,
+        email_address: ec_address,
+        email_port: ec_port,
+        email_poll_interval_secs: state.email_poll_interval_secs.load(Ordering::Relaxed),
+        email_shortcut: state.email_shortcut.lock().unwrap().clone(),
     }
 }
 
@@ -285,6 +327,13 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let smtc_app_whitelist = state.smtc_app_whitelist.lock().unwrap().clone();
     let sadb_ip = state.sadb_ip.lock().unwrap().clone();
     let sadb_port = *state.sadb_port.lock().unwrap();
+    let email_poll_interval_secs = state.email_poll_interval_secs.load(Ordering::Relaxed);
+    let email_cfg = state.email_config.lock().unwrap();
+    let email_username = email_cfg.username.clone();
+    let email_auth = email_cfg.auth.clone();
+    let email_address = email_cfg.address.clone();
+    let email_port = email_cfg.port;
+    drop(email_cfg);
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
         "shortcut_key": shortcut,
@@ -302,6 +351,12 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "log_level": crate::logger::get_level(),
         "sadb_ip": sadb_ip,
         "sadb_port": sadb_port,
+        "email_poll_interval_secs": email_poll_interval_secs,
+        "email_username": email_username,
+        "email_auth": email_auth,
+        "email_address": email_address,
+        "email_port": email_port,
+        "email_shortcut": state.email_shortcut.lock().unwrap().clone(),
     })
 }
 
@@ -325,6 +380,12 @@ pub fn save_settings(
     log_level: Option<String>,
     sadb_ip: Option<String>,
     sadb_port: Option<u16>,
+    email_poll_interval_secs: Option<u64>,
+    email_username: Option<String>,
+    email_auth: Option<String>,
+    email_address: Option<String>,
+    email_port: Option<u16>,
+    email_shortcut: Option<String>,
 ) {
     if let Some(ref level) = log_level {
         crate::logger::set_level(level);
@@ -423,6 +484,18 @@ pub fn save_settings(
         }
     }
 
+    // 邮件快捷键
+    if let Some(ref sc) = email_shortcut {
+        *state.email_shortcut.lock().unwrap() = sc.clone();
+        let app_h = app.clone();
+        let sc_str = sc.clone();
+        let _ = app.global_shortcut().on_shortcut(sc_str.as_str(), move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                crate::window::open_email_window(app_h.clone());
+            }
+        });
+    }
+
     // 持久化到文件
     let mut settings_data = build_settings_data(&state);
     settings_data.clipboard_enabled = clipboard_enabled;
@@ -466,6 +539,33 @@ pub fn save_settings(
     if let Some(port) = sadb_port {
         settings_data.sadb_port = port;
         *state.sadb_port.lock().unwrap() = port;
+    }
+    if let Some(secs) = email_poll_interval_secs {
+        let secs = secs.max(1);
+        settings_data.email_poll_interval_secs = secs;
+        state.email_poll_interval_secs.store(secs, Ordering::Relaxed);
+    }
+    {
+        let mut cfg = state.email_config.lock().unwrap();
+        if let Some(ref u) = email_username {
+            cfg.username = u.clone();
+            settings_data.email_username = u.clone();
+        }
+        if let Some(ref a) = email_auth {
+            cfg.auth = a.clone();
+            settings_data.email_auth = a.clone();
+        }
+        if let Some(ref addr) = email_address {
+            cfg.address = addr.clone();
+            settings_data.email_address = addr.clone();
+        }
+        if let Some(p) = email_port {
+            cfg.port = p;
+            settings_data.email_port = p;
+        }
+    }
+    if let Some(sc) = email_shortcut {
+        settings_data.email_shortcut = sc;
     }
     let _ = save_settings_to_file(&settings_data);
 }

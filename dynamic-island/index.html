@@ -14,17 +14,8 @@
         <!-- 唯一的活跃视图槽位 -->
         <div id="current-view"></div>
 
-        <!-- overlay 弹层（不参与视图切换） -->
-        <div id="notice-area" class="overlay-popup">
-            <div class="icon-box" id="notice-icon">
-                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
-                    <path d="M512 426.688a42.688 42.688 0 0 0-42.688 42.688v298.688a42.688 42.688 0 0 0 85.376 0V469.376A42.688 42.688 0 0 0 512 426.688zM507.776 213.376a59.776 59.776 0 1 0 0 119.552 59.776 59.776 0 0 0 0-119.552z" fill="#ffffff"/>
-                    <path d="M512 0a512 512 0 1 0 0 1024 512 512 0 0 0 0-1024z m0 938.688a426.624 426.624 0 0 1-426.688-426.688c0-235.648 190.976-426.688 426.688-426.688s426.688 190.976 426.688 426.688-190.976 426.688-426.688 426.688z" fill="#ffffff"/>
-                </svg>
-            </div>
-            <div id="notice-msg">通知消息</div>
-        </div>
-        <div id="url-list" class="overlay-popup"></div>
+        <!-- overlay 弹层（不参与视图切换，内容由 notice-queue.ts 动态渲染） -->
+        <div id="notice-area" class="overlay-popup"></div>
 
         <div id="agent-confirm-dialog" style="display:none">
             <div id="agent-confirm-backdrop"></div>

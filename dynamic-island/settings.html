@@ -19,6 +19,7 @@
         <div class="nav-item" data-page="weather">天气</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
         <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
+        <div class="nav-item" data-page="email">邮件</div>
         <div class="nav-item" data-page="sadb">ADB 镜像</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
         <div class="nav-item" data-page="blacklist">黑名单</div>
@@ -258,6 +259,58 @@
               <div class="actions" style="margin-top: 16px;">
                 <button id="add-handler-btn" class="btn btn-primary" type="button">添加处理器</button>
               </div>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- 邮件页面 -->
+        <div class="page" id="page-email">
+          <div class="setting-group">
+            <div class="setting-group-title">IMAP 账号</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>用户名</h3>
+                <p>登录邮箱时使用的用户名（通常是完整邮箱地址）。</p>
+              </div>
+              <input id="email-username" class="input path" type="text" placeholder="user@example.com" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>授权码 / 密码</h3>
+                <p>IMAP 登录凭据，部分邮箱需使用专用授权码而非登录密码。</p>
+              </div>
+              <input id="email-auth" class="input path" type="password" placeholder="授权码或密码" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>IMAP 服务器地址</h3>
+                <p>如 imap.qq.com、imap.gmail.com 等。</p>
+              </div>
+              <input id="email-address" class="input path" type="text" placeholder="imap.example.com" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>端口</h3>
+                <p>IMAP SSL 端口，默认 993。</p>
+              </div>
+              <input id="email-port" class="input path" type="number" min="1" max="65535" value="993" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-group-title">轮询</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>轮询间隔（秒）</h3>
+                <p>后台定时获取最新邮件 UID，UID 变化时弹出通知。默认 1 秒。</p>
+              </div>
+              <input id="email-poll-interval" class="input path" type="number" min="1" step="1" value="1" />
             </div>
           </div>
         </div>
@@ -577,6 +630,7 @@ const pageInfo = {
   weather:          { title: "天气",          desc: "配置天气显示位置。" },
   ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
   "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
+  email:            { title: "邮件",          desc: "配置邮件轮询和通知占位功能。" },
   plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
   sadb:             { title: "ADB 镜像",     desc: "配置 Android 设备屏幕镜像连接参数。" },
   blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },

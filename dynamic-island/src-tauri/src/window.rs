@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
@@ -261,11 +261,11 @@ pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
 pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64) {
     // 展开/收起动画进行中，跳过 ResizeObserver 驱动的同步
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 {
-        logger::debug("Window", "sync_window_height skipped (anim in progress)");
+        //logger::debug("Window", "sync_window_height skipped (anim in progress)");
         return;
     }
     let max_h = if state.sadb_mirroring.load(Ordering::Relaxed) { 1200.0 } else { 700.0 };
-    let new_h = height.max(60.0).min(max_h);
+    let new_h = (height + 1.0).max(60.0).min(max_h);
     if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;
@@ -615,5 +615,30 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
+}
+
+#[tauri::command]
+pub fn open_email_window(app: tauri::AppHandle) {
+    // 如果已有 email 窗口则聚焦
+    if let Some(win) = app.get_webview_window("email") {
+        let _ = win.set_focus();
+        return;
+    }
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "email",
+        tauri::WebviewUrl::App("email.html".into()),
+    )
+    .title("邮件")
+    .inner_size(960.0, 640.0)
+    .min_inner_size(720.0, 480.0)
+    .center()
+    .decorations(true)
+    .resizable(true);
+
+    match builder.build() {
+        Ok(_) => logger::info("Window", "email window opened"),
+        Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
+    }
 }
 

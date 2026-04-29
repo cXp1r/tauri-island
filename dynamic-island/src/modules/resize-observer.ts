@@ -35,7 +35,7 @@ function syncBodyHeight() {
   if (skipResizeSync) return;
   const h = document.body.offsetHeight;
   if (h <= 0 || h === lastSyncedBodyH) return;
-  console.log("[ResizeObserver] body height changed:", lastSyncedBodyH, "→", h);
+  //console.log("[ResizeObserver] body height changed:", lastSyncedBodyH, "→", h);
   lastSyncedBodyH = h;
   void invoke("sync_window_height", { height: h });
 }

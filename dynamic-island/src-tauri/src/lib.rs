@@ -11,6 +11,7 @@ mod window;
 mod updater;
 mod ceverything;
 mod sadb;
+mod email;
 
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
@@ -26,6 +27,7 @@ use tauri::image::Image;
 use windows::Win32::Foundation::HWND;
 
 use ai::ChatMessage;
+use email::Email;
 use link_handler::LinkHandler;
 
 pub(crate) const WIN_W: f64 = 420.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
@@ -318,7 +320,7 @@ pub fn run() {
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
             window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
-            window::set_sadb_expanded,
+            window::set_sadb_expanded, window::open_email_window,
             window::sadb_set_idle,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
@@ -350,6 +352,7 @@ pub fn run() {
             sadb::sadb_send_keycode, sadb::sadb_inject_text,
             sadb::sadb_set_clipboard,
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
+            email::fetch_emails, email::get_email_cache_dir,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -424,6 +427,15 @@ pub fn run() {
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
             let weather_cache: Arc<Mutex<Option<WeatherResult>>> = Arc::new(Mutex::new(None));
             let weather_force_refresh = Arc::new(AtomicBool::new(true)); // 启动后立即获取
+            let email_config = Arc::new(Mutex::new(Email {
+                username: settings.email_username.clone(),
+                auth: settings.email_auth.clone(),
+                address: settings.email_address.clone(),
+                port: settings.email_port,
+            }));
+            let email_poll_interval_secs = Arc::new(AtomicU64::new(settings.email_poll_interval_secs.max(1)));
+            let latest_email_uid: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let email_shortcut = Arc::new(Mutex::new(settings.email_shortcut.clone()));
 
             media::update_smtc_whitelist(
                 smtc_whitelist_enabled.load(Ordering::Relaxed),
@@ -478,6 +490,10 @@ pub fn run() {
                 smtc_whitelist_enabled: smtc_whitelist_enabled.clone(),
                 preview_updates: preview_updates.clone(),
                 show_preview_toggle: show_preview_toggle.clone(),
+                email_config: email_config.clone(),
+                email_poll_interval_secs: email_poll_interval_secs.clone(),
+                latest_email_uid: latest_email_uid.clone(),
+                email_shortcut: email_shortcut.clone(),
             });
 
             // --- 系统托盘 ---
@@ -555,6 +571,18 @@ pub fn run() {
                             }
                         }
                         let _ = win_search.emit("activate-search", ());
+                    }
+                });
+            }
+
+            // --- 邮件快捷键 ---
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+                let email_sc = settings.email_shortcut.clone();
+                let app_h = app.handle().clone();
+                let _ = app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        window::open_email_window(app_h.clone());
                     }
                 });
             }
@@ -777,27 +805,112 @@ pub fn run() {
             let pending_url_cb = pending_url.clone();
 
             thread::spawn(move || {
+                logger::info("Clipboard", "polling thread started");
                 let mut last_text = String::new();
+                let mut logged_disabled = false;
                 loop {
                     thread::sleep(Duration::from_millis(1200));
-                    if !cb_enabled.load(Ordering::Relaxed) { continue; }
-                    if let Some(text) = clipboard::read_clipboard_text() {
-                        if text != last_text {
-                            last_text = text.clone();
-                            let urls = clipboard::extract_urls(&text);
-                            if !urls.is_empty() {
-                                *pending_url_cb.lock().unwrap() = urls.clone();
-                                let shortcut = "Alt+O";
-                                if urls.len() == 1 {
-                                    let msg = format!("已复制链接，按 {} 或点击打开", shortcut);
-                                    let _ = win_cb.emit("clipboard-urls", urls.clone());
-                                    trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
-                                } else {
-                                    let msg = format!("检测到 {} 个链接，点击查看", urls.len());
-                                    let _ = win_cb.emit("clipboard-urls", urls.clone());
-                                    trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
-                                }
-                            }
+                    if !cb_enabled.load(Ordering::Relaxed) {
+                        if !logged_disabled {
+                            logger::debug("Clipboard", "clipboard_enabled = false, skipping");
+                            logged_disabled = true;
+                        }
+                        continue;
+                    }
+                    logged_disabled = false;
+                    let read = clipboard::read_clipboard_text();
+                    if read.is_none() {
+                        logger::debug("Clipboard", "read_clipboard_text returned None");
+                        continue;
+                    }
+                    let text = read.unwrap();
+                    if text != last_text {
+                        last_text = text.clone();
+                        logger::debug("Clipboard", &format!("text changed (len={}): {:?}", text.len(), &text[..text.len().min(200)]));
+                        let urls = clipboard::extract_urls(&text);
+                        logger::debug("Clipboard", &format!("extract_urls => {} url(s)", urls.len()));
+                        if !urls.is_empty() {
+                            logger::info("Clipboard", &format!("detected {} url(s): {:?}", urls.len(), urls));
+                            *pending_url_cb.lock().unwrap() = urls.clone();
+                            noti_cb.store(true, Ordering::Relaxed);
+                            exp_cb.store(true, Ordering::Relaxed);
+                            let _ = win_cb.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+                            let _ = win_cb.emit("set-expand", true);
+                            let _ = win_cb.emit("clipboard-urls", urls.clone());
+                        }
+                    }
+                }
+            });
+
+            // --- 邮件 UID 轮询线程 ---
+            let win_email = window.clone();
+            let noti_email = is_notifying.clone();
+            let exp_email = is_expanded.clone();
+            let email_config_t = email_config.clone();
+            let email_interval_t = email_poll_interval_secs.clone();
+            let latest_email_uid_t = latest_email_uid.clone();
+
+            thread::spawn(move || {
+                logger::info("EmailPoll", "polling thread started");
+                let mut first_run = true;
+                loop {
+                    if first_run {
+                        // 首次启动短暂等待，让配置加载完成
+                        thread::sleep(Duration::from_secs(3));
+                    } else {
+                        let interval = email_interval_t.load(Ordering::Relaxed).max(1);
+                        thread::sleep(Duration::from_secs(interval));
+                    }
+
+                    let config = email_config_t.lock().unwrap().clone();
+                    if !config.is_configured() {
+                        first_run = false;
+                        continue;
+                    }
+
+                    if first_run {
+                        // 首次启动：静默拉取最新 10 封缓存
+                        first_run = false;
+                        logger::info("EmailPoll", "initial fetch: pulling latest 10 emails");
+                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
+                        logger::info("EmailPoll", &format!("initial fetch done: {} emails cached", metas.len()));
+                        // 记录当前最新 UID
+                        if let Some(first) = metas.first() {
+                            *latest_email_uid_t.lock().unwrap() = Some(first.uid.clone());
+                        }
+                        continue;
+                    }
+
+                    let uid = tauri::async_runtime::block_on(config.get_latest_uid());
+                    let Some(uid) = uid else {
+                        continue;
+                    };
+
+                    let mut latest = latest_email_uid_t.lock().unwrap();
+                    match latest.as_ref() {
+                        None => {
+                            logger::info("EmailPoll", &format!("init uid = {uid}"));
+                            *latest = Some(uid);
+                        }
+                        Some(current) if current == &uid => {}
+                        Some(_) => {
+                            logger::info("EmailPoll", &format!("uid changed to {uid}, fetching latest 10"));
+                            *latest = Some(uid.clone());
+                            drop(latest);
+
+                            // 静默拉取最新 10 封
+                            let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
+                            logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
+
+                            // 发送通知
+                            noti_email.store(true, Ordering::Relaxed);
+                            exp_email.store(true, Ordering::Relaxed);
+                            let _ = win_email.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+                            let _ = win_email.emit("set-expand", true);
+                            let _ = win_email.emit("email-notice", serde_json::json!({
+                                "uid": uid,
+                                "message": "收到新邮件"
+                            }));
                         }
                     }
                 }
@@ -1416,6 +1529,11 @@ pub struct IslandState {
     pub preview_updates: Arc<AtomicBool>,
     // 是否显示预览版开关（UI 可见性）
     pub show_preview_toggle: Arc<AtomicBool>,
+    // 邮件
+    pub email_config: Arc<Mutex<Email>>,
+    pub email_poll_interval_secs: Arc<AtomicU64>,
+    pub latest_email_uid: Arc<Mutex<Option<String>>>,
+    pub email_shortcut: Arc<Mutex<String>>,
     // ADB / 屏幕镜像 相关
     pub sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
     pub sadb_ip: Arc<Mutex<String>>,

@@ -11,8 +11,10 @@ import { initAgent } from "./modules/agent";
 import { initResizeObserver } from "./modules/resize-observer";
 import { initSearch } from "./modules/search";
 import { initSadb } from "./modules/sadb";
+import { initNoticeQueue } from "./modules/notice-queue";
 
 initNoticeUrl();
+initNoticeQueue();
 initWeather();
 initPrivacy();
 initViewSwitcher();

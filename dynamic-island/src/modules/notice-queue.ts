@@ -1,0 +1,283 @@
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { capsule, noticeArea } from "../dom";
+import {
+  setPendingUrls,
+  isMinimized,
+  userChosenView, setUserChosenView,
+} from "../state";
+import { truncateUrl } from "../utils";
+import { getAvailableViews, setView } from "./view-switcher";
+
+// ===== 通知类型 =====
+
+export type NoticeType = "clipboard" | "email" | "generic";
+
+const MAX_DURATION = 1000; // 每条通知最大显示 1s
+
+// ===== 通知队列项 =====
+
+export interface NoticeItem {
+  id: string;
+  type: NoticeType;
+  message: string;
+  duration: number;       // ms（受 MAX_DURATION 上限约束）
+  payload: unknown;       // clipboard → string[]，email → {uid,message}
+  timestamp: number;      // 入队时间
+}
+
+// ===== 图标常量 =====
+
+const ICON_INFO = `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18"><path d="M512 426.688a42.688 42.688 0 0 0-42.688 42.688v298.688a42.688 42.688 0 0 0 85.376 0V469.376A42.688 42.688 0 0 0 512 426.688zM507.776 213.376a59.776 59.776 0 1 0 0 119.552 59.776 59.776 0 0 0 0-119.552z" fill="#ffffff"/><path d="M512 0a512 512 0 1 0 0 1024 512 512 0 0 0 0-1024z m0 938.688a426.624 426.624 0 0 1-426.688-426.688c0-235.648 190.976-426.688 426.688-426.688s426.688 190.976 426.688 426.688-190.976 426.688-426.688 426.688z" fill="#ffffff"/></svg>`;
+
+const ICON_EMAIL = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="#fff" stroke-width="1.6"/><polyline points="22,6 12,13 2,6" stroke="#fff" stroke-width="1.6"/></svg>`;
+
+const ICON_LINK = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// ===== 内部状态 =====
+
+const queue: NoticeItem[] = [];
+let activeItem: NoticeItem | null = null;
+let displayTimer: number | null = null;
+let noticeIdCounter = 0;
+let urlListMode = false; // notice-area 当前是否展示 URL 列表
+
+// ===== 公开 API =====
+
+/** 入队一条通知 */
+export function enqueueNotice(item: NoticeItem): void {
+  item.duration = Math.min(item.duration, MAX_DURATION);
+  queue.push(item);
+  if (!activeItem && !urlListMode) {
+    showNext();
+  }
+}
+
+/** 兼容接口：其他模块直接入队一条通用通知 */
+export function showNotice(msg: string): void {
+  enqueueNotice({
+    id: `generic-${++noticeIdCounter}`,
+    type: "generic",
+    message: msg,
+    duration: MAX_DURATION,
+    payload: null,
+    timestamp: Date.now(),
+  });
+}
+
+/** 清空队列并关闭显示 */
+export function clearQueue(): void {
+  queue.length = 0;
+  activeItem = null;
+  urlListMode = false;
+  clearTimer();
+  finishAll();
+}
+
+// ===== 渲染 =====
+
+function iconForType(type: NoticeType): string {
+  switch (type) {
+    case "clipboard": return ICON_LINK;
+    case "email":     return ICON_EMAIL;
+    default:          return ICON_INFO;
+  }
+}
+
+/** 渲染消息模式（图标 + 文本） */
+function renderMessage(item: NoticeItem): void {
+  noticeArea.classList.remove("notice-urllist");
+  noticeArea.innerHTML = `<div class="icon-box">${iconForType(item.type)}</div><div class="notice-msg">${escapeHtml(item.message)}</div>`;
+}
+
+/** 渲染 URL 列表模式 */
+function renderUrlList(urls: string[]): void {
+  noticeArea.classList.add("notice-urllist");
+  noticeArea.innerHTML = "";
+  urls.forEach((url) => {
+    const el = document.createElement("div");
+    el.className = "url-item";
+    el.textContent = truncateUrl(url, 50);
+    el.title = url;
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void invoke("open_link_with_handler", { url });
+      void invoke("set_interacting", { active: false });
+      exitUrlListMode();
+    });
+    noticeArea.appendChild(el);
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ===== 队列推进 =====
+
+function showNext(): void {
+  clearTimer();
+
+  if (urlListMode) return;
+
+  if (queue.length === 0) {
+    activeItem = null;
+    finishAll();
+    return;
+  }
+
+  activeItem = queue.shift()!;
+  renderMessage(activeItem);
+  noticeArea.classList.add("active");
+
+  if (!capsule.classList.contains("agent-expanded") && !isMinimized) {
+    capsule.classList.add("expanded");
+    capsule.classList.remove("lyric-collapsed");
+  }
+
+  displayTimer = window.setTimeout(() => {
+    displayTimer = null;
+    showNext();
+  }, activeItem.duration);
+}
+
+// ===== 点击处理（根据 type 分发） =====
+
+function handleClick(): void {
+  // URL 列表模式下点击空白区域 → 退出
+  if (urlListMode) {
+    exitUrlListMode();
+    return;
+  }
+
+  if (!activeItem) return;
+  clearTimer();
+
+  switch (activeItem.type) {
+    case "clipboard": {
+      const urls = activeItem.payload as string[];
+      if (urls.length === 1) {
+        void invoke("open_link_with_handler", { url: urls[0] });
+        activeItem = null;
+        advanceOrFinish();
+      } else {
+        // 进入 URL 列表模式
+        urlListMode = true;
+        void invoke("set_interacting", { active: true });
+        renderUrlList(urls);
+      }
+      break;
+    }
+    case "email":
+      void invoke("open_email_window");
+      void invoke("dismiss_island");
+      activeItem = null;
+      advanceOrFinish();
+      break;
+    default:
+      activeItem = null;
+      advanceOrFinish();
+      break;
+  }
+}
+
+function advanceOrFinish(): void {
+  if (queue.length > 0) {
+    showNext();
+  } else {
+    finishAll();
+  }
+}
+
+function exitUrlListMode(): void {
+  urlListMode = false;
+  activeItem = null;
+  void invoke("set_interacting", { active: false });
+  advanceOrFinish();
+}
+
+// ===== 工具 =====
+
+function clearTimer(): void {
+  if (displayTimer !== null) {
+    clearTimeout(displayTimer);
+    displayTimer = null;
+  }
+}
+
+function finishAll(): void {
+  // 先收起胶囊，再移除 overlay，避免底层视图闪烁
+  capsule.classList.remove("expanded");
+
+  noticeArea.classList.remove("active", "notice-urllist");
+  noticeArea.innerHTML = "";
+
+  // 通知后端释放 is_notifying / is_expanded
+  void invoke("dismiss_island");
+
+  const views = getAvailableViews();
+  if (views.includes(userChosenView)) {
+    setView(userChosenView, true);
+  } else {
+    setUserChosenView("time");
+    setView("time", true);
+  }
+}
+
+// ===== 初始化：注册所有事件监听 =====
+
+export function initNoticeQueue(): void {
+  // 点击 notice-area
+  noticeArea.addEventListener("click", (e: MouseEvent) => {
+    e.stopPropagation();
+    handleClick();
+  });
+
+  // 剪贴板链接
+  listen<string[]>("clipboard-urls", (event) => {
+    const urls = event.payload;
+    if (!urls || urls.length === 0) return;
+    setPendingUrls(urls);
+
+    const shortcut = "Alt+O";
+    const msg = urls.length === 1
+      ? `已复制链接，按 ${shortcut} 或点击打开`
+      : `检测到 ${urls.length} 个链接，点击查看`;
+
+    enqueueNotice({
+      id: `clip-${++noticeIdCounter}`,
+      type: "clipboard",
+      message: msg,
+      duration: MAX_DURATION,
+      payload: urls,
+      timestamp: Date.now(),
+    });
+  });
+
+  // 邮件通知
+  listen<{ uid: string; message: string }>("email-notice", (event) => {
+    enqueueNotice({
+      id: `email-${++noticeIdCounter}`,
+      type: "email",
+      message: event.payload.message,
+      duration: MAX_DURATION,
+      payload: event.payload,
+      timestamp: Date.now(),
+    });
+  });
+
+  // 后端通用 show-notice（兜底）
+  listen<string>("show-notice", (event) => {
+    enqueueNotice({
+      id: `generic-${++noticeIdCounter}`,
+      type: "generic",
+      message: event.payload,
+      duration: MAX_DURATION,
+      payload: null,
+      timestamp: Date.now(),
+    });
+  });
+
+  // notice-timeout：后端遗留，已由队列管理，空监听防 warn
+  listen("notice-timeout", () => {});
+}

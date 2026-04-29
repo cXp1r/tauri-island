@@ -39,8 +39,8 @@
 #notice-area               { background: #000; }
 #notice-area:hover         { background: rgba(0, 0, 0, 0.92); }
 .icon-box                  { background: rgba(255, 255, 255, 0.08); }
-#notice-msg                { color: rgba(255, 255, 255, 0.9); }
-#url-list                  { background: #000; }
+.notice-msg                { color: rgba(255, 255, 255, 0.9); }
+#notice-area.notice-urllist { background: #000; }
 .url-item                  { color: #8ab4f8; }
 .url-item:hover            { background: rgba(255, 255, 255, 0.08); color: #aecbfa; }
 
