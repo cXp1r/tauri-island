@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>邮件</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%; height: 100%;
+            font-family: "Segoe UI Variable Display", "Microsoft YaHei", sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            width: 100%; height: 100%;
+        }
+
+        /* ── 左侧邮件列表 ── */
+        .mail-list {
+            width: 320px;
+            min-width: 280px;
+            max-width: 400px;
+            height: 100%;
+            background: #222;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .mail-list-header {
+            padding: 16px 20px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        .mail-list-items {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .mail-item {
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .mail-item:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .mail-item.active {
+            background: rgba(100,160,255,0.12);
+            border-left: 3px solid #5b9df0;
+        }
+
+        .mail-item-from {
+            font-size: 13px;
+            font-weight: 600;
+            color: #ddd;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mail-item-subject {
+            font-size: 13px;
+            color: #aaa;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mail-item-date {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        /* ── 右侧邮件内容 ── */
+        .mail-content {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: #1a1a1a;
+            overflow: hidden;
+        }
+
+        .mail-content-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        .mail-content-subject {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .mail-content-meta {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .mail-content-body {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .mail-content-body iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #fff;
+        }
+
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #555;
+            font-size: 14px;
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="mail-list">
+            <div class="mail-list-header">收件箱</div>
+            <div class="mail-list-items" id="mail-list-items">
+                <!-- 邮件列表项由 JS 动态渲染 -->
+            </div>
+        </div>
+        <div class="mail-content" id="mail-content">
+            <div class="empty-state">选择一封邮件查看详情</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { invoke } from "@tauri-apps/api/core";
+        import { convertFileSrc } from "@tauri-apps/api/core";
+
+        const listEl = document.getElementById("mail-list-items");
+        const contentEl = document.getElementById("mail-content");
+
+        let emails = [];
+        let cacheDir = "";
+        let activeUid = null;
+
+        function renderList() {
+            listEl.innerHTML = "";
+            if (emails.length === 0) {
+                listEl.innerHTML = '<div class="empty-state">暂无邮件</div>';
+                return;
+            }
+            for (const m of emails) {
+                const div = document.createElement("div");
+                div.className = "mail-item" + (m.uid === activeUid ? " active" : "");
+                div.innerHTML = `
+                    <div class="mail-item-from">${esc(m.from || "(未知发件人)")}</div>
+                    <div class="mail-item-subject">${esc(m.subject || "(无主题)")}</div>
+                    <div class="mail-item-date">${esc(m.date || "")}</div>
+                `;
+                div.onclick = () => selectMail(m);
+                listEl.appendChild(div);
+            }
+        }
+
+        function selectMail(m) {
+            activeUid = m.uid;
+            renderList();
+
+            const filePath = cacheDir + "\\" + m.uid + ".html";
+            const src = convertFileSrc(filePath);
+
+            contentEl.innerHTML = `
+                <div class="mail-content-header">
+                    <div class="mail-content-subject">${esc(m.subject || "(无主题)")}</div>
+                    <div class="mail-content-meta">${esc(m.from || "")} · ${esc(m.date || "")}</div>
+                </div>
+                <div class="mail-content-body">
+                    <iframe src="${src}" sandbox="allow-same-origin"></iframe>
+                </div>
+            `;
+        }
+
+        function esc(s) {
+            return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        async function load() {
+            try {
+                cacheDir = await invoke("get_email_cache_dir");
+                emails = await invoke("fetch_emails");
+                renderList();
+                if (emails.length > 0) {
+                    selectMail(emails[0]);
+                }
+            } catch (e) {
+                console.error("load emails failed:", e);
+                listEl.innerHTML = '<div class="empty-state">加载失败</div>';
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>
