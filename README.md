@@ -21,8 +21,7 @@
 
 ## 歌词来源
 
-- [Lyricify Lyrics Provider](dynamic-island/lyricify-lyrics-provider-rs/) — 集成多平台歌词（网易云、QQ 音乐、酷狗、汽水音乐）
-- [LRCLIB.net](https://lrclib.net) — 开放歌词源，多种搜索策略
+- [Lyrix](https://github.com/cXp1r/Lyrix) — 集成多平台歌词（网易云、QQ 音乐、酷狗、汽水音乐）
 
 ## 技术栈
 
