@@ -1424,6 +1424,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[allow(dead_code)]
 fn trigger_notification(
     window: &tauri::WebviewWindow,
     is_notifying: &Arc<AtomicBool>,
@@ -1535,7 +1536,7 @@ pub struct IslandState {
     pub latest_email_uid: Arc<Mutex<Option<String>>>,
     pub email_shortcut: Arc<Mutex<String>>,
     // ADB / 屏幕镜像 相关
-    pub sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
+    pub(crate) sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
     pub sadb_ip: Arc<Mutex<String>>,
     pub sadb_port: Arc<Mutex<u16>>,
     pub sadb_expanded: Arc<AtomicBool>,
