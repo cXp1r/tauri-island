@@ -576,3 +576,136 @@ pub async fn refresh_emails(state: tauri::State<'_, crate::IslandState>) -> Resu
 pub fn get_email_cache_dir() -> String {
     email_cache_dir().to_string_lossy().to_string()
 }
+
+/// 获取所有邮件 UID 列表（新→旧），供前端无限滚动用
+#[tauri::command]
+pub async fn fetch_email_uid_list(state: tauri::State<'_, crate::IslandState>) -> Result<Vec<u32>, String> {
+    let config = state.email_config.lock().unwrap().clone();
+    task::spawn_blocking(move || {
+        if !config.is_configured() {
+            return Err("邮箱未配置".to_string());
+        }
+        let tls = native_tls::TlsConnector::builder().build().map_err(|e| e.to_string())?;
+        let client = imap::connect(
+            (config.address.as_str(), config.port),
+            config.address.as_str(), &tls,
+        ).map_err(|e| e.to_string())?;
+        let mut session = client.login(&config.username, &config.auth)
+            .map_err(|(e, _)| e.to_string())?;
+        session.select("INBOX").map_err(|e| e.to_string())?;
+        let uids = session.uid_search("ALL").map_err(|e| e.to_string())?;
+        session.logout().ok();
+        let mut uid_list: Vec<u32> = uids.into_iter().collect();
+        uid_list.sort_unstable();
+        uid_list.reverse();
+        Ok(uid_list)
+    }).await.map_err(|e| e.to_string())?
+}
+
+/// 按 UID 列表批量获取邮件元数据（主题、发件人、日期）
+#[tauri::command]
+pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandState>, uids: Vec<u32>) -> Result<Vec<EmailMeta>, String> {
+    if uids.is_empty() {
+        return Ok(vec![]);
+    }
+    let config = state.email_config.lock().unwrap().clone();
+    let cache_dir = email_cache_dir();
+    task::spawn_blocking(move || {
+        if !config.is_configured() {
+            return Err("邮箱未配置".to_string());
+        }
+        let tls = native_tls::TlsConnector::builder().build().map_err(|e| e.to_string())?;
+        let client = imap::connect(
+            (config.address.as_str(), config.port),
+            config.address.as_str(), &tls,
+        ).map_err(|e| e.to_string())?;
+        let mut session = client.login(&config.username, &config.auth)
+            .map_err(|(e, _)| e.to_string())?;
+        session.select("INBOX").map_err(|e| e.to_string())?;
+
+        let mut metas = Vec::new();
+        for &uid in &uids {
+            let uid_str = uid.to_string();
+            match session.uid_fetch(&uid_str, "(UID ENVELOPE)") {
+                Ok(fetches) => {
+                    if let Some(f) = fetches.iter().next() {
+                        let env = f.envelope();
+                        let subject_str = env
+                            .and_then(|e| e.subject.as_ref())
+                            .map(|s| decode_mime_str(s))
+                            .unwrap_or_default();
+                        let from_str = env
+                            .and_then(|e| e.from.as_ref())
+                            .and_then(|addrs| addrs.first())
+                            .map(|a| {
+                                let name = a.name.as_ref().map(|n| decode_mime_str(n)).unwrap_or_default();
+                                let mailbox = a.mailbox.as_ref().map(|m| String::from_utf8_lossy(m).to_string()).unwrap_or_default();
+                                let host = a.host.as_ref().map(|h| String::from_utf8_lossy(h).to_string()).unwrap_or_default();
+                                if name.is_empty() { format!("{}@{}", mailbox, host) } else { name }
+                            })
+                            .unwrap_or_default();
+                        let date_str = env
+                            .and_then(|e| e.date.as_ref())
+                            .map(|d| String::from_utf8_lossy(d).to_string())
+                            .unwrap_or_default();
+                        metas.push(EmailMeta {
+                            uid: uid.to_string(),
+                            from: from_str,
+                            subject: subject_str,
+                            date: date_str,
+                            cached: cache_dir.join(format!("{}.html", uid)).exists(),
+                        });
+                    }
+                }
+                Err(e) => logger::debug(TAG, &format!("fetch_metas_by_uids: envelope {uid} fail: {e}")),
+            }
+        }
+        session.logout().ok();
+        logger::info(TAG, &format!("fetch_metas_by_uids: returned {} metas", metas.len()));
+        Ok(metas)
+    }).await.map_err(|e| e.to_string())?
+}
+
+/// 按 UID 获取单封邮件正文并缓存为 HTML，返回是否成功
+#[tauri::command]
+pub async fn fetch_email_body_by_uid(state: tauri::State<'_, crate::IslandState>, uid: u32) -> Result<bool, String> {
+    let cache_dir = email_cache_dir();
+    let path = cache_dir.join(format!("{}.html", uid));
+    // 已缓存则直接返回
+    if path.exists() {
+        return Ok(true);
+    }
+    let config = state.email_config.lock().unwrap().clone();
+    task::spawn_blocking(move || {
+        if !config.is_configured() {
+            return Err("邮箱未配置".to_string());
+        }
+        let tls = native_tls::TlsConnector::builder().build().map_err(|e| e.to_string())?;
+        let client = imap::connect(
+            (config.address.as_str(), config.port),
+            config.address.as_str(), &tls,
+        ).map_err(|e| e.to_string())?;
+        let mut session = client.login(&config.username, &config.auth)
+            .map_err(|(e, _)| e.to_string())?;
+        session.select("INBOX").map_err(|e| e.to_string())?;
+
+        let uid_str = uid.to_string();
+        match session.uid_fetch(&uid_str, "(UID RFC822)") {
+            Ok(fetches) => {
+                if let Some(f) = fetches.iter().next() {
+                    if let Some(body) = f.body() {
+                        let html = extract_html_from_rfc822(body);
+                        std::fs::write(&path, &html).map_err(|e| e.to_string())?;
+                        logger::info(TAG, &format!("fetch_body_by_uid: UID {} cached ({} bytes)", uid, html.len()));
+                    }
+                }
+            }
+            Err(e) => {
+                session.logout().ok();
+                return Err(format!("fetch UID {} failed: {}", uid, e));
+            }
+        }
+        session.logout().ok();
+        Ok(true)
+    }).await.map_err(|e| e.to_string())?
+}

@@ -40,6 +40,15 @@
             color: #fff;
             border-bottom: 1px solid #333;
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .mail-count {
+            font-size: 12px;
+            font-weight: 400;
+            color: #666;
         }
 
         .mail-list-items {
@@ -52,6 +61,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.06);
             cursor: pointer;
             transition: background 0.15s;
+            min-height: 72px;
         }
         .mail-item:hover {
             background: rgba(255,255,255,0.06);
@@ -83,6 +93,25 @@
             font-size: 11px;
             color: #666;
             margin-top: 4px;
+        }
+
+        /* ── 占位骨架 ── */
+        .mail-item.placeholder .mail-item-from,
+        .mail-item.placeholder .mail-item-subject,
+        .mail-item.placeholder .mail-item-date {
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            color: transparent;
+            animation: shimmer 1.5s infinite;
+        }
+        .mail-item.placeholder .mail-item-from { width: 55%; height: 14px; }
+        .mail-item.placeholder .mail-item-subject { width: 80%; height: 14px; margin-top: 4px; }
+        .mail-item.placeholder .mail-item-date { width: 35%; height: 12px; }
+
+        @keyframes shimmer {
+            0%   { opacity: 0.4; }
+            50%  { opacity: 0.8; }
+            100% { opacity: 0.4; }
         }
 
         /* ── 右侧邮件内容 ── */
@@ -134,6 +163,15 @@
             font-size: 14px;
         }
 
+        .loading-body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #888;
+            font-size: 14px;
+        }
+
         /* 滚动条 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -144,7 +182,10 @@
 <body>
     <div class="container">
         <div class="mail-list">
-            <div class="mail-list-header">收件箱</div>
+            <div class="mail-list-header">
+                <span>收件箱</span>
+                <span class="mail-count" id="mail-count"></span>
+            </div>
             <div class="mail-list-items" id="mail-list-items">
                 <!-- 邮件列表项由 JS 动态渲染 -->
             </div>
@@ -161,73 +202,234 @@
 
         const listEl = document.getElementById("mail-list-items");
         const contentEl = document.getElementById("mail-content");
+        const countEl = document.getElementById("mail-count");
 
-        let emails = [];
         let cacheDir = "";
         let activeUid = null;
 
-        function renderList() {
-            listEl.innerHTML = "";
-            if (emails.length === 0) {
-                listEl.innerHTML = '<div class="empty-state">暂无邮件</div>';
-                return;
-            }
-            for (const m of emails) {
-                const div = document.createElement("div");
-                div.className = "mail-item" + (m.uid === activeUid ? " active" : "");
-                div.innerHTML = `
-                    <div class="mail-item-from">${esc(m.from || "(未知发件人)")}</div>
-                    <div class="mail-item-subject">${esc(m.subject || "(无主题)")}</div>
-                    <div class="mail-item-date">${esc(m.date || "")}</div>
-                `;
-                div.onclick = () => selectMail(m);
-                listEl.appendChild(div);
-            }
-        }
+        // 全量 UID 列表（新→旧），由 fetch_email_uid_list 获取
+        let allUids = [];
+        // 已获取元数据的邮件缓存 { uid: EmailMeta }
+        const metaCache = new Map();
+        // 正在请求元数据的 UID 集合（防重复请求）
+        const metaLoading = new Set();
 
-        function selectMail(m) {
-            activeUid = m.uid;
-            renderList();
-
-            const filePath = cacheDir + "\\" + m.uid + ".html";
-            const src = convertFileSrc(filePath);
-
-            contentEl.innerHTML = `
-                <div class="mail-content-header">
-                    <div class="mail-content-subject">${esc(m.subject || "(无主题)")}</div>
-                    <div class="mail-content-meta">${esc(m.from || "")} · ${esc(m.date || "")}</div>
-                </div>
-                <div class="mail-content-body">
-                    <iframe src="${src}" sandbox="allow-same-origin"></iframe>
-                </div>
-            `;
-        }
+        // 前 10 封邮件的缓存元数据（启动时从后端获取）
+        let cachedMetas = [];
 
         function esc(s) {
             return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         }
 
-        async function loadCached() {
+        // 渲染完整的列表：为每个 UID 创建一个 DOM 节点
+        function renderFullList() {
+            listEl.innerHTML = "";
+            if (allUids.length === 0) {
+                listEl.innerHTML = '<div class="empty-state">暂无邮件</div>';
+                countEl.textContent = "";
+                return;
+            }
+            countEl.textContent = `${allUids.length} 封`;
+            for (const uid of allUids) {
+                const div = document.createElement("div");
+                div.dataset.uid = uid;
+                const meta = metaCache.get(String(uid));
+                if (meta) {
+                    div.className = "mail-item" + (String(uid) === activeUid ? " active" : "");
+                    div.innerHTML = `
+                        <div class="mail-item-from">${esc(meta.from || "(未知发件人)")}</div>
+                        <div class="mail-item-subject">${esc(meta.subject || "(无主题)")}</div>
+                        <div class="mail-item-date">${esc(meta.date || "")}</div>
+                    `;
+                    div.onclick = () => selectMail(meta);
+                } else {
+                    // 占位骨架
+                    div.className = "mail-item placeholder";
+                    div.innerHTML = `
+                        <div class="mail-item-from">&nbsp;</div>
+                        <div class="mail-item-subject">&nbsp;</div>
+                        <div class="mail-item-date">&nbsp;</div>
+                    `;
+                }
+                listEl.appendChild(div);
+            }
+            // 启动 IntersectionObserver 观察占位项
+            observePlaceholders();
+        }
+
+        // 只更新单个邮件项 DOM（不重建全部列表）
+        function updateItemDom(uid) {
+            const el = listEl.querySelector(`[data-uid="${uid}"]`);
+            if (!el) return;
+            const meta = metaCache.get(String(uid));
+            if (!meta) return;
+            el.className = "mail-item" + (String(uid) === activeUid ? " active" : "");
+            el.innerHTML = `
+                <div class="mail-item-from">${esc(meta.from || "(未知发件人)")}</div>
+                <div class="mail-item-subject">${esc(meta.subject || "(无主题)")}</div>
+                <div class="mail-item-date">${esc(meta.date || "")}</div>
+            `;
+            el.onclick = () => selectMail(meta);
+        }
+
+        // IntersectionObserver：当占位项进入视口时批量加载元数据
+        let observer = null;
+        const BATCH_SIZE = 10; // 每批加载数量
+        let pendingBatch = [];
+        let batchTimer = null;
+
+        function observePlaceholders() {
+            if (observer) observer.disconnect();
+            observer = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue;
+                    const uid = Number(entry.target.dataset.uid);
+                    if (metaCache.has(String(uid)) || metaLoading.has(uid)) continue;
+                    pendingBatch.push(uid);
+                    observer.unobserve(entry.target);
+                }
+                if (pendingBatch.length > 0) {
+                    scheduleBatchFetch();
+                }
+            }, {
+                root: listEl,
+                rootMargin: "200px 0px", // 提前 200px 预加载
+            });
+
+            // 只观察占位项
+            for (const el of listEl.querySelectorAll(".mail-item.placeholder")) {
+                observer.observe(el);
+            }
+        }
+
+        function scheduleBatchFetch() {
+            if (batchTimer) return;
+            batchTimer = setTimeout(() => {
+                batchTimer = null;
+                const batch = pendingBatch.splice(0, BATCH_SIZE);
+                if (batch.length > 0) {
+                    fetchMetasBatch(batch);
+                }
+                // 如果还有剩余，继续调度
+                if (pendingBatch.length > 0) {
+                    scheduleBatchFetch();
+                }
+            }, 50);
+        }
+
+        async function fetchMetasBatch(uids) {
+            for (const uid of uids) metaLoading.add(uid);
+            try {
+                const metas = await invoke("fetch_email_metas_by_uids", { uids });
+                for (const m of metas) {
+                    metaCache.set(m.uid, m);
+                    updateItemDom(m.uid);
+                }
+                for (const uid of uids) metaLoading.delete(uid);
+            } catch (e) {
+                console.error("fetch metas batch failed:", e);
+                for (const uid of uids) metaLoading.delete(uid);
+            }
+        }
+
+        async function selectMail(meta) {
+            activeUid = meta.uid;
+            // 更新列表高亮
+            for (const el of listEl.querySelectorAll(".mail-item")) {
+                el.classList.toggle("active", el.dataset.uid === activeUid);
+            }
+
+            // 先显示 header + loading
+            contentEl.innerHTML = `
+                <div class="mail-content-header">
+                    <div class="mail-content-subject">${esc(meta.subject || "(无主题)")}</div>
+                    <div class="mail-content-meta">${esc(meta.from || "")} · ${esc(meta.date || "")}</div>
+                </div>
+                <div class="mail-content-body">
+                    <div class="loading-body">加载邮件内容中...</div>
+                </div>
+            `;
+
+            // 按需获取邮件正文
+            try {
+                await invoke("fetch_email_body_by_uid", { uid: Number(meta.uid) });
+                // 获取成功，显示 iframe
+                if (activeUid !== meta.uid) return; // 用户可能已切换
+                const filePath = cacheDir + "\\" + meta.uid + ".html";
+                const src = convertFileSrc(filePath);
+                contentEl.innerHTML = `
+                    <div class="mail-content-header">
+                        <div class="mail-content-subject">${esc(meta.subject || "(无主题)")}</div>
+                        <div class="mail-content-meta">${esc(meta.from || "")} · ${esc(meta.date || "")}</div>
+                    </div>
+                    <div class="mail-content-body">
+                        <iframe src="${src}" sandbox="allow-same-origin"></iframe>
+                    </div>
+                `;
+            } catch (e) {
+                console.error("fetch email body failed:", e);
+                if (activeUid !== meta.uid) return;
+                contentEl.querySelector(".mail-content-body").innerHTML =
+                    '<div class="empty-state">邮件内容加载失败</div>';
+            }
+        }
+
+        async function init() {
             try {
                 cacheDir = await invoke("get_email_cache_dir");
-                emails = await invoke("fetch_emails");
-                renderList();
-                if (emails.length > 0 && !activeUid) {
-                    selectMail(emails[0]);
+
+                // 1. 先加载已缓存的前 10 封元数据（冷启动快速显示）
+                cachedMetas = await invoke("fetch_emails");
+                for (const m of cachedMetas) {
+                    metaCache.set(m.uid, m);
+                }
+
+                // 2. 获取全量 UID 列表
+                try {
+                    allUids = await invoke("fetch_email_uid_list");
+                } catch (e) {
+                    console.warn("fetch uid list failed, falling back to cached:", e);
+                    // 后端未连通时回退到缓存列表
+                    allUids = cachedMetas.map(m => Number(m.uid));
+                }
+
+                renderFullList();
+
+                // 自动选中第一封
+                if (allUids.length > 0 && !activeUid) {
+                    const firstUid = String(allUids[0]);
+                    const firstMeta = metaCache.get(firstUid);
+                    if (firstMeta) {
+                        selectMail(firstMeta);
+                    }
                 }
             } catch (e) {
-                console.error("load emails failed:", e);
+                console.error("init failed:", e);
                 listEl.innerHTML = '<div class="empty-state">加载失败</div>';
             }
         }
 
-        // 后台轮询推送新邮件时自动刷新列表
-        listen("email-updated", () => {
-            loadCached();
+        // 后台轮询推送新邮件时刷新
+        listen("email-updated", async () => {
+            // 重新加载缓存元数据
+            try {
+                cachedMetas = await invoke("fetch_emails");
+                for (const m of cachedMetas) {
+                    metaCache.set(m.uid, m);
+                }
+            } catch {}
+
+            // 重新获取 UID 列表
+            try {
+                const newUids = await invoke("fetch_email_uid_list");
+                allUids = newUids;
+            } catch {}
+
+            renderFullList();
         });
 
-        // 窗口打开时立即读缓存
-        loadCached();
+        // 启动
+        init();
     </script>
 </body>
 </html>

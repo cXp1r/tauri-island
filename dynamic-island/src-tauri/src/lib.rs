@@ -354,6 +354,7 @@ pub fn run() {
             sadb::sadb_set_clipboard,
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
             email::fetch_emails, email::refresh_emails, email::get_email_cache_dir,
+            email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_body_by_uid,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
