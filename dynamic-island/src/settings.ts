@@ -28,6 +28,7 @@ type SettingsResponse = {
   email_auth: string;
   email_address: string;
   email_port: number;
+  email_shortcut: string;
 };
 
 type AISettingsResponse = {
@@ -89,6 +90,7 @@ const emailUsernameInput = document.getElementById("email-username") as HTMLInpu
 const emailAuthInput = document.getElementById("email-auth") as HTMLInputElement;
 const emailAddressInput = document.getElementById("email-address") as HTMLInputElement;
 const emailPortInput = document.getElementById("email-port") as HTMLInputElement;
+const emailShortcutInput = document.getElementById("email-shortcut-input") as HTMLInputElement;
 
 let isRecording = false;
 let statusTimer: number | null = null;
@@ -118,6 +120,7 @@ async function loadSettings() {
   emailAuthInput.value = settings.email_auth || "";
   emailAddressInput.value = settings.email_address || "";
   emailPortInput.value = (settings.email_port || 993).toString();
+  emailShortcutInput.value = settings.email_shortcut || "Alt+E";
   autoStartToggle.checked = settings.auto_start || false;
 
   // 加载日志等级
@@ -237,6 +240,39 @@ searchShortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
+// 邮箱快捷键录制
+emailShortcutInput.addEventListener("click", () => {
+  isRecording = true;
+  emailShortcutInput.value = shortcutHint;
+  emailShortcutInput.classList.add("recording");
+});
+
+emailShortcutInput.addEventListener("blur", () => {
+  if (!isRecording) return;
+  isRecording = false;
+  emailShortcutInput.classList.remove("recording");
+  void loadSettings();
+});
+
+emailShortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!isRecording) return;
+  e.preventDefault();
+
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Super");
+
+  const ignored = ["Control", "Alt", "Shift", "Meta"];
+  if (!ignored.includes(e.key)) {
+    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    emailShortcutInput.value = parts.join("+");
+    emailShortcutInput.classList.remove("recording");
+    isRecording = false;
+  }
+});
+
 // 歌词偏移补偿总开关及按播放器子页的所有交互，集中在 settings-lyric-offset 模块处理
 initLyricOffset();
 
@@ -270,6 +306,7 @@ saveBtn.addEventListener("click", async () => {
       emailAuth: emailAuthInput.value.trim(),
       emailAddress: emailAddressInput.value.trim(),
       emailPort: parseInt(emailPortInput.value) || 993,
+      emailShortcut: emailShortcutInput.value.trim() || "Alt+E",
     });
 
     // 保存 AI 设置
