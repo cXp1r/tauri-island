@@ -13,7 +13,7 @@ import { getAvailableViews, setView } from "./view-switcher";
 
 export type NoticeType = "clipboard" | "email" | "generic";
 
-const MAX_DURATION = 1000; // 每条通知最大显示 1s
+const MAX_DURATION = 3000; // 每条通知最大显示 3s
 
 // ===== 通知队列项 =====
 
@@ -47,6 +47,7 @@ let urlListMode = false; // notice-area 当前是否展示 URL 列表
 /** 入队一条通知 */
 export function enqueueNotice(item: NoticeItem): void {
   item.duration = Math.min(item.duration, MAX_DURATION);
+  console.log(`[NoticeQueue] enqueue: id=${item.id} type=${item.type} msg="${item.message}" queueLen=${queue.length + 1}`);
   queue.push(item);
   if (!activeItem && !urlListMode) {
     showNext();
@@ -127,6 +128,7 @@ function showNext(): void {
   }
 
   activeItem = queue.shift()!;
+  console.log(`[NoticeQueue] showNext: id=${activeItem.id} type=${activeItem.type} msg="${activeItem.message}" remaining=${queue.length}`);
   renderMessage(activeItem);
   noticeArea.classList.add("active");
 
@@ -206,6 +208,7 @@ function clearTimer(): void {
 }
 
 function finishAll(): void {
+  console.log(`[NoticeQueue] finishAll: queue empty, collapsing`);
   // 先收起胶囊，再移除 overlay，避免底层视图闪烁
   capsule.classList.remove("expanded");
 
@@ -268,6 +271,7 @@ export function initNoticeQueue(): void {
 
   // 后端通用 show-notice（兜底）
   listen<string>("show-notice", (event) => {
+    console.log(`[NoticeQueue] show-notice event received: "${event.payload}"`);
     enqueueNotice({
       id: `generic-${++noticeIdCounter}`,
       type: "generic",
