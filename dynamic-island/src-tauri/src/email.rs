@@ -366,7 +366,31 @@ impl Email {
     }
 }
 
-#[derive(Clone, serde::Serialize)]
+/// 元数据 JSON 文件路径
+fn email_meta_path() -> PathBuf {
+    email_cache_dir().join("email_meta.json")
+}
+
+/// 从磁盘加载已缓存的元数据（冷启动用）
+pub fn load_email_metas() -> Vec<EmailMeta> {
+    let path = email_meta_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => vec![],
+    }
+}
+
+/// 将元数据持久化到磁盘
+pub fn save_email_metas(metas: &[EmailMeta]) {
+    let path = email_meta_path();
+    if let Ok(json) = serde_json::to_string_pretty(metas) {
+        if let Err(e) = std::fs::write(&path, json) {
+            logger::debug(TAG, &format!("save_email_metas: write failed: {e}"));
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EmailMeta {
     pub uid: String,
     pub from: String,
@@ -375,25 +399,96 @@ pub struct EmailMeta {
     pub cached: bool,
 }
 
-/// 从 RFC822 原文中提取 HTML 正文，回退到纯文本
 fn extract_html_from_rfc822(raw: &[u8]) -> String {
     match mailparse::parse_mail(raw) {
         Ok(parsed) => find_html_part(&parsed).unwrap_or_else(|| {
-            // 回退：纯文本包裹为简单 HTML
-            let text = parsed.get_body().unwrap_or_default();
-            format!("<html><body><pre>{}</pre></body></html>", html_escape(&text))
+            let text = decode_body_smart(&parsed);
+            format!("<html><head><meta charset=\"utf-8\"></head><body><pre>{}</pre></body></html>", html_escape(&text))
         }),
         Err(_) => {
             let text = String::from_utf8_lossy(raw).to_string();
-            format!("<html><body><pre>{}</pre></body></html>", html_escape(&text))
+            format!("<html><head><meta charset=\"utf-8\"></head><body><pre>{}</pre></body></html>", html_escape(&text))
         }
     }
+}
+
+/// 从 MIME part 的 Content-Type charset 参数或 HTML meta 标签中探测编码，
+/// 用 encoding_rs 将原始字节正确转为 UTF-8。
+fn decode_body_smart(mail: &mailparse::ParsedMail) -> String {
+    let raw_bytes = match mail.get_body_raw() {
+        Ok(b) => b,
+        Err(_) => return mail.get_body().unwrap_or_default(),
+    };
+
+    // 1. 从 Content-Type charset 参数获取编码
+    let mime_charset = mail.ctype.params.get("charset").map(|s| s.as_str()).unwrap_or("");
+
+    // 2. 如果 MIME 没声明，从 HTML meta 标签中探测
+    let charset = if mime_charset.is_empty() {
+        detect_charset_from_html(&raw_bytes)
+    } else {
+        mime_charset.to_string()
+    };
+
+    // 3. 用 encoding_rs 解码
+    decode_bytes_with_charset(&raw_bytes, &charset)
+}
+
+fn detect_charset_from_html(bytes: &[u8]) -> String {
+    // 取前 2048 字节搜索 meta charset
+    let head = if bytes.len() > 2048 { &bytes[..2048] } else { bytes };
+    let lossy = String::from_utf8_lossy(head);
+    let lower = lossy.to_lowercase();
+
+    // <meta charset="xxx">
+    if let Some(pos) = lower.find("charset") {
+        let after = &lossy[pos..];
+        // 跳过 charset 后的 = 和可能的空格/引号
+        if let Some(eq) = after.find('=') {
+            let val_start = &after[eq + 1..];
+            let val = val_start
+                .trim_start_matches(|c: char| c == ' ' || c == '"' || c == '\'')
+                .split(|c: char| c == '"' || c == '\'' || c == ';' || c == ' ' || c == '>')
+                .next()
+                .unwrap_or("");
+            if !val.is_empty() {
+                return val.to_lowercase();
+            }
+        }
+    }
+    String::new()
+}
+
+fn decode_bytes_with_charset(bytes: &[u8], charset: &str) -> String {
+    let label = charset.trim().to_lowercase();
+    // 如果已经是 UTF-8 或为空，直接用 from_utf8_lossy
+    if label.is_empty() || label == "utf-8" || label == "utf8" {
+        return String::from_utf8_lossy(bytes).to_string();
+    }
+    // 用 encoding_rs 查找编码
+    match encoding_rs::Encoding::for_label(label.as_bytes()) {
+        Some(encoding) => {
+            let (decoded, _, _) = encoding.decode(bytes);
+            decoded.into_owned()
+        }
+        None => String::from_utf8_lossy(bytes).to_string(),
+    }
+}
+
+/// 将 HTML 中的 charset 声明统一替换为 utf-8
+fn normalize_html_charset(html: &str) -> String {
+    use regex::Regex;
+    let re1 = Regex::new(r#"(?i)(<meta\s+charset\s*=\s*")[^"]*(")"#).unwrap();
+    let out = re1.replace_all(html, "${1}utf-8${2}").to_string();
+    let re2 = Regex::new(r"(?i)(charset\s*=\s*)([\w\-]+)").unwrap();
+    re2.replace_all(&out, "${1}utf-8").to_string()
 }
 
 fn find_html_part(mail: &mailparse::ParsedMail) -> Option<String> {
     let ct = mail.ctype.mimetype.to_lowercase();
     if ct == "text/html" {
-        return mail.get_body().ok();
+        let decoded = decode_body_smart(mail);
+        return Some(normalize_html_charset(&decoded));
     }
     for sub in &mail.subparts {
         if let Some(html) = find_html_part(sub) {
@@ -409,7 +504,6 @@ fn html_escape(s: &str) -> String {
 
 fn decode_mime_str(raw: &[u8]) -> String {
     let s = String::from_utf8_lossy(raw).to_string();
-    // RFC 2047 decode
     match mailparse::parse_header(format!("X: {}", s).as_bytes()) {
         Ok((hdr, _)) => {
             let val = hdr.get_value();
@@ -420,9 +514,17 @@ fn decode_mime_str(raw: &[u8]) -> String {
 }
 
 #[tauri::command]
-pub async fn fetch_emails(state: tauri::State<'_, crate::IslandState>) -> Result<Vec<EmailMeta>, String> {
+pub fn fetch_emails(state: tauri::State<'_, crate::IslandState>) -> Result<Vec<EmailMeta>, String> {
+    Ok(state.cached_email_metas.lock().unwrap().clone())
+}
+
+#[tauri::command]
+pub async fn refresh_emails(state: tauri::State<'_, crate::IslandState>) -> Result<Vec<EmailMeta>, String> {
     let config = state.email_config.lock().unwrap().clone();
-    Ok(config.fetch_latest_emails().await)
+    let metas = config.fetch_latest_emails().await;
+    *state.cached_email_metas.lock().unwrap() = metas.clone();
+    save_email_metas(&metas);
+    Ok(metas)
 }
 
 #[tauri::command]

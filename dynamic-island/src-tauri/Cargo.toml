@@ -39,6 +39,7 @@ tracing = "0.1"
 imap = "2.4.1"
 native-tls = "0.2"
 mailparse = "0.15"
+encoding_rs = "0.8"
 lyrix = "26.2.1"
 
 [target.'cfg(windows)'.dependencies]

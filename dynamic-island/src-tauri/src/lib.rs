@@ -352,7 +352,7 @@ pub fn run() {
             sadb::sadb_send_keycode, sadb::sadb_inject_text,
             sadb::sadb_set_clipboard,
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
-            email::fetch_emails, email::get_email_cache_dir,
+            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -436,6 +436,7 @@ pub fn run() {
             let email_poll_interval_secs = Arc::new(AtomicU64::new(settings.email_poll_interval_secs.max(1)));
             let latest_email_uid: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
             let email_shortcut = Arc::new(Mutex::new(settings.email_shortcut.clone()));
+            let cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>> = Arc::new(Mutex::new(email::load_email_metas()));
 
             media::update_smtc_whitelist(
                 smtc_whitelist_enabled.load(Ordering::Relaxed),
@@ -494,6 +495,7 @@ pub fn run() {
                 email_poll_interval_secs: email_poll_interval_secs.clone(),
                 latest_email_uid: latest_email_uid.clone(),
                 email_shortcut: email_shortcut.clone(),
+                cached_email_metas: cached_email_metas.clone(),
             });
 
             // --- 系统托盘 ---
@@ -580,11 +582,15 @@ pub fn run() {
                 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
                 let email_sc = settings.email_shortcut.clone();
                 let app_h = app.handle().clone();
-                let _ = app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
+                logger::info("Shortcut", &format!("registering email shortcut: {}", email_sc));
+                match app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         window::open_email_window(app_h.clone());
                     }
-                });
+                }) {
+                    Ok(_) => logger::info("Shortcut", "email shortcut registered ok"),
+                    Err(e) => logger::info("Shortcut", &format!("email shortcut register FAILED: {e}")),
+                }
             }
 
             // --- 鼠标监控线程 ---
@@ -843,19 +849,20 @@ pub fn run() {
             });
 
             // --- 邮件 UID 轮询线程 ---
+            let app_handle_email = app.handle().clone();
             let win_email = window.clone();
             let noti_email = is_notifying.clone();
             let exp_email = is_expanded.clone();
             let email_config_t = email_config.clone();
             let email_interval_t = email_poll_interval_secs.clone();
             let latest_email_uid_t = latest_email_uid.clone();
+            let cached_metas_t = cached_email_metas.clone();
 
             thread::spawn(move || {
                 logger::info("EmailPoll", "polling thread started");
                 let mut first_run = true;
                 loop {
                     if first_run {
-                        // 首次启动短暂等待，让配置加载完成
                         thread::sleep(Duration::from_secs(3));
                     } else {
                         let interval = email_interval_t.load(Ordering::Relaxed).max(1);
@@ -869,40 +876,48 @@ pub fn run() {
                     }
 
                     if first_run {
-                        // 首次启动：静默拉取最新 10 封缓存
                         first_run = false;
                         logger::info("EmailPoll", "initial fetch: pulling latest 10 emails");
                         let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
                         logger::info("EmailPoll", &format!("initial fetch done: {} emails cached", metas.len()));
-                        // 记录当前最新 UID
                         if let Some(first) = metas.first() {
                             *latest_email_uid_t.lock().unwrap() = Some(first.uid.clone());
                         }
+                        // 保存到内存 + 磁盘
+                        *cached_metas_t.lock().unwrap() = metas.clone();
+                        email::save_email_metas(&metas);
+                        let _ = app_handle_email.emit("email-updated", ());
                         continue;
                     }
 
+                    // 增量检查：对比服务器最新 UID 与本地已知 UID
                     let uid = tauri::async_runtime::block_on(config.get_latest_uid());
-                    let Some(uid) = uid else {
-                        continue;
-                    };
+                    let Some(uid) = uid else { continue; };
 
                     let mut latest = latest_email_uid_t.lock().unwrap();
-                    match latest.as_ref() {
-                        None => {
-                            logger::info("EmailPoll", &format!("init uid = {uid}"));
-                            *latest = Some(uid);
-                        }
-                        Some(current) if current == &uid => {}
-                        Some(_) => {
-                            logger::info("EmailPoll", &format!("uid changed to {uid}, fetching latest 10"));
+                    let need_fetch = match latest.as_ref() {
+                        None => { *latest = Some(uid.clone()); true }
+                        Some(current) if current != &uid => {
+                            logger::info("EmailPoll", &format!("uid changed: {} -> {}", current, uid));
                             *latest = Some(uid.clone());
-                            drop(latest);
+                            true
+                        }
+                        _ => false,
+                    };
+                    drop(latest);
 
-                            // 静默拉取最新 10 封
-                            let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
-                            logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
+                    if need_fetch {
+                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
+                        logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
 
-                            // 发送通知
+                        let old_top = cached_metas_t.lock().unwrap().first().map(|m| m.uid.clone());
+                        *cached_metas_t.lock().unwrap() = metas.clone();
+                        email::save_email_metas(&metas);
+                        let _ = app_handle_email.emit("email-updated", ());
+
+                        // 仅当有真正新邮件时发通知（新最大 UID > 旧最大 UID）
+                        let new_top = metas.first().map(|m| m.uid.clone());
+                        if new_top != old_top {
                             noti_email.store(true, Ordering::Relaxed);
                             exp_email.store(true, Ordering::Relaxed);
                             let _ = win_email.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
@@ -1535,6 +1550,7 @@ pub struct IslandState {
     pub email_poll_interval_secs: Arc<AtomicU64>,
     pub latest_email_uid: Arc<Mutex<Option<String>>>,
     pub email_shortcut: Arc<Mutex<String>>,
+    pub cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>>,
     // ADB / 屏幕镜像 相关
     pub(crate) sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
     pub sadb_ip: Arc<Mutex<String>>,

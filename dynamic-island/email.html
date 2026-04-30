@@ -157,6 +157,7 @@
     <script type="module">
         import { invoke } from "@tauri-apps/api/core";
         import { convertFileSrc } from "@tauri-apps/api/core";
+        import { listen } from "@tauri-apps/api/event";
 
         const listEl = document.getElementById("mail-list-items");
         const contentEl = document.getElementById("mail-content");
@@ -206,12 +207,12 @@
             return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         }
 
-        async function load() {
+        async function loadCached() {
             try {
                 cacheDir = await invoke("get_email_cache_dir");
                 emails = await invoke("fetch_emails");
                 renderList();
-                if (emails.length > 0) {
+                if (emails.length > 0 && !activeUid) {
                     selectMail(emails[0]);
                 }
             } catch (e) {
@@ -220,7 +221,13 @@
             }
         }
 
-        load();
+        // 后台轮询推送新邮件时自动刷新列表
+        listen("email-updated", () => {
+            loadCached();
+        });
+
+        // 窗口打开时立即读缓存
+        loadCached();
     </script>
 </body>
 </html>
