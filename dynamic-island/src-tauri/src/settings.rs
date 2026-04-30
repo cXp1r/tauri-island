@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use crate::IslandState;
 use crate::link_handler::LinkHandler;
+use crate::cc::CcRoute;
 use windows::Win32::Foundation::HWND;
 
 /// 歌词补偿：按播放器保存时 clamp 的边界与步长（毫秒）
@@ -114,6 +115,16 @@ pub(crate) struct SettingsData {
     pub email_poll_interval_secs: u64,
     #[serde(default = "default_email_shortcut")]
     pub email_shortcut: String,
+    #[serde(default = "default_cc_routes")]
+    pub cc: Vec<CcRoute>,
+}
+
+fn default_cc_routes() -> Vec<CcRoute> {
+    vec![
+        CcRoute { path: "/Stop".into(), tag: "Claude Code 任务完成".into(), time: 3000 },
+        CcRoute { path: "/SubagentStop".into(), tag: "Subagent 完成工作".into(), time: 3000 },
+        CcRoute { path: "/Notification".into(), tag: "Claude Code 有待操作的请求".into(), time: 3000 },
+    ]
 }
 
 fn default_email_poll_interval_secs() -> u64 {
@@ -239,6 +250,7 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         email_port: default_email_port(),
         email_poll_interval_secs: default_email_poll_interval_secs(),
         email_shortcut: default_email_shortcut(),
+        cc: default_cc_routes(),
     };
     let _ = save_settings_to_file(&defaults);
     defaults
@@ -292,6 +304,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         email_port: ec_port,
         email_poll_interval_secs: state.email_poll_interval_secs.load(Ordering::Relaxed),
         email_shortcut: state.email_shortcut.lock().unwrap().clone(),
+        cc: state.cc_routes.lock().unwrap().clone(),
     }
 }
 
