@@ -488,7 +488,8 @@ fn find_html_part(mail: &mailparse::ParsedMail) -> Option<String> {
     let ct = mail.ctype.mimetype.to_lowercase();
     if ct == "text/html" {
         let decoded = decode_body_smart(mail);
-        return Some(normalize_html_charset(&decoded));
+        let normalized = normalize_html_charset(&decoded);
+        return Some(ensure_html_head_charset(&normalized));
     }
     for sub in &mail.subparts {
         if let Some(html) = find_html_part(sub) {
@@ -496,6 +497,50 @@ fn find_html_part(mail: &mailparse::ParsedMail) -> Option<String> {
         }
     }
     None
+}
+
+/// 确保 HTML 有 <head> 且包含 charset 声明，缺失时补 UTF-8
+fn ensure_html_head_charset(html: &str) -> String {
+    let lower = html.to_lowercase();
+    // 已有 charset 声明 → 不动（normalize_html_charset 已处理过）
+    if lower.contains("charset") {
+        return html.to_string();
+    }
+    let meta = r#"<meta charset="utf-8">"#;
+    // 有 <head> 但没 charset → 在 <head> 后插入
+    if let Some(pos) = lower.find("<head>") {
+        let insert = pos + "<head>".len();
+        let mut out = String::with_capacity(html.len() + meta.len() + 1);
+        out.push_str(&html[..insert]);
+        out.push_str(meta);
+        out.push_str(&html[insert..]);
+        return out;
+    }
+    // 有 <head ...> 带属性的情况
+    if let Some(pos) = lower.find("<head") {
+        if let Some(close) = html[pos..].find('>') {
+            let insert = pos + close + 1;
+            let mut out = String::with_capacity(html.len() + meta.len() + 1);
+            out.push_str(&html[..insert]);
+            out.push_str(meta);
+            out.push_str(&html[insert..]);
+            return out;
+        }
+    }
+    // 没有 <head> → 在 <html> 后插入 <head>...</head>，或直接加到最前面
+    let head_block = format!("<head>{}</head>", meta);
+    if let Some(pos) = lower.find("<html") {
+        if let Some(close) = html[pos..].find('>') {
+            let insert = pos + close + 1;
+            let mut out = String::with_capacity(html.len() + head_block.len() + 1);
+            out.push_str(&html[..insert]);
+            out.push_str(&head_block);
+            out.push_str(&html[insert..]);
+            return out;
+        }
+    }
+    // 完全没有 <html>/<head> → 包一层
+    format!("<html>{}{}</html>", head_block, html)
 }
 
 fn html_escape(s: &str) -> String {
