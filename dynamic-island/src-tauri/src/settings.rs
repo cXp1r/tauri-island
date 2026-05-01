@@ -121,9 +121,10 @@ pub(crate) struct SettingsData {
 
 fn default_cc_routes() -> Vec<CcRoute> {
     vec![
-        CcRoute { path: "/Stop".into(), tag: "Claude Code 任务完成".into(), time: 3000 },
-        CcRoute { path: "/SubagentStop".into(), tag: "Subagent 完成工作".into(), time: 3000 },
-        CcRoute { path: "/Notification".into(), tag: "Claude Code 有待操作的请求".into(), time: 3000 },
+        CcRoute { path: "/Stop".into(), tag: "$1 任务完成".into(), time: 2000 },
+        CcRoute { path: "/StopFailure".into(), tag: "$1 任务出错".into(), time: 3000 },
+        CcRoute { path: "/SubagentStop".into(), tag: "Subagent 完成工作".into(), time: 1000 },
+        CcRoute { path: "/PermissionRequest".into(), tag: "$1 有待操作的请求".into(), time: 3000 },
     ]
 }
 
