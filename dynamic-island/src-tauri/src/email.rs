@@ -577,6 +577,23 @@ pub fn get_email_cache_dir() -> String {
     email_cache_dir().to_string_lossy().to_string()
 }
 
+#[tauri::command]
+pub fn clear_email_cache(state: tauri::State<'_, crate::IslandState>) -> Result<(), String> {
+    let dir = email_cache_dir();
+    if dir.exists() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.is_file() {
+                std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    state.cached_email_metas.lock().unwrap().clear();
+    logger::info(TAG, "clear_email_cache: cleared");
+    Ok(())
+}
+
 /// 获取所有邮件 UID 列表（新→旧），供前端无限滚动用
 #[tauri::command]
 pub async fn fetch_email_uid_list(state: tauri::State<'_, crate::IslandState>) -> Result<Vec<u32>, String> {
@@ -602,71 +619,133 @@ pub async fn fetch_email_uid_list(state: tauri::State<'_, crate::IslandState>) -
     }).await.map_err(|e| e.to_string())?
 }
 
-/// 按 UID 列表批量获取邮件元数据（主题、发件人、日期）
 #[tauri::command]
 pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandState>, uids: Vec<u32>) -> Result<Vec<EmailMeta>, String> {
     if uids.is_empty() {
         return Ok(vec![]);
     }
     let config = state.email_config.lock().unwrap().clone();
+
     let cache_dir = email_cache_dir();
-    task::spawn_blocking(move || {
+    let metas = task::spawn_blocking(move || {
         if !config.is_configured() {
             return Err("邮箱未配置".to_string());
         }
-        let tls = native_tls::TlsConnector::builder().build().map_err(|e| e.to_string())?;
-        let client = imap::connect(
-            (config.address.as_str(), config.port),
-            config.address.as_str(), &tls,
-        ).map_err(|e| e.to_string())?;
-        let mut session = client.login(&config.username, &config.auth)
-            .map_err(|(e, _)| e.to_string())?;
-        session.select("INBOX").map_err(|e| e.to_string())?;
+
+        let max_parallel = 4usize;
+        let chunk_size = ((uids.len() + max_parallel - 1) / max_parallel).max(1);
+        let mut handles = Vec::new();
+
+        for chunk in uids.chunks(chunk_size) {
+            let chunk_uids = chunk.to_vec();
+            let config_t = config.clone();
+            let cache_dir_t = cache_dir.clone();
+            handles.push(std::thread::spawn(move || {
+                let tls = match native_tls::TlsConnector::builder().build() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        logger::debug(TAG, &format!("fetch_metas_by_uids: TLS build fail: {e}"));
+                        return Vec::new();
+                    }
+                };
+                let client = match imap::connect(
+                    (config_t.address.as_str(), config_t.port),
+                    config_t.address.as_str(), &tls,
+                ) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        logger::debug(TAG, &format!("fetch_metas_by_uids: connect fail: {e}"));
+                        return Vec::new();
+                    }
+                };
+                let mut session = match client.login(&config_t.username, &config_t.auth) {
+                    Ok(s) => s,
+                    Err((e, _)) => {
+                        logger::debug(TAG, &format!("fetch_metas_by_uids: login fail: {e}"));
+                        return Vec::new();
+                    }
+                };
+                if let Err(e) = session.select("INBOX") {
+                    logger::debug(TAG, &format!("fetch_metas_by_uids: select INBOX fail: {e}"));
+                    session.logout().ok();
+                    return Vec::new();
+                }
+
+                let uid_query = chunk_uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+                let mut metas = Vec::new();
+                match session.uid_fetch(&uid_query, "(UID ENVELOPE)") {
+                    Ok(fetches) => {
+                        for f in fetches.iter() {
+                            let Some(uid) = f.uid else { continue; };
+                            let env = f.envelope();
+                            let subject_str = env
+                                .and_then(|e| e.subject.as_ref())
+                                .map(|s| decode_mime_str(s))
+                                .unwrap_or_default();
+                            let from_str = env
+                                .and_then(|e| e.from.as_ref())
+                                .and_then(|addrs| addrs.first())
+                                .map(|a| {
+                                    let name = a.name.as_ref().map(|n| decode_mime_str(n)).unwrap_or_default();
+                                    let mailbox = a.mailbox.as_ref().map(|m| String::from_utf8_lossy(m).to_string()).unwrap_or_default();
+                                    let host = a.host.as_ref().map(|h| String::from_utf8_lossy(h).to_string()).unwrap_or_default();
+                                    if name.is_empty() { format!("{}@{}", mailbox, host) } else { name }
+                                })
+                                .unwrap_or_default();
+                            let date_str = env
+                                .and_then(|e| e.date.as_ref())
+                                .map(|d| String::from_utf8_lossy(d).to_string())
+                                .unwrap_or_default();
+                            metas.push(EmailMeta {
+                                uid: uid.to_string(),
+                                from: from_str,
+                                subject: subject_str,
+                                date: date_str,
+                                cached: cache_dir_t.join(format!("{}.html", uid)).exists(),
+                            });
+                        }
+                    }
+                    Err(e) => logger::debug(TAG, &format!("fetch_metas_by_uids: envelope batch fail: {e}")),
+                }
+                session.logout().ok();
+                metas
+            }));
+        }
 
         let mut metas = Vec::new();
-        for &uid in &uids {
-            let uid_str = uid.to_string();
-            match session.uid_fetch(&uid_str, "(UID ENVELOPE)") {
-                Ok(fetches) => {
-                    if let Some(f) = fetches.iter().next() {
-                        let env = f.envelope();
-                        let subject_str = env
-                            .and_then(|e| e.subject.as_ref())
-                            .map(|s| decode_mime_str(s))
-                            .unwrap_or_default();
-                        let from_str = env
-                            .and_then(|e| e.from.as_ref())
-                            .and_then(|addrs| addrs.first())
-                            .map(|a| {
-                                let name = a.name.as_ref().map(|n| decode_mime_str(n)).unwrap_or_default();
-                                let mailbox = a.mailbox.as_ref().map(|m| String::from_utf8_lossy(m).to_string()).unwrap_or_default();
-                                let host = a.host.as_ref().map(|h| String::from_utf8_lossy(h).to_string()).unwrap_or_default();
-                                if name.is_empty() { format!("{}@{}", mailbox, host) } else { name }
-                            })
-                            .unwrap_or_default();
-                        let date_str = env
-                            .and_then(|e| e.date.as_ref())
-                            .map(|d| String::from_utf8_lossy(d).to_string())
-                            .unwrap_or_default();
-                        metas.push(EmailMeta {
-                            uid: uid.to_string(),
-                            from: from_str,
-                            subject: subject_str,
-                            date: date_str,
-                            cached: cache_dir.join(format!("{}.html", uid)).exists(),
-                        });
-                    }
-                }
-                Err(e) => logger::debug(TAG, &format!("fetch_metas_by_uids: envelope {uid} fail: {e}")),
+        for handle in handles {
+            match handle.join() {
+                Ok(mut batch) => metas.append(&mut batch),
+                Err(_) => logger::debug(TAG, "fetch_metas_by_uids: worker thread panic"),
             }
         }
-        session.logout().ok();
+
+        let uid_order: std::collections::HashMap<u32, usize> = uids
+            .iter()
+            .enumerate()
+            .map(|(idx, uid)| (*uid, idx))
+            .collect();
+        metas.sort_by_key(|m| m.uid.parse::<u32>().ok().and_then(|uid| uid_order.get(&uid).copied()).unwrap_or(usize::MAX));
         logger::info(TAG, &format!("fetch_metas_by_uids: returned {} metas", metas.len()));
         Ok(metas)
-    }).await.map_err(|e| e.to_string())?
+    }).await.map_err(|e| e.to_string())??;
+
+    {
+        let mut cached = state.cached_email_metas.lock().unwrap();
+        for meta in &metas {
+            if let Some(existing) = cached.iter_mut().find(|m| m.uid == meta.uid) {
+                *existing = meta.clone();
+            } else {
+                cached.push(meta.clone());
+            }
+        }
+        cached.sort_by(|a, b| b.uid.cmp(&a.uid));
+        save_email_metas(&cached);
+    }
+
+    Ok(metas)
 }
 
-/// 按 UID 获取单封邮件正文并缓存为 HTML，返回是否成功
 #[tauri::command]
 pub async fn fetch_email_body_by_uid(state: tauri::State<'_, crate::IslandState>, uid: u32) -> Result<bool, String> {
     let cache_dir = email_cache_dir();

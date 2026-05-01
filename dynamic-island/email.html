@@ -45,6 +45,41 @@
             justify-content: space-between;
         }
 
+        .mail-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .mail-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mail-action-btn {
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.06);
+            color: #bbb;
+            border-radius: 6px;
+            padding: 3px 7px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .mail-action-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .mail-action-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         .mail-count {
             font-size: 12px;
             font-weight: 400;
@@ -183,7 +218,13 @@
     <div class="container">
         <div class="mail-list">
             <div class="mail-list-header">
-                <span>收件箱</span>
+                <div class="mail-title-group">
+                    <span>收件箱</span>
+                    <div class="mail-actions">
+                        <button class="mail-action-btn" id="refresh-btn">刷新</button>
+                        <button class="mail-action-btn" id="clear-cache-btn">清空缓存</button>
+                    </div>
+                </div>
                 <span class="mail-count" id="mail-count"></span>
             </div>
             <div class="mail-list-items" id="mail-list-items">
@@ -203,6 +244,8 @@
         const listEl = document.getElementById("mail-list-items");
         const contentEl = document.getElementById("mail-content");
         const countEl = document.getElementById("mail-count");
+        const refreshBtn = document.getElementById("refresh-btn");
+        const clearCacheBtn = document.getElementById("clear-cache-btn");
 
         let cacheDir = "";
         let activeUid = null;
@@ -219,6 +262,11 @@
 
         function esc(s) {
             return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function setActionButtonsDisabled(disabled) {
+            refreshBtn.disabled = disabled;
+            clearCacheBtn.disabled = disabled;
         }
 
         // 渲染完整的列表：为每个 UID 创建一个 DOM 节点
@@ -274,7 +322,7 @@
 
         // IntersectionObserver：当占位项进入视口时批量加载元数据
         let observer = null;
-        const BATCH_SIZE = 10; // 每批加载数量
+        const BATCH_SIZE = 30; // 每批加载数量
         let pendingBatch = [];
         let batchTimer = null;
 
@@ -293,7 +341,7 @@
                 }
             }, {
                 root: listEl,
-                rootMargin: "200px 0px", // 提前 200px 预加载
+                rootMargin: "900px 0px", // 提前预加载更多列表项
             });
 
             // 只观察占位项
@@ -314,7 +362,7 @@
                 if (pendingBatch.length > 0) {
                     scheduleBatchFetch();
                 }
-            }, 50);
+            }, 10);
         }
 
         async function fetchMetasBatch(uids) {
@@ -395,6 +443,13 @@
 
                 renderFullList();
 
+                const warmupUids = allUids
+                    .slice(0, 60)
+                    .filter(uid => !metaCache.has(String(uid)));
+                if (warmupUids.length > 0) {
+                    fetchMetasBatch(warmupUids);
+                }
+
                 // 自动选中第一封
                 if (allUids.length > 0 && !activeUid) {
                     const firstUid = String(allUids[0]);
@@ -408,6 +463,63 @@
                 listEl.innerHTML = '<div class="empty-state">加载失败</div>';
             }
         }
+
+        async function refreshMailbox() {
+            setActionButtonsDisabled(true);
+            const oldText = refreshBtn.textContent;
+            refreshBtn.textContent = "刷新中";
+            try {
+                cachedMetas = await invoke("refresh_emails");
+                for (const m of cachedMetas) {
+                    metaCache.set(m.uid, m);
+                }
+                try {
+                    allUids = await invoke("fetch_email_uid_list");
+                } catch (e) {
+                    console.warn("fetch uid list failed after refresh:", e);
+                    allUids = cachedMetas.map(m => Number(m.uid));
+                }
+                if (activeUid && !allUids.map(String).includes(activeUid)) {
+                    activeUid = null;
+                    contentEl.innerHTML = '<div class="empty-state">选择一封邮件查看详情</div>';
+                }
+                renderFullList();
+            } catch (e) {
+                console.error("refresh mailbox failed:", e);
+            } finally {
+                refreshBtn.textContent = oldText;
+                setActionButtonsDisabled(false);
+            }
+        }
+
+        async function clearCache() {
+            setActionButtonsDisabled(true);
+            const oldText = clearCacheBtn.textContent;
+            clearCacheBtn.textContent = "清理中";
+            try {
+                await invoke("clear_email_cache");
+                activeUid = null;
+                cachedMetas = [];
+                metaCache.clear();
+                metaLoading.clear();
+                pendingBatch = [];
+                contentEl.innerHTML = '<div class="empty-state">选择一封邮件查看详情</div>';
+                renderFullList();
+            } catch (e) {
+                console.error("clear email cache failed:", e);
+            } finally {
+                clearCacheBtn.textContent = oldText;
+                setActionButtonsDisabled(false);
+            }
+        }
+
+        refreshBtn.addEventListener("click", () => {
+            refreshMailbox();
+        });
+
+        clearCacheBtn.addEventListener("click", () => {
+            clearCache();
+        });
 
         // 后台轮询推送新邮件时刷新
         listen("email-updated", async () => {
