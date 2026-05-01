@@ -8,6 +8,7 @@ import { initLyricOffset } from "./settings-lyric-offset";
 type SettingsResponse = {
   clipboard_enabled: boolean;
   shortcut_key: string;
+  search_shortcut: string;
   lyric_mode: string;
   lyric_ws_enabled: boolean;
   lyric_api_search_enabled: boolean;
@@ -19,6 +20,15 @@ type SettingsResponse = {
   weather_lat: number;
   weather_lon: number;
   auto_start: boolean;
+  log_level: string;
+  sadb_ip: string;
+  sadb_port: number;
+  email_poll_interval_secs: number;
+  email_username: string;
+  email_auth: string;
+  email_address: string;
+  email_port: number;
+  email_shortcut: string;
 };
 
 type AISettingsResponse = {
@@ -54,12 +64,14 @@ const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
+const searchShortcutInput = document.getElementById("search-shortcut-input") as HTMLInputElement;
 const lyricModeSelect = document.getElementById("lyric-mode") as HTMLSelectElement;
 const lyricOffsetEnabledToggle = document.getElementById("lyric-offset-enabled") as HTMLInputElement;
 const indicatorColorInput = document.getElementById("indicator-color") as HTMLInputElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const autoStartToggle = document.getElementById("auto-start-toggle") as HTMLInputElement;
+const logLevelSelect = document.getElementById("log-level-select") as HTMLSelectElement | null;
 
 const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInputElement;
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
@@ -71,6 +83,14 @@ const aiModelInput = document.getElementById("ai-model") as HTMLInputElement;
 const aiDetectBtn = document.getElementById("ai-detect-btn") as HTMLButtonElement;
 const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTMLParagraphElement;
 const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
+const sadbIpInput = document.getElementById("sadb-ip") as HTMLInputElement;
+const sadbPortInput = document.getElementById("sadb-port") as HTMLInputElement;
+const emailPollIntervalInput = document.getElementById("email-poll-interval") as HTMLInputElement;
+const emailUsernameInput = document.getElementById("email-username") as HTMLInputElement;
+const emailAuthInput = document.getElementById("email-auth") as HTMLInputElement;
+const emailAddressInput = document.getElementById("email-address") as HTMLInputElement;
+const emailPortInput = document.getElementById("email-port") as HTMLInputElement;
+const emailShortcutInput = document.getElementById("email-shortcut-input") as HTMLInputElement;
 
 let isRecording = false;
 let statusTimer: number | null = null;
@@ -88,11 +108,25 @@ async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
+  searchShortcutInput.value = settings.search_shortcut;
   lyricModeSelect.value = settings.lyric_mode || "lyric";
   lyricOffsetEnabledToggle.checked = settings.lyric_offset_enabled ?? true;
   indicatorColorInput.value = settings.indicator_color || "#2edb67";
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
+  sadbIpInput.value = settings.sadb_ip || "";
+  sadbPortInput.value = settings.sadb_port?.toString() || "5555";
+  emailPollIntervalInput.value = Math.max(1, settings.email_poll_interval_secs || 1).toString();
+  emailUsernameInput.value = settings.email_username || "";
+  emailAuthInput.value = settings.email_auth || "";
+  emailAddressInput.value = settings.email_address || "";
+  emailPortInput.value = (settings.email_port || 993).toString();
+  emailShortcutInput.value = settings.email_shortcut || "Alt+E";
   autoStartToggle.checked = settings.auto_start || false;
+
+  // 加载日志等级
+  if (logLevelSelect) {
+    logLevelSelect.value = settings.log_level || "info";
+  }
 
   // 加载 AI 设置
   try {
@@ -173,6 +207,72 @@ shortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
+// 搜索快捷键录制
+searchShortcutInput.addEventListener("click", () => {
+  isRecording = true;
+  searchShortcutInput.value = shortcutHint;
+  searchShortcutInput.classList.add("recording");
+});
+
+searchShortcutInput.addEventListener("blur", () => {
+  if (!isRecording) return;
+  isRecording = false;
+  searchShortcutInput.classList.remove("recording");
+  void loadSettings();
+});
+
+searchShortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!isRecording) return;
+  e.preventDefault();
+
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Super");
+
+  const ignored = ["Control", "Alt", "Shift", "Meta"];
+  if (!ignored.includes(e.key)) {
+    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    searchShortcutInput.value = parts.join("+");
+    searchShortcutInput.classList.remove("recording");
+    isRecording = false;
+  }
+});
+
+// 邮箱快捷键录制
+emailShortcutInput.addEventListener("click", () => {
+  isRecording = true;
+  emailShortcutInput.value = shortcutHint;
+  emailShortcutInput.classList.add("recording");
+});
+
+emailShortcutInput.addEventListener("blur", () => {
+  if (!isRecording) return;
+  isRecording = false;
+  emailShortcutInput.classList.remove("recording");
+  void loadSettings();
+});
+
+emailShortcutInput.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!isRecording) return;
+  e.preventDefault();
+
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Super");
+
+  const ignored = ["Control", "Alt", "Shift", "Meta"];
+  if (!ignored.includes(e.key)) {
+    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    emailShortcutInput.value = parts.join("+");
+    emailShortcutInput.classList.remove("recording");
+    isRecording = false;
+  }
+});
+
 // 歌词偏移补偿总开关及按播放器子页的所有交互，集中在 settings-lyric-offset 模块处理
 initLyricOffset();
 
@@ -183,15 +283,30 @@ saveBtn.addEventListener("click", async () => {
     return;
   }
 
+  const searchShortcut = searchShortcutInput.value.trim();
+  if (!searchShortcut || searchShortcut === shortcutHint) {
+    searchShortcutInput.value = "Alt+Space";
+  }
+
   try {
     await invoke("save_settings", {
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
+      searchShortcut: searchShortcutInput.value,
       lyricMode: lyricModeSelect.value,
       lyricOffsetEnabled: lyricOffsetEnabledToggle.checked,
       indicatorColor: indicatorColorInput.value,
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,
+      logLevel: logLevelSelect ? logLevelSelect.value : undefined,
+      sadbIp: sadbIpInput.value.trim(),
+      sadbPort: parseInt(sadbPortInput.value) || 5555,
+      emailPollIntervalSecs: Math.max(1, parseInt(emailPollIntervalInput.value) || 1),
+      emailUsername: emailUsernameInput.value.trim(),
+      emailAuth: emailAuthInput.value.trim(),
+      emailAddress: emailAddressInput.value.trim(),
+      emailPort: parseInt(emailPortInput.value) || 993,
+      emailShortcut: emailShortcutInput.value.trim() || "Alt+E",
     });
 
     // 保存 AI 设置

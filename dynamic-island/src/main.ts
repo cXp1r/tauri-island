@@ -9,8 +9,12 @@ import { initMinimizeDrag } from "./modules/minimize-drag";
 import { initCapsuleInteraction } from "./modules/capsule-interaction";
 import { initAgent } from "./modules/agent";
 import { initResizeObserver } from "./modules/resize-observer";
+import { initSearch } from "./modules/search";
+import { initSadb } from "./modules/sadb";
+import { initNoticeQueue } from "./modules/notice-queue";
 
 initNoticeUrl();
+initNoticeQueue();
 initWeather();
 initPrivacy();
 initViewSwitcher();
@@ -19,6 +23,8 @@ initMusicControls();
 initMinimizeDrag();
 initCapsuleInteraction();
 initAgent();
+initSearch();
+initSadb();
 initResizeObserver();
 
 showOnlyView("time");

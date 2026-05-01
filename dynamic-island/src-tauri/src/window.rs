@@ -2,10 +2,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use crate::{IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
+use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
 
 pub(crate) fn get_foreground_process_name() -> Option<String> {
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
@@ -220,16 +220,23 @@ pub fn start_drag(state: tauri::State<'_, IslandState>) {
 pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(false, Ordering::Relaxed);
 
-    // Agent 展开态时不自动吸附回顶部
-    if state.agent_expanded.load(Ordering::Relaxed) || state.music_expanded.load(Ordering::Relaxed) {
+    // 镜像流推送中允许拖动，不自动吸附
+    if state.agent_expanded.load(Ordering::Relaxed)
+        || state.music_expanded.load(Ordering::Relaxed)
+        || state.sadb_mirroring.load(Ordering::Relaxed)
+    {
         return;
     }
 
-    let target_x = state.home_x;
+    let scale = window.scale_factor().unwrap_or(1.0);
+    // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
+    let cur_w = window.inner_size()
+        .map(|s| s.width as f64 / scale)
+        .unwrap_or(WIN_W);
+    let target_x = (state.screen_w - cur_w) / 2.0;
     let target_y = TOP_MARGIN;
 
     if let Ok(pos) = window.outer_position() {
-        let scale = window.scale_factor().unwrap_or(1.0);
         let cx = pos.x as f64 / scale;
         let cy = pos.y as f64 / scale;
         let w = window.clone();
@@ -253,12 +260,74 @@ pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
 #[tauri::command]
 pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64) {
     // 展开/收起动画进行中，跳过 ResizeObserver 驱动的同步
-    if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
-    let new_h = height.max(60.0).min(700.0);
+    if state.expand_anim_id.load(Ordering::Relaxed) != 0 {
+        //logger::debug("Window", "sync_window_height skipped (anim in progress)");
+        return;
+    }
+    let max_h = if state.sadb_mirroring.load(Ordering::Relaxed) { 1200.0 } else { 700.0 };
+    let new_h = (height + 1.0).max(60.0).min(max_h);
     if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;
+        logger::debug("Window", &format!("sync_window_height: height={height:.0} → new_h={new_h:.0}, cur_w={cur_w:.0}"));
         let _ = window.set_size(tauri::LogicalSize::new(cur_w, new_h));
+    }
+}
+
+#[tauri::command]
+pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, reposition: Option<bool>) {
+    if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
+    let (max_w, max_h) = if state.sadb_mirroring.load(Ordering::Relaxed) {
+        (state.screen_w.max(700.0), 1100.0)
+    } else {
+        (620.0, 700.0)
+    };
+    let new_w = width.max(200.0).min(max_w);
+    let new_h = height.max(60.0).min(max_h);
+    logger::debug("Window", &format!("sync_window_size: w={width:.0}→{new_w:.0} h={height:.0}→{new_h:.0}"));
+    // 只在明确要求居中时（流启动 / 拖拽释放）才重定位，拖拽过程中不移窗口
+    if state.sadb_mirroring.load(Ordering::Relaxed) && reposition.unwrap_or(false) {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let cur_y = window.outer_position().map(|p| p.y as f64 / scale).unwrap_or(TOP_MARGIN);
+        let new_x = (state.screen_w - new_w) / 2.0;
+        let _ = window.set_position(tauri::LogicalPosition::new(new_x, cur_y));
+    }
+    let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
+}
+
+/// 强制窗口成为前台窗口，绕过 Windows 前台锁（AttachThreadInput 技巧）
+pub(crate) fn force_foreground(hwnd: HWND) {
+    use windows::Win32::System::Threading::{GetCurrentThreadId, AttachThreadInput};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, BringWindowToTop,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            let _ = SetForegroundWindow(hwnd);
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetFocus(Some(hwnd));
+            return;
+        }
+        let fg_thread = GetWindowThreadProcessId(fg, None);
+        let cur_thread = GetCurrentThreadId();
+        let target_thread = GetWindowThreadProcessId(hwnd, None);
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, true);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, true);
+        }
+        let _ = SetForegroundWindow(hwnd);
+        let _ = BringWindowToTop(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, false);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, false);
+        }
     }
 }
 
@@ -317,6 +386,54 @@ pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, 
             });
         } else {
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+        }
+    }
+}
+
+#[tauri::command]
+pub fn set_sadb_expanded(_window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
+    state.sadb_expanded.store(expanded, Ordering::Relaxed);
+    if expanded {
+        // 流开始，清除待机 flag
+        state.sadb_idle.store(false, Ordering::Relaxed);
+    }
+    // 窗口大小由前端 autoFitWindow + ResizeObserver 统一管理
+}
+
+/// sadb 待机面板：进入时动画到顶部居中 + 420×430 尺寸；退出时动画回默认并吸顶
+#[tauri::command]
+pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, idle: bool) {
+    state.sadb_idle.store(idle, Ordering::Relaxed);
+    let screen_w = state.screen_w;
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let home_x = (screen_w - WIN_W) / 2.0;
+
+    if idle {
+        // 流结束/主动展开待机面板：动画移回顶部并调整到待机尺寸
+        let target_h = 430.0; // 420px capsule + 10px body padding
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, WIN_H_DEFAULT));
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, target_h, 350.0);
+            });
+        }
+    } else {
+        // 收起待机面板回胶囊：动画到默认尺寸并确保吸顶居中
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, 430.0));
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT, 300.0);
+            });
         }
     }
 }
@@ -494,8 +611,34 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "lyric" | "agent" => view,
+        "time" | "lyric" | "agent" | "search" | "sadb" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
 }
+
+#[tauri::command]
+pub fn open_email_window(app: tauri::AppHandle) {
+    // 如果已有 email 窗口则聚焦
+    if let Some(win) = app.get_webview_window("email") {
+        let _ = win.set_focus();
+        return;
+    }
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "email",
+        tauri::WebviewUrl::App("email.html".into()),
+    )
+    .title("邮件")
+    .inner_size(960.0, 640.0)
+    .min_inner_size(720.0, 480.0)
+    .center()
+    .decorations(true)
+    .resizable(true);
+
+    match builder.build() {
+        Ok(_) => logger::info("Window", "email window opened"),
+        Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
+    }
+}
+

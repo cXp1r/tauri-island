@@ -1,5 +1,5 @@
-use lyricify_lyrics_provider::models::LyricsData;
-use lyricify_lyrics_provider::smtc_lyrics::MusicPlayer;
+use lyrix::models::LyricsData;
+use lyrix::smtc_lyrics;
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct LyricToken {
     pub text: String,
@@ -29,7 +29,7 @@ fn fetch_lyrics_by_rust_api(
     gen_ref: &std::sync::Arc<std::sync::atomic::AtomicU64>,
     gen: u64,
 ) -> Option<LyricsData> {
-    use lyricify_lyrics_provider::smtc_lyrics;
+   
 
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -57,14 +57,7 @@ fn fetch_lyrics_by_rust_api(
             "kugou" => smtc_lyrics::MusicPlayer::Kugou,
             "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}" => smtc_lyrics::MusicPlayer::SodaMusic,
             _ => {
-                let players: Vec<MusicPlayer> = smtc_lyrics::get_running_players();
-                crate::logger::info("Lyrics", &format!(
-                    "rust-api: running players=[{}]", players.iter().map(|p: &MusicPlayer| p.display_name()).collect::<Vec<_>>().join(", ")
-                ));
-                match players.get(1) {
-                    Some(player) => player.clone(),
-                    None => return None,
-                }
+                smtc_lyrics::MusicPlayer::SodaMusic
             }
         };
         
@@ -140,7 +133,7 @@ fn line_end_ms(data: &LyricsData, sorted_indices: &[usize], sorted_pos: usize, s
     start_ms + 4000
 }
 
-fn tokens_from_line(line: &lyricify_lyrics_provider::models::LineInfo, line_start_ms: i64, line_end_ms: i64) -> Vec<LyricToken> {
+fn tokens_from_line(line: &lyrix::models::LineInfo, line_start_ms: i64, line_end_ms: i64) -> Vec<LyricToken> {
     if !line.syllables.is_empty() {
         let mut tokens = Vec::with_capacity(line.syllables.len());
         for (i, s) in line.syllables.iter().enumerate() {

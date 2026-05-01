@@ -9,6 +9,10 @@ pub mod settings;
 pub mod ai;
 mod window;
 mod updater;
+mod ceverything;
+mod sadb;
+mod email;
+mod cc;
 
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
@@ -17,26 +21,29 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::image::Image;
 use windows::Win32::Foundation::HWND;
 
 use ai::ChatMessage;
+use email::Email;
 use link_handler::LinkHandler;
 
-pub(crate) const WIN_W: f64 = 340.0;
+pub(crate) const WIN_W: f64 = 420.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
 pub(crate) const TOP_MARGIN: f64 = 0.0;
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0;
-pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;
-pub(crate) const CAPSULE_LYRIC_W: f64 = 320.0;
-pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;
-pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;
-pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;
+// ── 胶囊尺寸（与 base.css :root 变量对应） ──
+pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0; // CSS --collapsed-w
+pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;  // CSS --collapsed-h
+pub(crate) const CAPSULE_LYRIC_W: f64 = 340.0;     // CSS --lyric-collapsed-w
+pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;  // CSS --expanded-w
+pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
+pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
 
-pub(crate) const WIN_H_DEFAULT: f64 = 84.0;
+pub(crate) const WIN_H_DEFAULT: f64 = 84.0;        // CAPSULE_EXPANDED_H + padding
 
 // 收起态（绿条）尺寸
 pub(crate) const MINIMIZED_W: f64 = 70.0;
@@ -313,7 +320,9 @@ pub fn run() {
             window::start_drag, window::end_drag, window::drag_move,
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
-            window::set_agent_expanded, window::sync_window_height, window::set_minimized, window::show_context_menu,
+            window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
+            window::set_sadb_expanded, window::open_email_window,
+            window::sadb_set_idle,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
@@ -324,6 +333,7 @@ pub fn run() {
             ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
             settings::get_link_handlers, settings::save_link_handlers,
             link_handler::open_link_with_handler, link_handler::test_link_handler,
+            ceverything::search_query, ceverything::search_execute,
             get_location, get_weather, refresh_weather, save_weather_city, settings::search_city,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
@@ -336,7 +346,15 @@ pub fn run() {
             settings::get_preview_updates, settings::set_preview_updates,
             settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
-            logger::get_log_path, logger::open_log_dir
+            logger::get_log_path, logger::open_log_dir,
+            logger::get_log_level, logger::set_log_level,
+            sadb::sadb_start_mirroring, sadb::sadb_stop_mirroring,
+            sadb::sadb_send_touch_event, sadb::sadb_send_scroll_event,
+            sadb::sadb_send_keycode, sadb::sadb_inject_text,
+            sadb::sadb_set_clipboard,
+            sadb::sadb_connect_device, sadb::sadb_disconnect_device,
+            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir,
+            email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_body_by_uid,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -360,9 +378,11 @@ pub fn run() {
 
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
+            logger::set_level(&settings.log_level);
             let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
+            let search_shortcut = Arc::new(Mutex::new(settings.search_shortcut.clone()));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             // 按播放器存储的歌词补偿，启动时规范化键值
@@ -383,6 +403,9 @@ pub fn run() {
             let ai_generating = Arc::new(AtomicBool::new(false));
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
             let agent_expanded = Arc::new(AtomicBool::new(false));
+            let sadb_expanded = Arc::new(AtomicBool::new(false));
+            let sadb_idle = Arc::new(AtomicBool::new(false));
+            let sadb_mirroring = Arc::new(AtomicBool::new(false));
             let music_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
@@ -406,6 +429,17 @@ pub fn run() {
             let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
             let weather_cache: Arc<Mutex<Option<WeatherResult>>> = Arc::new(Mutex::new(None));
             let weather_force_refresh = Arc::new(AtomicBool::new(true)); // 启动后立即获取
+            let email_config = Arc::new(Mutex::new(Email {
+                username: settings.email_username.clone(),
+                auth: settings.email_auth.clone(),
+                address: settings.email_address.clone(),
+                port: settings.email_port,
+            }));
+            let email_poll_interval_secs = Arc::new(AtomicU64::new(settings.email_poll_interval_secs.max(1)));
+            let latest_email_uid: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let email_shortcut = Arc::new(Mutex::new(settings.email_shortcut.clone()));
+            let cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>> = Arc::new(Mutex::new(email::load_email_metas()));
+            let cc_routes: Arc<Mutex<Vec<cc::CcRoute>>> = Arc::new(Mutex::new(settings.cc.clone()));
 
             media::update_smtc_whitelist(
                 smtc_whitelist_enabled.load(Ordering::Relaxed),
@@ -413,6 +447,9 @@ pub fn run() {
             );
 
             app.manage(IslandState {
+                sadb_session: tokio::sync::Mutex::new(None),
+                sadb_ip: Arc::new(Mutex::new(settings.sadb_ip.clone())),
+                sadb_port: Arc::new(Mutex::new(settings.sadb_port)),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
@@ -420,12 +457,16 @@ pub fn run() {
                 clipboard_enabled: clipboard_enabled.clone(),
                 pending_url: pending_url.clone(),
                 shortcut_key: shortcut_key.clone(),
+                search_shortcut: search_shortcut.clone(),
                 lyric_mode: lyric_mode.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
                 lyric_offsets_by_player: lyric_offsets_by_player.clone(),
                 active_player_app_id: active_player_app_id.clone(),
                 current_view: current_view.clone(),
                 agent_expanded: agent_expanded.clone(),
+                sadb_expanded: sadb_expanded.clone(),
+                sadb_idle: sadb_idle.clone(),
+                sadb_mirroring: sadb_mirroring.clone(),
                 music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
@@ -453,6 +494,12 @@ pub fn run() {
                 smtc_whitelist_enabled: smtc_whitelist_enabled.clone(),
                 preview_updates: preview_updates.clone(),
                 show_preview_toggle: show_preview_toggle.clone(),
+                email_config: email_config.clone(),
+                email_poll_interval_secs: email_poll_interval_secs.clone(),
+                latest_email_uid: latest_email_uid.clone(),
+                email_shortcut: email_shortcut.clone(),
+                cached_email_metas: cached_email_metas.clone(),
+                cc_routes: cc_routes.clone(),
             });
 
             // --- 系统托盘 ---
@@ -500,6 +547,56 @@ pub fn run() {
                 });
             }
 
+            // --- 搜索快捷键（从设置读取键位） ---
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+                let win_search = window.clone();
+                let hwnd_search = hwnd.0 as usize;
+                let search_sc = settings.search_shortcut.clone();
+                let _ = app.global_shortcut().on_shortcut(search_sc.as_str(), move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let h = HWND(hwnd_search as *mut _);
+                        // 仅当窗口不在前台时才抢焦点，避免覆盖 webview 内部 input focus
+                        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+                        if fg != h {
+                            window::force_foreground(h);
+                            let _ = win_search.set_focus();
+                            // 强制 DWM 重组合窗口，修复 WebView2 透明窗口黑屏问题
+                            unsafe {
+                                use windows::Win32::UI::WindowsAndMessaging::SetWindowPos;
+                                let _ = SetWindowPos(
+                                    h,
+                                    None,
+                                    0, 0, 0, 0,
+                                    windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE
+                                        | windows::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
+                                );
+                            }
+                        }
+                        let _ = win_search.emit("activate-search", ());
+                    }
+                });
+            }
+
+            // --- 邮件快捷键 ---
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+                let email_sc = settings.email_shortcut.clone();
+                let app_h = app.handle().clone();
+                logger::info("Shortcut", &format!("registering email shortcut: {}", email_sc));
+                match app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        window::open_email_window(app_h.clone());
+                    }
+                }) {
+                    Ok(_) => logger::info("Shortcut", "email shortcut registered ok"),
+                    Err(e) => logger::info("Shortcut", &format!("email shortcut register FAILED: {e}")),
+                }
+            }
+
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
             let noti_m = is_notifying.clone();
@@ -509,6 +606,8 @@ pub fn run() {
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
             let agent_expanded_m = agent_expanded.clone();
+            let sadb_expanded_m = sadb_expanded.clone();
+            let sadb_idle_m = sadb_idle.clone();
             let music_expanded_m = music_expanded.clone();
             let agent_window_size_m = agent_window_size.clone();
             let expand_anim_id_m = expand_anim_id.clone();
@@ -530,37 +629,45 @@ pub fn run() {
                         // 根据当前状态确定胶囊宽度
                         let expanded = exp_m.load(Ordering::Relaxed);
                         let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
+                        let sadb_exp = sadb_expanded_m.load(Ordering::Relaxed);
                         let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
-                        let (cw, ch, cur_win_w) = if is_minimized_m.load(Ordering::Relaxed) {
-                            (MINIMIZED_W, MINIMIZED_H, MINIMIZED_W)
-                        } else if music_exp && view == "lyric" {
-                            // 音乐面板展开态：使用实际窗口尺寸
-                            if let Some(r) = window::get_window_rect(hwnd) {
-                                let w = (r.right - r.left) as f64 / scale;
-                                let h = (r.bottom - r.top) as f64 / scale;
-                                (w, h, w)
-                            } else {
-                                (380.0, 360.0, 380.0)
-                            }
-                        } else if agent_exp && view == "agent" {
-                            let size_setting = agent_window_size_m.lock().unwrap().clone();
-                            let (aw, ah) = window::get_agent_window_size(&size_setting);
-                            (aw, ah, aw)
-                        } else if expanded {
-                            (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, WIN_W)
-                        } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
-                            (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, WIN_W)
-                        } else {
-                            (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H, WIN_W)
-                        };
-
+                        // 直接用实际窗口矩形判断鼠标是否在胶囊上
                         let rect = window::get_window_rect(hwnd);
                         let on_capsule = if let Some(rect) = rect {
+                            let win_w = (rect.right - rect.left) as f64 / scale;
+                            let win_h = (rect.bottom - rect.top) as f64 / scale;
+
+                            let (cw, ch) = if is_minimized_m.load(Ordering::Relaxed) {
+                                (MINIMIZED_W, MINIMIZED_H)
+                            } else if music_exp && view == "lyric" {
+                                // 音乐大面板：占满窗口
+                                (win_w, win_h)
+                            } else if agent_exp && view == "agent" {
+                                let size_setting = agent_window_size_m.lock().unwrap().clone();
+                                let (aw, ah) = window::get_agent_window_size(&size_setting);
+                                (aw, ah)
+                            } else if sadb_exp && view == "sadb" {
+                                (win_w, win_h)
+                            } else if sadb_idle_m.load(Ordering::Relaxed) && view == "sadb" {
+                                // 待机面板：380×420 居中于 420px 窗口内
+                                (380.0, 420.0)
+                            } else if expanded {
+                                (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
+                            } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
+                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H)
+                            } else if view == "search" {
+                                // 搜索视图：宽度=窗口宽度，高度=实际窗口高度（结果展开后会变大）
+                                (win_w, win_h)
+                            } else {
+                                // time 等收起态
+                                (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H)
+                            };
+
                             let win_x = rect.left as f64;
                             let win_y = rect.top as f64;
-                            let capsule_x = win_x + (cur_win_w * scale - cw * scale) / 2.0;
+                            let capsule_x = win_x + (win_w * scale - cw * scale) / 2.0;
                             let capsule_y = win_y + CAPSULE_TOP_PAD * scale;
                             let fmx = mx as f64;
                             let fmy = my as f64;
@@ -568,14 +675,17 @@ pub fn run() {
                         } else { false };
 
                         if on_capsule && !was_on_capsule {
+                            logger::debug("HitTest", "mouse ON capsule -> click-through OFF");
                             window::set_click_through(hwnd, false);
                             was_on_capsule = true;
                         } else if !on_capsule && was_on_capsule {
+                            logger::debug("HitTest", "mouse OFF capsule -> click-through ON");
                             window::set_click_through(hwnd, true);
                             was_on_capsule = false;
                         }
 
-                        if !agent_exp && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                        let sadb_idle = sadb_idle_m.load(Ordering::Relaxed);
+                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -705,30 +815,133 @@ pub fn run() {
             let pending_url_cb = pending_url.clone();
 
             thread::spawn(move || {
+                logger::info("Clipboard", "polling thread started");
                 let mut last_text = String::new();
+                let mut logged_disabled = false;
                 loop {
                     thread::sleep(Duration::from_millis(1200));
-                    if !cb_enabled.load(Ordering::Relaxed) { continue; }
-                    if let Some(text) = clipboard::read_clipboard_text() {
-                        if text != last_text {
-                            last_text = text.clone();
-                            let urls = clipboard::extract_urls(&text);
-                            if !urls.is_empty() {
-                                *pending_url_cb.lock().unwrap() = urls.clone();
-                                let shortcut = "Alt+O";
-                                if urls.len() == 1 {
-                                    let msg = format!("已复制链接，按 {} 或点击打开", shortcut);
-                                    let _ = win_cb.emit("clipboard-urls", urls.clone());
-                                    trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
-                                } else {
-                                    let msg = format!("检测到 {} 个链接，点击查看", urls.len());
-                                    let _ = win_cb.emit("clipboard-urls", urls.clone());
-                                    trigger_notification(&win_cb, &noti_cb, &exp_cb, &msg);
-                                }
-                            }
+                    if !cb_enabled.load(Ordering::Relaxed) {
+                        if !logged_disabled {
+                            logger::debug("Clipboard", "clipboard_enabled = false, skipping");
+                            logged_disabled = true;
+                        }
+                        continue;
+                    }
+                    logged_disabled = false;
+                    let read = clipboard::read_clipboard_text();
+                    if read.is_none() {
+                        logger::debug("Clipboard", "read_clipboard_text returned None");
+                        continue;
+                    }
+                    let text = read.unwrap();
+                    if text != last_text {
+                        last_text = text.clone();
+                        logger::debug("Clipboard", &format!("text changed (len={}): {:?}", text.len(), &text[..text.len().min(200)]));
+                        let urls = clipboard::extract_urls(&text);
+                        logger::debug("Clipboard", &format!("extract_urls => {} url(s)", urls.len()));
+                        if !urls.is_empty() {
+                            logger::info("Clipboard", &format!("detected {} url(s): {:?}", urls.len(), urls));
+                            *pending_url_cb.lock().unwrap() = urls.clone();
+                            noti_cb.store(true, Ordering::Relaxed);
+                            exp_cb.store(true, Ordering::Relaxed);
+                            let _ = win_cb.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+                            let _ = win_cb.emit("set-expand", true);
+                            let _ = win_cb.emit("clipboard-urls", urls.clone());
                         }
                     }
                 }
+            });
+
+            // --- 邮件 UID 轮询线程 ---
+            let app_handle_email = app.handle().clone();
+            let win_email = window.clone();
+            let noti_email = is_notifying.clone();
+            let exp_email = is_expanded.clone();
+            let email_config_t = email_config.clone();
+            let email_interval_t = email_poll_interval_secs.clone();
+            let latest_email_uid_t = latest_email_uid.clone();
+            let cached_metas_t = cached_email_metas.clone();
+
+            thread::spawn(move || {
+                logger::info("EmailPoll", "polling thread started");
+                let mut first_run = true;
+                loop {
+                    if first_run {
+                        thread::sleep(Duration::from_secs(3));
+                    } else {
+                        let interval = email_interval_t.load(Ordering::Relaxed).max(1);
+                        thread::sleep(Duration::from_secs(interval));
+                    }
+
+                    let config = email_config_t.lock().unwrap().clone();
+                    if !config.is_configured() {
+                        first_run = false;
+                        continue;
+                    }
+
+                    if first_run {
+                        first_run = false;
+                        logger::info("EmailPoll", "initial fetch: pulling latest 10 emails");
+                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
+                        logger::info("EmailPoll", &format!("initial fetch done: {} emails cached", metas.len()));
+                        if let Some(first) = metas.first() {
+                            *latest_email_uid_t.lock().unwrap() = Some(first.uid.clone());
+                        }
+                        // 保存到内存 + 磁盘
+                        *cached_metas_t.lock().unwrap() = metas.clone();
+                        email::save_email_metas(&metas);
+                        let _ = app_handle_email.emit("email-updated", ());
+                        continue;
+                    }
+
+                    // 增量检查：对比服务器最新 UID 与本地已知 UID
+                    let uid = tauri::async_runtime::block_on(config.get_latest_uid());
+                    let Some(uid) = uid else { continue; };
+
+                    let mut latest = latest_email_uid_t.lock().unwrap();
+                    let need_fetch = match latest.as_ref() {
+                        None => { *latest = Some(uid.clone()); true }
+                        Some(current) if current != &uid => {
+                            logger::info("EmailPoll", &format!("uid changed: {} -> {}", current, uid));
+                            *latest = Some(uid.clone());
+                            true
+                        }
+                        _ => false,
+                    };
+                    drop(latest);
+
+                    if need_fetch {
+                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
+                        logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
+
+                        let old_top = cached_metas_t.lock().unwrap().first().map(|m| m.uid.clone());
+                        *cached_metas_t.lock().unwrap() = metas.clone();
+                        email::save_email_metas(&metas);
+                        let _ = app_handle_email.emit("email-updated", ());
+
+                        // 仅当有真正新邮件时发通知（新最大 UID > 旧最大 UID）
+                        let new_top = metas.first().map(|m| m.uid.clone());
+                        if new_top != old_top {
+                            noti_email.store(true, Ordering::Relaxed);
+                            exp_email.store(true, Ordering::Relaxed);
+                            let _ = win_email.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+                            let _ = win_email.emit("set-expand", true);
+                            let _ = win_email.emit("email-notice", serde_json::json!({
+                                "uid": uid,
+                                "message": "收到新邮件"
+                            }));
+                        }
+                    }
+                }
+            });
+
+            // --- Claude Code 本地通知服务器 ---
+            let win_cc = window.clone();
+            let noti_cc = is_notifying.clone();
+            let exp_cc = is_expanded.clone();
+            let cc_routes_t = cc_routes.clone();
+            thread::spawn(move || {
+                cc::start_server(win_cc, noti_cc, exp_cc, cc_routes_t);
             });
 
             // --- 天气后台线程 ---
@@ -1239,6 +1452,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[allow(dead_code)]
 fn trigger_notification(
     window: &tauri::WebviewWindow,
     is_notifying: &Arc<AtomicBool>,
@@ -1293,6 +1507,7 @@ pub struct IslandState {
     pub clipboard_enabled: Arc<AtomicBool>,
     pub pending_url: Arc<Mutex<Vec<String>>>,
     pub shortcut_key: Arc<Mutex<String>>,
+    pub search_shortcut: Arc<Mutex<String>>,
     pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
     pub lyric_offset_enabled: Arc<AtomicBool>,
     /// 按 SMTC app_id 存储的歌词补偿（ms），key 已规范化为小写
@@ -1343,6 +1558,23 @@ pub struct IslandState {
     pub preview_updates: Arc<AtomicBool>,
     // 是否显示预览版开关（UI 可见性）
     pub show_preview_toggle: Arc<AtomicBool>,
+    // 邮件
+    pub email_config: Arc<Mutex<Email>>,
+    pub email_poll_interval_secs: Arc<AtomicU64>,
+    pub latest_email_uid: Arc<Mutex<Option<String>>>,
+    pub email_shortcut: Arc<Mutex<String>>,
+    pub cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>>,
+    // Claude Code 通知路由
+    pub cc_routes: Arc<Mutex<Vec<cc::CcRoute>>>,
+    // ADB / 屏幕镜像 相关
+    pub(crate) sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
+    pub sadb_ip: Arc<Mutex<String>>,
+    pub sadb_port: Arc<Mutex<u16>>,
+    pub sadb_expanded: Arc<AtomicBool>,
+    /// 待机面板展开中（已点击展开但尚未开始镜像，或镜像结束后回退）
+    pub sadb_idle: Arc<AtomicBool>,
+    /// 镜像流正常推送中（视频帧在传输），用于允许拖动不回弹
+    pub sadb_mirroring: Arc<AtomicBool>,
 }
 
 unsafe impl Send for IslandState {}

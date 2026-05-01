@@ -19,6 +19,8 @@
         <div class="nav-item" data-page="weather">天气</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
         <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
+        <div class="nav-item" data-page="email">邮件</div>
+        <div class="nav-item" data-page="sadb">ADB 镜像</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
         <div class="nav-item" data-page="blacklist">黑名单</div>
         <div class="nav-item" data-page="about">关于与更新</div>
@@ -43,6 +45,15 @@
               </div>
               <div class="setting-control">
                 <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>搜索快捷键</h3>
+                <p>点击输入框后直接按组合键录入，默认 Alt+Space。</p>
+              </div>
+              <div class="setting-control">
+                <input id="search-shortcut-input" class="input shortcut" type="text" value="Alt+Space" readonly />
               </div>
             </div>
           </div>
@@ -253,6 +264,68 @@
         </div>
 
 
+        <!-- 邮件页面 -->
+        <div class="page" id="page-email">
+          <div class="setting-group">
+            <div class="setting-group-title">快捷键</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>打开邮箱快捷键</h3>
+                <p>按下此快捷键可快速打开邮箱窗口。点击输入框后按下组合键进行录制。</p>
+              </div>
+              <input id="email-shortcut-input" class="input path" type="text" readonly placeholder="Alt+E" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-group-title">IMAP 账号</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>用户名</h3>
+                <p>登录邮箱时使用的用户名（通常是完整邮箱地址）。</p>
+              </div>
+              <input id="email-username" class="input path" type="text" placeholder="user@example.com" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>授权码 / 密码</h3>
+                <p>IMAP 登录凭据，部分邮箱需使用专用授权码而非登录密码。</p>
+              </div>
+              <input id="email-auth" class="input path" type="password" placeholder="授权码或密码" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>IMAP 服务器地址</h3>
+                <p>如 imap.qq.com、imap.gmail.com 等。</p>
+              </div>
+              <input id="email-address" class="input path" type="text" placeholder="imap.example.com" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>端口</h3>
+                <p>IMAP SSL 端口，默认 993。</p>
+              </div>
+              <input id="email-port" class="input path" type="number" min="1" max="65535" value="993" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-group-title">轮询</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>轮询间隔（秒）</h3>
+                <p>后台定时获取最新邮件 UID，UID 变化时弹出通知。默认 1 秒。</p>
+              </div>
+              <input id="email-poll-interval" class="input path" type="number" min="1" step="1" value="1" />
+            </div>
+          </div>
+        </div>
+
+
         <!-- 插件管理页面 -->
         <div class="page" id="page-plugins">
           <div class="setting-group">
@@ -349,6 +422,38 @@
             </div>
           </div>
         </div>
+        <!-- ADB 镜像页面 -->
+        <div class="page" id="page-sadb">
+          <div class="setting-group">
+            <div class="setting-group-title">连接设置</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>默认 IP 地址</h3>
+                <p>WiFi 连接时的目标设备 IP，留空则仅使用 USB。</p>
+              </div>
+              <input id="sadb-ip" class="input path" placeholder="192.168.1.100" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>默认端口</h3>
+                <p>ADB WiFi 连接端口，默认 5555。</p>
+              </div>
+              <input id="sadb-port" class="input path" type="number" placeholder="5555" min="1" max="65535" />
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-group-title">说明</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <p>连接优先级：USB → WiFi。有 USB 设备时优先使用 USB，无 USB 设备时自动使用 IP:Port 进行 WiFi 连接。</p>
+                <p style="margin-top: 8px;">需要 adb 和 scrcpy-server (v3.3.4) 支持。首次使用请确保已安装 adb 工具。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 黑名单页面 -->
         <div class="page" id="page-blacklist">
           <div class="setting-group">
@@ -464,6 +569,19 @@
             </div>
             <div class="setting-item">
               <div class="setting-label">
+                <h3>日志等级</h3>
+                <p>等级越低输出越详细，debug 包含所有日志。</p>
+              </div>
+              <div class="setting-control">
+                <select id="log-level-select" class="select">
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warning</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
                 <h3>最后一次日志</h3>
                 <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
               </div>
@@ -522,7 +640,9 @@ const pageInfo = {
   weather:          { title: "天气",          desc: "配置天气显示位置。" },
   ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
   "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
+  email:            { title: "邮件",          desc: "配置邮件轮询和通知占位功能。" },
   plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
+  sadb:             { title: "ADB 镜像",     desc: "配置 Android 设备屏幕镜像连接参数。" },
   blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
   about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
 };

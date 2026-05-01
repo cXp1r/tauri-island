@@ -1,19 +1,42 @@
 :root {
     --font-main: "Segoe UI Variable Display", "SF Pro Display", -apple-system, sans-serif;
+
+    /* ── 胶囊基础收起态（时间视图等默认状态） ──
+       后端: CAPSULE_COLLAPSED_W = 140.0, CAPSULE_COLLAPSED_H = 50.0 (lib.rs) */
     --collapsed-w: 140px;
     --collapsed-h: 50px;
-    --lyric-collapsed-w: 320px;
+
+    /* ── 歌词收起态宽度（正在播放音乐时的歌词滚动条） ──
+       后端: CAPSULE_LYRIC_W = 340.0 (lib.rs) */
+    --lyric-collapsed-w: 340px;
+
+    /* ── 悬浮展开态（鼠标靠近时的展开尺寸，适用于 time / lyric 等视图） ──
+       后端: CAPSULE_EXPANDED_W = 330.0, CAPSULE_EXPANDED_H = 74.0 (lib.rs) */
     --expanded-w: 330px;
     --expanded-h: 74px;
+
+    /* ── 音乐面板展开态（歌词视图单击展开的大面板） ──
+       后端: set_music_expanded 命令中硬编码 380×420 (window.rs) */
     --music-expanded-w: 380px;
     --music-expanded-h: 420px;
+
+    /* ── 搜索视图（Alt+1 激活的搜索栏） ──
+       后端: WIN_W = 420.0 (lib.rs)，搜索宽度 = 固定窗口宽度 */
+    --search-w: 420px;
+    --search-h: 50px;
+    --search-result-item-h: 38px;
+    --search-expanded-h: 430px;
+
+    /* 注: Agent 展开态尺寸由后端 get_agent_window_size() 按档位返回
+       small=380×400 / medium=520×540 / large=620×640 (window.rs)
+       前端通过 CSS 变量 --agent-w, --agent-h 动态设置 */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
     width: 100vw;
-    height: 100vh;
+    height: fit-content;
     background: transparent;
     display: flex;
     justify-content: center;
@@ -43,7 +66,7 @@ html, body {
                 transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
                 box-shadow 0.24s ease;
     overflow: hidden;
-    will-change: width, height, transform;
+    will-change: transform;
     isolation: isolate;
 }
 
@@ -110,6 +133,17 @@ html, body {
     100% { opacity: 1; transform: scale(1); }
 }
 
+#current-view {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+}
+
 .content-wrapper {
     display: flex;
     align-items: center;
@@ -118,6 +152,7 @@ html, body {
     height: 100%;
     position: absolute;
     inset: 0;
+    z-index: 1;
     opacity: 1;
     transform: translateY(0) scale(1);
     transition: opacity 0.24s cubic-bezier(0.25, 1, 0.5, 1),
@@ -171,15 +206,14 @@ html, body {
                 transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-/* --- 通知 --- */
+/* --- 通知 overlay（消息 + URL 列表共用） --- */
 #notice-area {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
+    display: none;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 0 20px;
     cursor: pointer;
     border-radius: inherit;
     z-index: 18;
@@ -188,9 +222,22 @@ html, body {
     transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
 }
 #notice-area.active {
+    display: flex;
     opacity: 1;
     pointer-events: auto;
-    display: flex;
+}
+#notice-area.active ~ #view-switcher {
+    display: none !important;
+}
+
+/* URL 列表模式：纵向排列 */
+#notice-area.notice-urllist {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 6px 12px;
+    gap: 2px;
+    overflow-y: auto;
 }
 
 .icon-box {
@@ -202,35 +249,15 @@ html, body {
     flex-shrink: 0;
 }
 
-#notice-msg {
+.notice-msg {
     font-size: 13px;
     font-weight: 500;
+    line-height: 1.6;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* --- URL 列表 --- */
-#url-list {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 6px 12px;
-    gap: 2px;
-    overflow-y: auto;
-    border-radius: inherit;
-    z-index: 18;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1);
-}
-#url-list.active {
-    opacity: 1;
-    pointer-events: auto;
-    display: flex;
-}
 .url-item {
     font-size: 12px;
     padding: 5px 10px;
@@ -1201,3 +1228,425 @@ body.minimized #collapsed-indicator { display: block; }
 .message-content .katex { font-size: 1.05em; }
 .message-content .katex-display { margin: 10px 0; padding: 8px 12px; border-radius: 8px; overflow-x: auto; scrollbar-width: thin; }
 .message-content .katex-display > .katex { font-size: 1.1em; }
+
+/* ===== Search View ===== */
+
+#island-capsule.search-active {
+    width: var(--search-w);
+    height: var(--search-h);
+    border-radius: 25px;
+    overflow: visible;
+}
+
+#island-capsule.search-expanded {
+    width: var(--search-w);
+    height: var(--search-expanded-h);
+    border-radius: 20px;
+    overflow: visible;
+}
+
+#island-capsule.search-active::before,
+#island-capsule.search-expanded::before,
+#island-capsule.search-active::after,
+#island-capsule.search-expanded::after {
+    opacity: 0;
+    filter: none;
+}
+
+#island-capsule.search-active #current-view {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+}
+#island-capsule.search-expanded #current-view {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+}
+
+#island-capsule.search-active #search-area {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+}
+#island-capsule.search-expanded #search-area {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#search-area {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+}
+
+#search-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    height: var(--search-h);
+}
+
+#search-input-wrap .search-icon {
+    flex-shrink: 0;
+    opacity: 0.5;
+}
+
+#search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 14px;
+    font-family: var(--font-main);
+    caret-color: #fff;
+}
+
+#search-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+#search-input::placeholder {
+    color: rgba(255,255,255,0.35);
+}
+
+#search-page-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    min-width: 44px;
+    text-align: center;
+}
+
+.search-page-btn {
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.82);
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    font-size: 14px;
+    line-height: 1;
+    font-family: inherit;
+}
+
+.search-page-btn:hover {
+    background: rgba(255,255,255,0.14);
+}
+
+.search-page-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+#search-esc-hint {
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    padding: 1px 5px;
+    flex-shrink: 0;
+}
+
+#search-results {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+#island-capsule.search-expanded #search-results {
+    padding-bottom: 8px;
+}
+
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--search-result-item-h);
+    min-height: var(--search-result-item-h);
+    max-height: var(--search-result-item-h);
+    padding: 0 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    animation: search-item-in 0.22s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+@keyframes search-item-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.search-result-item:hover,
+.search-result-item.active {
+    background: rgba(255,255,255,0.08);
+}
+
+.search-result-icon {
+    flex-shrink: 0;
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+}
+
+.search-result-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+}
+
+.search-result-title {
+    font-size: 13px;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+.search-result-desc {
+    font-size: 11px;
+    color: rgba(255,255,255,0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.15;
+}
+
+.search-result-item.has-desc .search-result-title {
+    font-size: 12px;
+    line-height: 1.15;
+}
+
+.search-result-item.has-desc .search-result-desc {
+    font-size: 10px;
+}
+
+.search-error-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    color: rgba(255,255,255,0.5);
+    font-size: 13px;
+}
+
+.search-init-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 12px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: inherit;
+}
+.search-init-btn:hover { background: rgba(255,255,255,0.18); }
+.search-init-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ===== sadb 镜像视图 ===== */
+
+#sadb-area {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+#sadb-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    flex-shrink: 0;
+    height: 16px;
+}
+
+#sadb-device-name {
+    color: rgba(255,255,255,0.65);
+}
+
+#sadb-resolution {
+    color: rgba(255,255,255,0.45);
+}
+
+#sadb-fps {
+    color: rgba(255,255,255,0.45);
+    font-variant-numeric: tabular-nums;
+}
+
+#sadb-canvas {
+    flex: 1;
+    min-height: 0;
+    object-fit: contain;
+    border-radius: 8px;
+    cursor: default;
+    pointer-events: auto;
+    background: #0a0a0a;
+    contain: layout paint;
+    isolation: isolate;
+}
+
+#sadb-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 2px 0;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    transform: translateZ(0);
+}
+
+#sadb-btn-start,
+#sadb-btn-stop {
+    padding: 2px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.82);
+    cursor: pointer;
+    font-size: 10px;
+    font-family: var(--font-main);
+    transition: background 0.15s;
+}
+
+#sadb-btn-start:hover:not(:disabled),
+#sadb-btn-stop:hover:not(:disabled) {
+    background: rgba(255,255,255,0.14);
+}
+
+#sadb-btn-start:disabled,
+#sadb-btn-stop:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#sadb-status {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+}
+
+#sadb-resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    z-index: 2;
+    isolation: isolate;
+    transform: translateZ(0);
+    display: none;
+}
+#island-capsule.sadb-expanded #sadb-resize-handle {
+    display: block;
+}
+
+/* 收起态：sadb 占满视图 */
+#island-capsule:not(.sadb-expanded) #sadb-area {
+    flex-direction: row;
+    padding: 0 12px;
+    gap: 6px;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-status-bar,
+#island-capsule:not(.sadb-expanded) #sadb-controls {
+    display: none;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-canvas {
+    display: none;
+}
+
+#island-capsule:not(.sadb-expanded) #sadb-area::before {
+    content: "sadb";
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* 展开态 — 尺寸由 JS 根据手机分辨率动态设置 */
+#island-capsule.sadb-expanded {
+    border-radius: 24px;
+    flex-shrink: 0; /* 禁止 flex 压缩，允许胶囊超出 100vw，由后端同步窗口宽度 */
+}
+
+#island-capsule.sadb-expanded #sadb-area {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 10px 8px;
+    gap: 4px;
+}
+
+#island-capsule.sadb-expanded #sadb-area::before {
+    display: none;
+}
+
+#island-capsule.sadb-expanded #sadb-canvas {
+    display: block;
+    border-radius: 12px;
+}
+
+#island-capsule.sadb-expanded #sadb-status-bar,
+#island-capsule.sadb-expanded #sadb-controls {
+    display: flex;
+}
+
+/* ── sadb 待机面板：已展开但未镜像（或镜像结束后回退） ── */
+#island-capsule.sadb-idle {
+    width: 380px;
+    height: 420px;
+    border-radius: 24px;
+}
+
+#island-capsule.sadb-idle #sadb-area {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 10px 8px;
+    gap: 4px;
+}
+
+#island-capsule.sadb-idle #sadb-status-bar,
+#island-capsule.sadb-idle #sadb-controls {
+    display: flex;
+}
+
+#island-capsule.sadb-idle #sadb-canvas {
+    flex: 1;
+    min-height: 0;
+    display: block;
+    border-radius: 12px;
+}
+
+#island-capsule.sadb-idle #sadb-area::before {
+    display: none;
+}
+
+#island-capsule.sadb-idle #sadb-resize-handle {
+    display: none;
+}

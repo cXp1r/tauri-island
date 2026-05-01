@@ -11,23 +11,52 @@
 </head>
 <body>
     <div id="island-capsule">
+        <!-- 唯一的活跃视图槽位 -->
+        <div id="current-view"></div>
+
+        <!-- overlay 弹层（不参与视图切换，内容由 notice-queue.ts 动态渲染） -->
+        <div id="notice-area" class="overlay-popup"></div>
+
+        <div id="agent-confirm-dialog" style="display:none">
+            <div id="agent-confirm-backdrop"></div>
+            <div id="agent-confirm-box">
+                <div id="agent-confirm-text">确定要清空对话历史吗？</div>
+                <div id="agent-confirm-buttons">
+                    <button id="agent-confirm-cancel">取消</button>
+                    <button id="agent-confirm-ok">清空</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-switcher">
+            <div id="view-dots"></div>
+        </div>
+
+        <div id="privacy-indicators" aria-hidden="true">
+            <div class="privacy-icon" id="privacy-mic">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 14C13.6569 14 15 12.6569 15 11V6C15 4.34315 13.6569 3 12 3C10.3431 3 9 4.34315 9 6V11C9 12.6569 10.3431 14 12 14Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M17 11C17 13.7614 14.7614 16 12 16C9.23858 16 7 13.7614 7 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M12 16V21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 21H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div class="privacy-icon" id="privacy-camera">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 8L16.8 6.2C17.1124 5.88757 17.5361 5.71204 17.9775 5.71204C18.8975 5.71204 19.6432 6.45774 19.6432 7.37778V16.6222C19.6432 17.5423 18.8975 18.288 17.9775 18.288C17.5361 18.288 17.1124 18.1124 16.8 17.8L15 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <rect x="4.5" y="7" width="10.5" height="10" rx="2.4" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- 视图暗仓：所有视图元素存放在此，由 JS 按需移入 #current-view -->
+    <div id="view-holder" style="display:none">
         <div id="time-wrapper" class="content-wrapper">
             <div id="date-text" class="time-side time-side-left">周三 · 03/11</div>
             <div id="time-text">00:00:00</div>
             <div id="weather-text" class="time-side time-side-right">天气获取中...</div>
         </div>
-
-        <div id="notice-area" class="overlay-popup">
-            <div class="icon-box" id="notice-icon">
-                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
-                    <path d="M512 426.688a42.688 42.688 0 0 0-42.688 42.688v298.688a42.688 42.688 0 0 0 85.376 0V469.376A42.688 42.688 0 0 0 512 426.688zM507.776 213.376a59.776 59.776 0 1 0 0 119.552 59.776 59.776 0 0 0 0-119.552z" fill="#ffffff"/>
-                    <path d="M512 0a512 512 0 1 0 0 1024 512 512 0 0 0 0-1024z m0 938.688a426.624 426.624 0 0 1-426.688-426.688c0-235.648 190.976-426.688 426.688-426.688s426.688 190.976 426.688 426.688-190.976 426.688-426.688 426.688z" fill="#ffffff"/>
-                </svg>
-            </div>
-            <div id="notice-msg">通知消息</div>
-        </div>
-
-        <div id="url-list" class="overlay-popup"></div>
 
         <div id="lyric-area" class="content-wrapper">
             <!-- 收起态：唱片 + 歌词 + 控制按钮 -->
@@ -123,36 +152,33 @@
             </div>
         </div>
 
-        <div id="agent-confirm-dialog" style="display:none">
-            <div id="agent-confirm-backdrop"></div>
-            <div id="agent-confirm-box">
-                <div id="agent-confirm-text">确定要清空对话历史吗？</div>
-                <div id="agent-confirm-buttons">
-                    <button id="agent-confirm-cancel">取消</button>
-                    <button id="agent-confirm-ok">清空</button>
+        <div id="search-area" class="content-wrapper">
+            <div id="search-input-wrap">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="search-input" placeholder="搜索..." autocomplete="off" />
+                <div id="search-tools">
+                    <button id="search-prev-btn" class="search-page-btn" type="button" title="上一页" hidden>‹</button>
+                    <span id="search-page-label" hidden>第 1 页</span>
+                    <button id="search-next-btn" class="search-page-btn" type="button" title="下一页" hidden>›</button>
+                    <span id="search-esc-hint">ESC</span>
                 </div>
             </div>
+            <div id="search-results"></div>
         </div>
 
-        <div id="view-switcher">
-            <div id="view-dots"></div>
-        </div>
-
-        <div id="privacy-indicators" aria-hidden="true">
-            <div class="privacy-icon" id="privacy-mic">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 14C13.6569 14 15 12.6569 15 11V6C15 4.34315 13.6569 3 12 3C10.3431 3 9 4.34315 9 6V11C9 12.6569 10.3431 14 12 14Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M17 11C17 13.7614 14.7614 16 12 16C9.23858 16 7 13.7614 7 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M12 16V21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M9 21H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+        <div id="sadb-area" class="content-wrapper">
+            <div id="sadb-status-bar">
+                <span id="sadb-device-name">--</span>
+                <span id="sadb-resolution">--</span>
+                <span id="sadb-fps">0 fps</span>
             </div>
-            <div class="privacy-icon" id="privacy-camera">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M15 8L16.8 6.2C17.1124 5.88757 17.5361 5.71204 17.9775 5.71204C18.8975 5.71204 19.6432 6.45774 19.6432 7.37778V16.6222C19.6432 17.5423 18.8975 18.288 17.9775 18.288C17.5361 18.288 17.1124 18.1124 16.8 17.8L15 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <rect x="4.5" y="7" width="10.5" height="10" rx="2.4" stroke="currentColor" stroke-width="1.8"/>
-                </svg>
+            <canvas id="sadb-canvas"></canvas>
+            <div id="sadb-controls">
+                <button id="sadb-btn-start">开始</button>
+                <button id="sadb-btn-stop" disabled>停止</button>
+                <span id="sadb-status">空闲</span>
             </div>
+            <div id="sadb-resize-handle"></div>
         </div>
     </div>
 

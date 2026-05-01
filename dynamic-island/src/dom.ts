@@ -1,6 +1,8 @@
 import type { ViewMode } from "./types";
 
 export const capsule = document.getElementById("island-capsule") as HTMLDivElement;
+export const currentViewContainer = document.getElementById("current-view") as HTMLDivElement;
+export const viewHolder = document.getElementById("view-holder") as HTMLDivElement;
 
 
 export const timeWrapper = document.getElementById("time-wrapper") as HTMLDivElement;
@@ -14,10 +16,6 @@ export const weatherText = document.getElementById("weather-text") as HTMLDivEle
 
 
 export const noticeArea = document.getElementById("notice-area") as HTMLDivElement;
-
-export const noticeMsg = document.getElementById("notice-msg") as HTMLDivElement;
-
-export const urlList = document.getElementById("url-list") as HTMLDivElement;
 
 export const lyricArea = document.getElementById("lyric-area") as HTMLDivElement;
 
@@ -101,6 +99,22 @@ export const agentConfirmCancel = document.getElementById("agent-confirm-cancel"
 
 export const agentConfirmOk = document.getElementById("agent-confirm-ok") as HTMLButtonElement;
 
+export const searchArea = document.getElementById("search-area") as HTMLDivElement;
+export const searchInput = document.getElementById("search-input") as HTMLInputElement;
+export const searchResults = document.getElementById("search-results") as HTMLDivElement;
+export const searchPrevBtn = document.getElementById("search-prev-btn") as HTMLButtonElement;
+export const searchNextBtn = document.getElementById("search-next-btn") as HTMLButtonElement;
+export const searchPageLabel = document.getElementById("search-page-label") as HTMLSpanElement;
+
+export const sadbArea = document.getElementById("sadb-area") as HTMLDivElement;
+export const sadbCanvas = document.getElementById("sadb-canvas") as HTMLCanvasElement;
+export const sadbBtnStart = document.getElementById("sadb-btn-start") as HTMLButtonElement;
+export const sadbBtnStop = document.getElementById("sadb-btn-stop") as HTMLButtonElement;
+export const sadbStatus = document.getElementById("sadb-status") as HTMLSpanElement;
+export const sadbDeviceName = document.getElementById("sadb-device-name") as HTMLSpanElement;
+export const sadbResolution = document.getElementById("sadb-resolution") as HTMLSpanElement;
+export const sadbFps = document.getElementById("sadb-fps") as HTMLSpanElement;
+
 
 
 export const btnPrev = document.getElementById("btn-prev") as HTMLButtonElement;
@@ -128,11 +142,9 @@ export const privacyCamera = document.getElementById("privacy-camera") as HTMLDi
 export const collapsedIndicator = document.getElementById("collapsed-indicator") as HTMLDivElement;
 
 export const viewElements: Record<ViewMode, HTMLElement> = {
-
   time: timeWrapper,
-
   lyric: lyricArea,
-
   agent: agentArea,
-
+  search: searchArea,
+  sadb: sadbArea,
 };

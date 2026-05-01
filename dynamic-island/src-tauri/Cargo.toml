@@ -1,6 +1,6 @@
 [package]
 name = "dynamic-island"
-version = "0.7.0"
+version = "0.8.2"
 description = "a dynamic island for windows"
 authors = ["Coding_w", "cXp1r"]
 edition = "2021"
@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = [ "protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
@@ -32,8 +32,15 @@ regex = "1"
 url = "2"
 base64 = "0.22"
 flate2 = "1"
-tokio = { version = "1", features = ["rt"] }
-lyricify-lyrics-provider = { path = "../lyricify-lyrics-provider-rs" }
+tokio = { version = "1", features = ["full"] }
+libloading = "0.9.0"
+sadb-core = { path = "../sadb-core" }
+tracing = "0.1"
+imap = "2.4.1"
+native-tls = "0.2"
+mailparse = "0.15"
+encoding_rs = "0.8"
+lyrix = "26.2.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

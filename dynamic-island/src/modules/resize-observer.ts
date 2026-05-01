@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { capsule } from "../dom";
-import { skipResizeSync, setLyricMode } from "../state";
+import { setLyricMode, skipResizeSync } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
 // 根据窗口大小档位更新 CSS 变量
@@ -28,29 +28,25 @@ export function updateAgentCSSSize(size: string) {
 
 
 
+// body 高度实时同步到后端窗口
+let lastSyncedBodyH = 0;
+
+function syncBodyHeight() {
+  if (skipResizeSync) return;
+  const h = document.body.offsetHeight;
+  if (h <= 0 || h === lastSyncedBodyH) return;
+  //console.log("[ResizeObserver] body height changed:", lastSyncedBodyH, "→", h);
+  lastSyncedBodyH = h;
+  void invoke("sync_window_height", { height: h });
+}
+
+
+
 export function initResizeObserver() {
 
-  // 监听胶囊尺寸变化，动态调整窗口高度（agent 展开/收起由 set_agent_expanded 处理）
-
-  const capsuleObserver = new ResizeObserver((entries) => {
-
-    if (skipResizeSync) return;
-
-    for (const entry of entries) {
-
-      const h = entry.contentRect.height;
-
-      // 胶囊高度 + padding-top(5px) + 底部余量(5px)
-
-      const windowH = h + 10;
-
-      void invoke("sync_window_height", { height: windowH });
-
-    }
-
-  });
-
-  capsuleObserver.observe(capsule);
+  // body 高度变化 → 实时同步窗口高度（不改宽度，避免偏左回弹）
+  const bodyObserver = new ResizeObserver(() => syncBodyHeight());
+  bodyObserver.observe(document.body);
 
   invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {
 
