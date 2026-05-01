@@ -13,18 +13,24 @@ import { getAvailableViews, setView } from "./view-switcher";
 
 export type NoticeType = "clipboard" | "email" | "generic";
 
-const MAX_DURATION = 3000; // 每条通知最大显示 3s
+const MAX_DURATION = 30000; // 每条通知最大显示 3s
 
 // ===== 通知队列项 =====
 
 export interface NoticeItem {
   id: string;
+  uuid?: string;
   type: NoticeType;
   message: string;
   duration: number;       // ms（受 MAX_DURATION 上限约束）
   payload: unknown;       // clipboard → string[]，email → {uid,message}
   timestamp: number;      // 入队时间
 }
+
+type NoticeRenderer = {
+  html: (item: NoticeItem) => string;
+  bind: (item: NoticeItem) => void;
+};
 
 // ===== 图标常量 =====
 
@@ -47,6 +53,7 @@ let urlListMode = false; // notice-area 当前是否展示 URL 列表
 /** 入队一条通知 */
 export function enqueueNotice(item: NoticeItem): void {
   item.duration = Math.min(item.duration, MAX_DURATION);
+  item.uuid = item.uuid || createNoticeUuid();
   console.log(`[NoticeQueue] enqueue: id=${item.id} type=${item.type} msg="${item.message}" queueLen=${queue.length + 1}`);
   queue.push(item);
   if (!activeItem && !urlListMode) {
@@ -88,7 +95,9 @@ function iconForType(type: NoticeType): string {
 /** 渲染消息模式（图标 + 文本） */
 function renderMessage(item: NoticeItem): void {
   noticeArea.classList.remove("notice-urllist");
-  noticeArea.innerHTML = `<div class="icon-box">${iconForType(item.type)}</div><div class="notice-msg">${escapeHtml(item.message)}</div>`;
+  const renderer = rendererForType(item.type);
+  noticeArea.innerHTML = renderer.html(item);
+  renderer.bind(item);
 }
 
 /** 渲染 URL 列表模式 */
@@ -112,6 +121,56 @@ function renderUrlList(urls: string[]): void {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function createNoticeUuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function baseNoticeHtml(item: NoticeItem): string {
+  const uuid = item.uuid || item.id;
+  const shortUuid = uuid.replace(/-/g, "").slice(0, 8);
+  return `<div class="notice-content"><div class="notice-main"><div class="icon-box">${iconForType(item.type)}</div><div class="notice-text"><div class="notice-msg">${escapeHtml(item.message)}</div><div class="notice-uuid" title="${escapeHtml(uuid)}">#${escapeHtml(shortUuid)}</div></div></div><button class="notice-dismiss" type="button">忽略</button></div>`;
+}
+
+function bindBaseNotice(item: NoticeItem, action: () => void): void {
+  const main = noticeArea.querySelector(".notice-main");
+  const dismiss = noticeArea.querySelector(".notice-dismiss");
+
+  main?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (activeItem?.id !== item.id) return;
+    action();
+  });
+
+  dismiss?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (activeItem?.id !== item.id) return;
+    completeActiveNotice();
+  });
+}
+
+function rendererForType(type: NoticeType): NoticeRenderer {
+  switch (type) {
+    case "clipboard":
+      return {
+        html: baseNoticeHtml,
+        bind: (item) => bindBaseNotice(item, () => handleClipboardNotice(item)),
+      };
+    case "email":
+      return {
+        html: baseNoticeHtml,
+        bind: (item) => bindBaseNotice(item, () => handleEmailNotice()),
+      };
+    default:
+      return {
+        html: baseNoticeHtml,
+        bind: (item) => bindBaseNotice(item, () => completeActiveNotice()),
+      };
+  }
 }
 
 // ===== 队列推进 =====
@@ -153,34 +212,32 @@ function handleClick(): void {
   }
 
   if (!activeItem) return;
-  clearTimer();
+}
 
-  switch (activeItem.type) {
-    case "clipboard": {
-      const urls = activeItem.payload as string[];
-      if (urls.length === 1) {
-        void invoke("open_link_with_handler", { url: urls[0] });
-        activeItem = null;
-        advanceOrFinish();
-      } else {
-        // 进入 URL 列表模式
-        urlListMode = true;
-        void invoke("set_interacting", { active: true });
-        renderUrlList(urls);
-      }
-      break;
-    }
-    case "email":
-      void invoke("open_email_window");
-      void invoke("dismiss_island");
-      activeItem = null;
-      advanceOrFinish();
-      break;
-    default:
-      activeItem = null;
-      advanceOrFinish();
-      break;
+function handleClipboardNotice(item: NoticeItem): void {
+  const urls = item.payload as string[];
+  clearTimer();
+  if (urls.length === 1) {
+    void invoke("open_link_with_handler", { url: urls[0] });
+    completeActiveNotice(false);
+  } else {
+    urlListMode = true;
+    void invoke("set_interacting", { active: true });
+    renderUrlList(urls);
   }
+}
+
+function handleEmailNotice(): void {
+  void invoke("open_email_window");
+  completeActiveNotice();
+}
+
+function completeActiveNotice(shouldClearTimer = true): void {
+  if (shouldClearTimer) clearTimer();
+  activeItem = null;
+  urlListMode = false;
+  void invoke("set_interacting", { active: false });
+  advanceOrFinish();
 }
 
 function advanceOrFinish(): void {
