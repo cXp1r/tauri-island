@@ -1,0 +1,61 @@
+[package]
+name = "dynamic-island"
+version = "0.8.4"
+description = "a dynamic island for windows"
+authors = ["Coding_w", "cXp1r"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "dynamic_island_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [ "protocol-asset", "tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+open = "5"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+urlencoding = "2"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+dirs = "5"
+regex = "1"
+url = "2"
+base64 = "0.22"
+flate2 = "1"
+tokio = { version = "1", features = ["full"] }
+libloading = "0.9.0"
+sadb-core = { path = "../sadb-core" }
+tracing = "0.1"
+imap = "2.4.1"
+native-tls = "0.2"
+mailparse = "0.15"
+encoding_rs = "0.8"
+lyrix = "26.2.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+
+    "Media_Control",
+    "Storage_Streams",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com"
+] }
+winreg = "0.52"
