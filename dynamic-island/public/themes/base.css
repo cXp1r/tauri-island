@@ -94,6 +94,10 @@ html, body {
     border-radius: 28px;
 }
 
+#island-capsule.expanded.notice-active {
+    height: var(--expanded-h);
+}
+
 #island-capsule.switch-pulse {
     animation: switch-pulse 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
