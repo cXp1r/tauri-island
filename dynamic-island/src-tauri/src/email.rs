@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+﻿use std::path::PathBuf;
 use tokio::task;
 use crate::logger;
 
@@ -28,31 +28,31 @@ impl Email {
             && !self.auth.trim().is_empty()
             && !self.address.trim().is_empty()
             && self.port > 0;
-        logger::debug(TAG, &format!("is_configured = {} (user={}, addr={}, port={})",
-            ok, self.username, self.address, self.port));
+        //logger::debug(TAG, &format!("is_configured = {} (user={}, addr={}, port={})",
+        //    ok, self.username, self.address, self.port));
         ok
     }
 
     pub async fn get_latest_uid(&self) -> Option<String> {
         let config = self.clone_email();
-        logger::debug(TAG, "get_latest_uid: start");
+        //logger::debug(TAG, "get_latest_uid: start");
 
         task::spawn_blocking(move || {
             if !config.is_configured() {
-                logger::debug(TAG, "get_latest_uid: not configured, skip");
+                //logger::debug(TAG, "get_latest_uid: not configured, skip");
                 return None;
             }
 
-            logger::debug(TAG, &format!("get_latest_uid: building TLS connector"));
+            //logger::debug(TAG, &format!("get_latest_uid: building TLS connector"));
             let tls = match native_tls::TlsConnector::builder().build() {
                 Ok(t) => t,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_uid: TLS build failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_uid: TLS build failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, &format!("get_latest_uid: connecting to {}:{}", config.address, config.port));
+            //logger::debug(TAG, &format!("get_latest_uid: connecting to {}:{}", config.address, config.port));
             let client = match imap::connect(
                 (config.address.as_str(), config.port),
                 config.address.as_str(),
@@ -60,32 +60,32 @@ impl Email {
             ) {
                 Ok(c) => c,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_uid: connect failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_uid: connect failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, "get_latest_uid: logging in");
+            //logger::debug(TAG, "get_latest_uid: logging in");
             let mut session = match client.login(&config.username, &config.auth) {
                 Ok(s) => s,
                 Err((e, _)) => {
-                    logger::debug(TAG, &format!("get_latest_uid: login failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_uid: login failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, "get_latest_uid: selecting INBOX");
+            //logger::debug(TAG, "get_latest_uid: selecting INBOX");
             if let Err(e) = session.select("INBOX") {
-                logger::debug(TAG, &format!("get_latest_uid: select INBOX failed: {e}"));
+                //logger::debug(TAG, &format!("get_latest_uid: select INBOX failed: {e}"));
                 session.logout().ok();
                 return None;
             }
 
-            logger::debug(TAG, "get_latest_uid: uid_search ALL");
+            //logger::debug(TAG, "get_latest_uid: uid_search ALL");
             let messages = match session.uid_search("ALL") {
                 Ok(m) => m,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_uid: uid_search failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_uid: uid_search failed: {e}"));
                     session.logout().ok();
                     return None;
                 }
@@ -104,24 +104,24 @@ impl Email {
 
     pub async fn get_latest_email(&self) -> Option<String> {
         let config = self.clone_email();
-        logger::debug(TAG, "get_latest_email: start");
+        //logger::debug(TAG, "get_latest_email: start");
 
         task::spawn_blocking(move || {
             if !config.is_configured() {
-                logger::debug(TAG, "get_latest_email: not configured, skip");
+                //logger::debug(TAG, "get_latest_email: not configured, skip");
                 return None;
             }
 
-            logger::debug(TAG, "get_latest_email: building TLS connector");
+            //logger::debug(TAG, "get_latest_email: building TLS connector");
             let tls = match native_tls::TlsConnector::builder().build() {
                 Ok(t) => t,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_email: TLS build failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_email: TLS build failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, &format!("get_latest_email: connecting to {}:{}", config.address, config.port));
+            //logger::debug(TAG, &format!("get_latest_email: connecting to {}:{}", config.address, config.port));
             let client = match imap::connect(
                 (config.address.as_str(), config.port),
                 config.address.as_str(),
@@ -129,32 +129,32 @@ impl Email {
             ) {
                 Ok(c) => c,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_email: connect failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_email: connect failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, "get_latest_email: logging in");
+            //logger::debug(TAG, "get_latest_email: logging in");
             let mut session = match client.login(&config.username, &config.auth) {
                 Ok(s) => s,
                 Err((e, _)) => {
-                    logger::debug(TAG, &format!("get_latest_email: login failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_email: login failed: {e}"));
                     return None;
                 }
             };
 
-            logger::debug(TAG, "get_latest_email: selecting INBOX");
+            //logger::debug(TAG, "get_latest_email: selecting INBOX");
             if let Err(e) = session.select("INBOX") {
-                logger::debug(TAG, &format!("get_latest_email: select INBOX failed: {e}"));
+                //logger::debug(TAG, &format!("get_latest_email: select INBOX failed: {e}"));
                 session.logout().ok();
                 return None;
             }
 
-            logger::debug(TAG, "get_latest_email: search ALL");
+            //logger::debug(TAG, "get_latest_email: search ALL");
             let messages = match session.search("ALL") {
                 Ok(m) => m,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_email: search failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_email: search failed: {e}"));
                     session.logout().ok();
                     return None;
                 }
@@ -163,17 +163,17 @@ impl Email {
             let max_uid = match messages.into_iter().max() {
                 Some(u) => u,
                 None => {
-                    logger::debug(TAG, "get_latest_email: no messages found");
+                    //logger::debug(TAG, "get_latest_email: no messages found");
                     session.logout().ok();
                     return None;
                 }
             };
 
-            logger::debug(TAG, &format!("get_latest_email: fetching RFC822 for {max_uid}"));
+            //logger::debug(TAG, &format!("get_latest_email: fetching RFC822 for {max_uid}"));
             let fetches = match session.fetch(max_uid.to_string(), "RFC822") {
                 Ok(f) => f,
                 Err(e) => {
-                    logger::debug(TAG, &format!("get_latest_email: fetch failed: {e}"));
+                    //logger::debug(TAG, &format!("get_latest_email: fetch failed: {e}"));
                     session.logout().ok();
                     return None;
                 }
@@ -185,7 +185,7 @@ impl Email {
 
             session.logout().ok();
 
-            logger::info(TAG, &format!("get_latest_email: body len = {:?}", text.as_ref().map(|t| t.len())));
+            //logger::info(TAG, &format!("get_latest_email: body len = {:?}", text.as_ref().map(|t| t.len())));
             text
         })
         .await
@@ -211,7 +211,7 @@ impl Email {
             let mut err_msg = String::new();
 
             if !config.is_configured() {
-                logger::info(TAG, "fetch_latest: not configured");
+                //logger::info(TAG, "fetch_latest: not configured");
                 return vec![];
             }
 
@@ -224,7 +224,7 @@ impl Email {
                 step = 1;
 
                 // 2 connect
-                logger::debug(TAG, &format!("fetch_latest: connecting {}:{}", config.address, config.port));
+                //logger::debug(TAG, &format!("fetch_latest: connecting {}:{}", config.address, config.port));
                 let client = match imap::connect(
                     (config.address.as_str(), config.port),
                     config.address.as_str(), &tls,
@@ -235,7 +235,7 @@ impl Email {
                 step = 2;
 
                 // 3 login
-                logger::debug(TAG, "fetch_latest: logging in");
+                //logger::debug(TAG, "fetch_latest: logging in");
                 let mut session = match client.login(&config.username, &config.auth) {
                     Ok(s) => s,
                     Err((e, _)) => { err_msg = format!("{e}"); return vec![]; }
@@ -243,7 +243,7 @@ impl Email {
                 step = 3;
 
                 // 4 select INBOX
-                logger::debug(TAG, "fetch_latest: selecting INBOX");
+                //logger::debug(TAG, "fetch_latest: selecting INBOX");
                 if let Err(e) = session.select("INBOX") {
                     err_msg = format!("{e}");
                     session.logout().ok();
@@ -252,7 +252,7 @@ impl Email {
                 step = 4;
 
                 // 5 uid_search
-                logger::debug(TAG, "fetch_latest: uid_search ALL");
+                //logger::debug(TAG, "fetch_latest: uid_search ALL");
                 let uids = match session.uid_search("ALL") {
                     Ok(m) => m,
                     Err(e) => { err_msg = format!("{e}"); session.logout().ok(); return vec![]; }
@@ -262,7 +262,7 @@ impl Email {
                 uid_list.reverse();
                 uid_list.truncate(10);
                 step = 5;
-                logger::debug(TAG, &format!("fetch_latest: top {} UIDs: {:?}", uid_list.len(), uid_list));
+                //logger::debug(TAG, &format!("fetch_latest: top {} UIDs: {:?}", uid_list.len(), uid_list));
 
                 // 6 fetch bodies (逐封)
                 let need_fetch: Vec<u32> = uid_list.iter()
@@ -270,30 +270,30 @@ impl Email {
                     .copied()
                     .collect();
                 if !need_fetch.is_empty() {
-                    logger::debug(TAG, &format!("fetch_latest: fetching {} bodies", need_fetch.len()));
+                    //logger::debug(TAG, &format!("fetch_latest: fetching {} bodies", need_fetch.len()));
                     for &uid in &need_fetch {
                         let uid_str = uid.to_string();
                         match session.uid_fetch(&uid_str, "(UID RFC822)") {
                             Ok(fetches) => {
                                 if let Some(f) = fetches.iter().next() {
                                     if let Some(body) = f.body() {
-                                        logger::debug(TAG, &format!("fetch_latest: UID {} body {} bytes", uid, body.len()));
+                                        //logger::debug(TAG, &format!("fetch_latest: UID {} body {} bytes", uid, body.len()));
                                         let html = extract_html_from_rfc822(body);
                                         let path = cache_dir.join(format!("{}.html", uid));
                                         if let Err(e) = std::fs::write(&path, &html) {
-                                            logger::debug(TAG, &format!("fetch_latest: write {uid}.html fail: {e}"));
+                                            //logger::debug(TAG, &format!("fetch_latest: write {uid}.html fail: {e}"));
                                         }
                                     }
                                 }
                             }
-                            Err(e) => logger::debug(TAG, &format!("fetch_latest: fetch UID {uid} fail: {e}")),
+                            Err(_) => {}
                         }
                     }
                 }
                 step = 6;
 
                 // 7 envelopes (逐封)
-                logger::debug(TAG, "fetch_latest: fetching envelopes");
+                //logger::debug(TAG, "fetch_latest: fetching envelopes");
                 let mut metas = Vec::new();
                 for &uid in &uid_list {
                     let uid_str = uid.to_string();
@@ -328,7 +328,7 @@ impl Email {
                                 });
                             }
                         }
-                        Err(e) => logger::debug(TAG, &format!("fetch_latest: envelope {uid} fail: {e}")),
+                        Err(_) => {}
                     }
                 }
                 step = 7;
@@ -340,12 +340,12 @@ impl Email {
 
             // 唯一一条 INFO 汇总
             if step >= DONE {
-                logger::info(TAG, &format!("fetch_latest: ok, {} emails", result.len()));
+                //logger::info(TAG, &format!("fetch_latest: ok, {} emails", result.len()));
             } else {
-                logger::info(TAG, &format!(
-                    "fetch_latest: failed at step {}({}) - {}",
-                    step, STEPS[step as usize], err_msg
-                ));
+                //logger::info(TAG, &format!(
+                //    "fetch_latest: failed at step {}({}) - {}",
+                //    step, STEPS[step as usize], err_msg
+                //));
             }
 
             let mut sorted = result;
@@ -385,7 +385,7 @@ pub fn save_email_metas(metas: &[EmailMeta]) {
     let path = email_meta_path();
     if let Ok(json) = serde_json::to_string_pretty(metas) {
         if let Err(e) = std::fs::write(&path, json) {
-            logger::debug(TAG, &format!("save_email_metas: write failed: {e}"));
+            //logger::debug(TAG, &format!("save_email_metas: write failed: {e}"));
         }
     }
 }
@@ -590,7 +590,7 @@ pub fn clear_email_cache(state: tauri::State<'_, crate::IslandState>) -> Result<
         }
     }
     state.cached_email_metas.lock().unwrap().clear();
-    logger::info(TAG, "clear_email_cache: cleared");
+    //logger::info(TAG, "clear_email_cache: cleared");
     Ok(())
 }
 
@@ -644,7 +644,7 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
                 let tls = match native_tls::TlsConnector::builder().build() {
                     Ok(t) => t,
                     Err(e) => {
-                        logger::debug(TAG, &format!("fetch_metas_by_uids: TLS build fail: {e}"));
+                        //logger::debug(TAG, &format!("fetch_metas_by_uids: TLS build fail: {e}"));
                         return Vec::new();
                     }
                 };
@@ -654,19 +654,19 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
                 ) {
                     Ok(c) => c,
                     Err(e) => {
-                        logger::debug(TAG, &format!("fetch_metas_by_uids: connect fail: {e}"));
+                        //logger::debug(TAG, &format!("fetch_metas_by_uids: connect fail: {e}"));
                         return Vec::new();
                     }
                 };
                 let mut session = match client.login(&config_t.username, &config_t.auth) {
                     Ok(s) => s,
                     Err((e, _)) => {
-                        logger::debug(TAG, &format!("fetch_metas_by_uids: login fail: {e}"));
+                        //logger::debug(TAG, &format!("fetch_metas_by_uids: login fail: {e}"));
                         return Vec::new();
                     }
                 };
                 if let Err(e) = session.select("INBOX") {
-                    logger::debug(TAG, &format!("fetch_metas_by_uids: select INBOX fail: {e}"));
+                    //logger::debug(TAG, &format!("fetch_metas_by_uids: select INBOX fail: {e}"));
                     session.logout().ok();
                     return Vec::new();
                 }
@@ -705,7 +705,7 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
                             });
                         }
                     }
-                    Err(e) => logger::debug(TAG, &format!("fetch_metas_by_uids: envelope batch fail: {e}")),
+                    Err(_) => {}
                 }
                 session.logout().ok();
                 metas
@@ -716,7 +716,7 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
         for handle in handles {
             match handle.join() {
                 Ok(mut batch) => metas.append(&mut batch),
-                Err(_) => logger::debug(TAG, "fetch_metas_by_uids: worker thread panic"),
+                Err(_) => {}
             }
         }
 
@@ -726,7 +726,7 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
             .map(|(idx, uid)| (*uid, idx))
             .collect();
         metas.sort_by_key(|m| m.uid.parse::<u32>().ok().and_then(|uid| uid_order.get(&uid).copied()).unwrap_or(usize::MAX));
-        logger::info(TAG, &format!("fetch_metas_by_uids: returned {} metas", metas.len()));
+        //logger::info(TAG, &format!("fetch_metas_by_uids: returned {} metas", metas.len()));
         Ok(metas)
     }).await.map_err(|e| e.to_string())??;
 
@@ -775,7 +775,7 @@ pub async fn fetch_email_body_by_uid(state: tauri::State<'_, crate::IslandState>
                     if let Some(body) = f.body() {
                         let html = extract_html_from_rfc822(body);
                         std::fs::write(&path, &html).map_err(|e| e.to_string())?;
-                        logger::info(TAG, &format!("fetch_body_by_uid: UID {} cached ({} bytes)", uid, html.len()));
+                        //logger::info(TAG, &format!("fetch_body_by_uid: UID {} cached ({} bytes)", uid, html.len()));
                     }
                 }
             }

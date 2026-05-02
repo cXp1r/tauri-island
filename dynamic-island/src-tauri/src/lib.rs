@@ -830,7 +830,7 @@ pub fn run() {
                     logged_disabled = false;
                     let read = clipboard::read_clipboard_text();
                     if read.is_none() {
-                        logger::debug("Clipboard", "read_clipboard_text returned None");
+                        //logger::debug("Clipboard", "read_clipboard_text returned None");
                         continue;
                     }
                     let text = read.unwrap();
