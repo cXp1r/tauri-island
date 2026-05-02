@@ -28,25 +28,63 @@ export function updateAgentCSSSize(size: string) {
 
 
 
-// body 高度实时同步到后端窗口
-let lastSyncedBodyH = 0;
+// html 高度实时同步到后端窗口
+let lastSyncedHtmlH = 0;
+const RESIZE_LOG_DELAY_MS = 120;
+let resizeLogTimer: number | null = null;
+let resizeLogFrom = 0;
+let resizeLogExtreme = 0;
+let resizeLogDirection: "up" | "down" | null = null;
 
-function syncBodyHeight() {
+function syncHtmlHeight() {
   if (skipResizeSync) return;
-  const h = document.body.offsetHeight;
-  if (h <= 0 || h === lastSyncedBodyH) return;
-  //console.log("[ResizeObserver] body height changed:", lastSyncedBodyH, "→", h);
-  lastSyncedBodyH = h;
+  const h = document.documentElement.offsetHeight;
+  if (h <= 0 || h === lastSyncedHtmlH) return;
+  trackResizeLog(lastSyncedHtmlH, h);
+  lastSyncedHtmlH = h;
   void invoke("sync_window_height", { height: h });
+}
+
+function trackResizeLog(from: number, to: number) {
+  const direction = to > from ? "up" : "down";
+  if (resizeLogDirection && resizeLogDirection !== direction) {
+    flushResizeLog();
+  }
+
+  if (!resizeLogDirection) {
+    resizeLogDirection = direction;
+    resizeLogFrom = from;
+    resizeLogExtreme = to;
+  } else if (direction === "up") {
+    resizeLogExtreme = Math.max(resizeLogExtreme, to);
+  } else {
+    resizeLogExtreme = Math.min(resizeLogExtreme, to);
+  }
+
+  if (resizeLogTimer !== null) {
+    clearTimeout(resizeLogTimer);
+  }
+  resizeLogTimer = window.setTimeout(flushResizeLog, RESIZE_LOG_DELAY_MS);
+}
+
+function flushResizeLog() {
+  if (!resizeLogDirection) return;
+  if (resizeLogTimer !== null) {
+    clearTimeout(resizeLogTimer);
+    resizeLogTimer = null;
+  }
+  const marker = resizeLogDirection === "up" ? "↑ max" : "↓ min";
+  console.log(`[ResizeObserver] html height ${marker}:`, resizeLogFrom, "→", resizeLogExtreme);
+  resizeLogDirection = null;
 }
 
 
 
 export function initResizeObserver() {
 
-  // body 高度变化 → 实时同步窗口高度（不改宽度，避免偏左回弹）
-  const bodyObserver = new ResizeObserver(() => syncBodyHeight());
-  bodyObserver.observe(document.body);
+  // html 高度变化 → 实时同步窗口高度（不改宽度，避免偏左回弹）
+  const htmlObserver = new ResizeObserver(() => syncHtmlHeight());
+  htmlObserver.observe(document.documentElement);
 
   invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {
 

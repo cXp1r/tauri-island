@@ -145,9 +145,13 @@ pub(crate) fn animate_window_height(
     my_gen: u64,
 ) {
     let phys_w = (win_w * scale).round() as i32;
+    logger::debug("WindowAnim", &format!("animate_window_height start: gen={my_gen}, from_h={from_h:.1}, to_h={to_h:.1}, win_w={win_w:.1}, duration_ms={duration_ms:.0}"));
     let start = Instant::now();
     loop {
-        if anim_id.load(Ordering::Relaxed) != my_gen { return; }
+        if anim_id.load(Ordering::Relaxed) != my_gen {
+            logger::debug("WindowAnim", &format!("animate_window_height interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
+            return;
+        }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / duration_ms).min(1.0);
         let t = ease_out_cubic(p);
@@ -265,7 +269,7 @@ pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, 
         return;
     }
     let max_h = if state.sadb_mirroring.load(Ordering::Relaxed) { 1200.0 } else { 700.0 };
-    let new_h = (height + 1.0).max(60.0).min(max_h);
+    let new_h = height.max(60.0).min(max_h) + 2.0;//防抖
     if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;
