@@ -23,6 +23,8 @@ type SettingsResponse = {
   log_level: string;
   sadb_ip: string;
   sadb_port: number;
+  adb_install_dir: string;
+  adb_path: string;
   email_poll_interval_secs: number;
   email_username: string;
   email_auth: string;
@@ -50,6 +52,37 @@ type PluginMarketRepairResult = {
   root: string;
   runtime_patched: boolean;
   archive_patched: boolean;
+};
+
+type AdbCheckResult = {
+  ok: boolean;
+  adb_path: string;
+  version: string;
+  stdout: string;
+  stderr: string;
+};
+
+type AdbDeviceInfo = {
+  serial: string;
+  state: string;
+};
+
+type AdbDevicesResult = {
+  ok: boolean;
+  adb_path: string;
+  devices: AdbDeviceInfo[];
+  stdout: string;
+  stderr: string;
+};
+
+type AdbInstallResult = {
+  install_dir: string;
+  adb_path: string;
+  downloaded_zip: string;
+};
+
+type AdbPathResult = {
+  adb_path: string;
 };
 
 type CityResult = {
@@ -85,6 +118,13 @@ const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTM
 const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
 const sadbIpInput = document.getElementById("sadb-ip") as HTMLInputElement;
 const sadbPortInput = document.getElementById("sadb-port") as HTMLInputElement;
+const adbInstallDirInput = document.getElementById("adb-install-dir") as HTMLInputElement;
+const adbPathInput = document.getElementById("adb-path") as HTMLInputElement;
+const adbPathFromPathBtn = document.getElementById("adb-path-from-path-btn") as HTMLButtonElement;
+const adbInitBtn = document.getElementById("adb-init-btn") as HTMLButtonElement;
+const adbCheckBtn = document.getElementById("adb-check-btn") as HTMLButtonElement;
+const adbDevicesBtn = document.getElementById("adb-devices-btn") as HTMLButtonElement;
+const adbCheckResult = document.getElementById("adb-check-result") as HTMLDivElement;
 const emailPollIntervalInput = document.getElementById("email-poll-interval") as HTMLInputElement;
 const emailUsernameInput = document.getElementById("email-username") as HTMLInputElement;
 const emailAuthInput = document.getElementById("email-auth") as HTMLInputElement;
@@ -115,6 +155,17 @@ async function loadSettings() {
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   sadbIpInput.value = settings.sadb_ip || "";
   sadbPortInput.value = settings.sadb_port?.toString() || "5555";
+  adbInstallDirInput.value = settings.adb_install_dir || "";
+  adbPathInput.value = settings.adb_path || "";
+  if (!adbPathInput.value.trim()) {
+    try {
+      const result = await invoke<AdbPathResult>("tools_find_adb_in_path");
+      adbPathInput.value = result.adb_path;
+      setAdbResult(`已从系统 PATH 自动找到 ADB: ${result.adb_path}`);
+    } catch {
+      setAdbResult("未配置 ADB 路径，可留空使用系统 PATH，或点击“从 PATH 获取”。");
+    }
+  }
   emailPollIntervalInput.value = Math.max(1, settings.email_poll_interval_secs || 1).toString();
   emailUsernameInput.value = settings.email_username || "";
   emailAuthInput.value = settings.email_auth || "";
@@ -301,6 +352,8 @@ saveBtn.addEventListener("click", async () => {
       logLevel: logLevelSelect ? logLevelSelect.value : undefined,
       sadbIp: sadbIpInput.value.trim(),
       sadbPort: parseInt(sadbPortInput.value) || 5555,
+      adbInstallDir: adbInstallDirInput.value.trim(),
+      adbPath: adbPathInput.value.trim(),
       emailPollIntervalSecs: Math.max(1, parseInt(emailPollIntervalInput.value) || 1),
       emailUsername: emailUsernameInput.value.trim(),
       emailAuth: emailAuthInput.value.trim(),
@@ -372,6 +425,135 @@ repairBtn.addEventListener("click", async () => {
   } finally {
     repairBtn.disabled = false;
     repairBtn.textContent = originalText;
+  }
+});
+
+function resolveAdbPathForCommand(): string | null {
+  const adbPath = adbPathInput.value.trim();
+  return adbPath || null;
+}
+
+function setAdbResult(text: string, isError = false) {
+  adbCheckResult.textContent = text;
+  adbCheckResult.style.color = isError ? "#ff6f7f" : "var(--text)";
+}
+
+adbInitBtn.addEventListener("click", async () => {
+  const installDir = adbInstallDirInput.value.trim();
+  const originalText = adbInitBtn.textContent || "初始化 ADB";
+
+  if (!installDir) {
+    setAdbResult("请先填写 ADB 工具安装目录。", true);
+    showStatus("请先填写 ADB 工具安装目录", true);
+    return;
+  }
+
+  adbInitBtn.disabled = true;
+  adbInitBtn.textContent = "初始化中...";
+  setAdbResult("正在下载 Android platform-tools 并解压，请稍候...");
+
+  try {
+    const result = await invoke<AdbInstallResult>("tools_download_and_install_adb", {
+      installDir,
+    });
+    adbInstallDirInput.value = result.install_dir;
+    adbPathInput.value = result.adb_path;
+    setAdbResult([
+      "初始化完成",
+      `安装目录: ${result.install_dir}`,
+      `ADB 路径: ${result.adb_path}`,
+      `下载文件: ${result.downloaded_zip}`,
+      "请点击“保存设置”保留该配置。",
+    ].join("\n"));
+    showStatus("ADB 初始化完成，请保存设置", false, 5000);
+  } catch (e) {
+    setAdbResult(`初始化失败: ${String(e)}`, true);
+    showStatus(`ADB 初始化失败: ${String(e)}`, true, 7000);
+  } finally {
+    adbInitBtn.disabled = false;
+    adbInitBtn.textContent = originalText;
+  }
+});
+
+adbPathFromPathBtn.addEventListener("click", async () => {
+  const originalText = adbPathFromPathBtn.textContent || "从 PATH 获取";
+  adbPathFromPathBtn.disabled = true;
+  adbPathFromPathBtn.textContent = "查找中...";
+  setAdbResult("正在从系统 PATH 查找 adb...");
+
+  try {
+    const result = await invoke<AdbPathResult>("tools_find_adb_in_path");
+    adbPathInput.value = result.adb_path;
+    setAdbResult([
+      "已从 PATH 找到 ADB",
+      `ADB 路径: ${result.adb_path}`,
+      "请点击“保存设置”保留该配置。",
+    ].join("\n"));
+    showStatus("已从 PATH 获取 ADB 路径，请保存设置", false, 5000);
+  } catch (e) {
+    setAdbResult(`从 PATH 获取失败: ${String(e)}`, true);
+    showStatus(`从 PATH 获取 ADB 失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbPathFromPathBtn.disabled = false;
+    adbPathFromPathBtn.textContent = originalText;
+  }
+});
+
+adbCheckBtn.addEventListener("click", async () => {
+  const originalText = adbCheckBtn.textContent || "命令检验";
+  adbCheckBtn.disabled = true;
+  adbCheckBtn.textContent = "检测中...";
+  setAdbResult("正在执行 adb version...");
+
+  try {
+    const result = await invoke<AdbCheckResult>("tools_check_adb", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      result.ok ? "命令检验通过" : "命令执行失败",
+      `ADB 路径: ${result.adb_path}`,
+      `版本: ${result.version || "未知"}`,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"));
+    showStatus(result.ok ? "ADB 命令检验通过" : "ADB 命令执行失败", !result.ok, 4500);
+  } catch (e) {
+    setAdbResult(`命令检验失败: ${String(e)}`, true);
+    showStatus(`ADB 命令检验失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbCheckBtn.disabled = false;
+    adbCheckBtn.textContent = originalText;
+  }
+});
+
+adbDevicesBtn.addEventListener("click", async () => {
+  const originalText = adbDevicesBtn.textContent || "设备检验";
+  adbDevicesBtn.disabled = true;
+  adbDevicesBtn.textContent = "检测中...";
+  setAdbResult("正在执行 adb devices...");
+
+  try {
+    const result = await invoke<AdbDevicesResult>("tools_check_adb_devices", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    const deviceLines = result.devices.length > 0
+      ? result.devices.map((device) => `${device.serial}  ${device.state}`)
+      : ["未发现设备"];
+    setAdbResult([
+      result.ok ? "设备检验完成" : "设备检验执行失败",
+      `ADB 路径: ${result.adb_path}`,
+      "设备列表:",
+      ...deviceLines,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"), !result.ok);
+    showStatus(result.devices.length > 0 ? `发现 ${result.devices.length} 个设备` : "未发现 ADB 设备", false, 4500);
+  } catch (e) {
+    setAdbResult(`设备检验失败: ${String(e)}`, true);
+    showStatus(`ADB 设备检验失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbDevicesBtn.disabled = false;
+    adbDevicesBtn.textContent = originalText;
   }
 });
 

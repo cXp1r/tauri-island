@@ -13,6 +13,7 @@ mod ceverything;
 mod sadb;
 mod email;
 mod cc;
+mod tools;
 
 use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
@@ -353,6 +354,8 @@ pub fn run() {
             sadb::sadb_send_keycode, sadb::sadb_inject_text,
             sadb::sadb_set_clipboard,
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
+            tools::tools_check_adb, tools::tools_check_adb_devices, tools::tools_find_adb_in_path, tools::tools_download_adb,
+            tools::tools_extract_adb, tools::tools_download_and_install_adb,
             email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::clear_email_cache,
             email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_body_by_uid,
         ])
@@ -450,6 +453,8 @@ pub fn run() {
                 sadb_session: tokio::sync::Mutex::new(None),
                 sadb_ip: Arc::new(Mutex::new(settings.sadb_ip.clone())),
                 sadb_port: Arc::new(Mutex::new(settings.sadb_port)),
+                adb_install_dir: Arc::new(Mutex::new(settings.adb_install_dir.clone())),
+                adb_path: Arc::new(Mutex::new(settings.adb_path.clone())),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
@@ -1570,6 +1575,8 @@ pub struct IslandState {
     pub(crate) sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
     pub sadb_ip: Arc<Mutex<String>>,
     pub sadb_port: Arc<Mutex<u16>>,
+    pub adb_install_dir: Arc<Mutex<String>>,
+    pub adb_path: Arc<Mutex<String>>,
     pub sadb_expanded: Arc<AtomicBool>,
     /// 待机面板展开中（已点击展开但尚未开始镜像，或镜像结束后回退）
     pub sadb_idle: Arc<AtomicBool>,

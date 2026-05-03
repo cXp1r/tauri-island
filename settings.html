@@ -444,6 +444,30 @@
             </div>
           </div>
           <div class="setting-group">
+            <div class="setting-group-title">ADB 工具</div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>安装目录</h3>
+                <p>初始化会下载 Android platform-tools，并解压到此目录下。</p>
+              </div>
+              <input id="adb-install-dir" class="input path" type="text" placeholder="ADB 工具安装目录" />
+            </div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label">
+                <h3>ADB 路径</h3>
+                <p>留空时使用系统 PATH 中的 adb；初始化成功后会自动填入 adb.exe 路径。</p>
+              </div>
+              <input id="adb-path" class="input path" type="text" placeholder="adb 或 C:\...\platform-tools\adb.exe" />
+              <div class="actions">
+                <button id="adb-path-from-path-btn" class="btn" type="button">从 PATH 获取</button>
+                <button id="adb-init-btn" class="btn btn-primary" type="button">初始化 ADB</button>
+                <button id="adb-check-btn" class="btn" type="button">命令检验</button>
+                <button id="adb-devices-btn" class="btn" type="button">设备检验</button>
+              </div>
+              <div id="adb-check-result" class="mono">未检测</div>
+            </div>
+          </div>
+          <div class="setting-group">
             <div class="setting-group-title">说明</div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
               <div class="setting-label">
