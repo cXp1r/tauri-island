@@ -17,6 +17,9 @@ use tokio::net::TcpListener;
 use tokio::process::{Child, Command as TokioCommand};
 use tracing::{debug, info, warn};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Scrcpy-server version that must match the jar we push to the device.
 /// When upgrading the jar, bump this too.
 pub const SCRCPY_SERVER_VERSION: &str = "3.3.4";
@@ -110,7 +113,16 @@ impl ScrcpyClient {
         let server_args = self.build_server_args();
         debug!("Server args: {}", server_args.join(" "));
 
-        let mut cmd = TokioCommand::new("adb");
+        let adb_path = self
+            .config
+            .adb_path
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+            .unwrap_or("adb")
+            .trim();
+        let mut cmd = TokioCommand::new(adb_path);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         if let Some(ref serial) = self.config.serial {
             cmd.arg("-s").arg(serial);
         }

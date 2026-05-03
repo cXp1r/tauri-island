@@ -10,6 +10,9 @@ use crate::error::{Error, Result};
 use tokio::process::Command as TokioCommand;
 use tracing::debug;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// ADB client wrapper
 #[derive(Debug, Clone)]
 pub struct AdbClient {
@@ -37,6 +40,8 @@ impl AdbClient {
     /// Build async command with optional serial
     fn build_async_command(&self) -> TokioCommand {
         let mut cmd = TokioCommand::new(&self.adb_path);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         if let Some(ref serial) = self.serial {
             cmd.arg("-s").arg(serial);
         }
@@ -167,10 +172,10 @@ impl AdbClient {
     /// The host format is `ip:port` (e.g. `192.168.1.100:5555`).
     pub async fn connect(host: &str) -> Result<()> {
         debug!("Connecting to {} via TCP/IP", host);
-        let output = TokioCommand::new("adb")
-            .args(["connect", host])
-            .output()
-            .await?;
+        let mut cmd = TokioCommand::new("adb");
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.args(["connect", host]).output().await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -189,10 +194,10 @@ impl AdbClient {
     /// If host is empty, disconnects all TCP/IP devices.
     pub async fn disconnect(host: &str) -> Result<()> {
         debug!("Disconnecting from {}", if host.is_empty() { "all" } else { host });
-        let output = TokioCommand::new("adb")
-            .args(["disconnect", host])
-            .output()
-            .await?;
+        let mut cmd = TokioCommand::new("adb");
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.args(["disconnect", host]).output().await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
