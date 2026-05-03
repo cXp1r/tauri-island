@@ -41,7 +41,11 @@ impl ScrcpyClient {
     /// Create a new client. Does not connect yet; call [`start`] to launch the
     /// server and open sockets.
     pub async fn new(config: Config) -> Result<Self> {
-        let adb = Arc::new(AdbClient::new(config.serial.clone()));
+        let mut adb_client = AdbClient::new(config.serial.clone());
+        if let Some(adb_path) = config.adb_path.as_ref().filter(|path| !path.trim().is_empty()) {
+            adb_client = adb_client.with_adb_path(adb_path.trim());
+        }
+        let adb = Arc::new(adb_client);
 
         if !adb.is_connected().await? {
             return Err(Error::Adb("No device connected".to_string()));

@@ -123,6 +123,12 @@ pub(crate) async fn sadb_start_mirroring(
     }
 
     let bitrate_val = bitrate.or(Some(8_000_000));
+    let adb_path = state.adb_path.lock().unwrap().trim().to_string();
+    let adb_path = if adb_path.is_empty() {
+        None
+    } else {
+        Some(adb_path)
+    };
 
     let cfg = Config {
         server_jar_path: server_jar.to_string_lossy().into_owned(),
@@ -131,6 +137,7 @@ pub(crate) async fn sadb_start_mirroring(
         max_size,
         video_bitrate: bitrate_val,
         serial: serial.clone(),
+        adb_path: adb_path.clone(),
         ..Config::default()
     };
 
@@ -138,6 +145,7 @@ pub(crate) async fn sadb_start_mirroring(
         serial = ?serial,
         max_size = ?max_size,
         bitrate = bitrate_val,
+        adb_path = ?adb_path,
         audio = true,
         control = true,
         "starting mirroring session"
