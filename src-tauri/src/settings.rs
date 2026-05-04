@@ -171,7 +171,7 @@ fn default_search_shortcut() -> String {
 }
 
 fn default_email_shortcut() -> String {
-    "Alt+E".to_string()
+    "Ctrl+Alt+E".to_string()
 }
 
 fn default_lyric_mode() -> String {

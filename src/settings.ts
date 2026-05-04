@@ -180,7 +180,7 @@ async function loadSettings() {
   emailAuthInput.value = settings.email_auth || "";
   emailAddressInput.value = settings.email_address || "";
   emailPortInput.value = (settings.email_port || 993).toString();
-  emailShortcutInput.value = settings.email_shortcut || "Alt+E";
+  emailShortcutInput.value = settings.email_shortcut || "Ctrl+Alt+E";
   autoStartToggle.checked = settings.auto_start || false;
 
   // 加载日志等级
@@ -368,7 +368,7 @@ saveBtn.addEventListener("click", async () => {
       emailAuth: emailAuthInput.value.trim(),
       emailAddress: emailAddressInput.value.trim(),
       emailPort: parseInt(emailPortInput.value) || 993,
-      emailShortcut: emailShortcutInput.value.trim() || "Alt+E",
+      emailShortcut: emailShortcutInput.value.trim() || "Ctrl+Alt+E",
     });
 
     // 保存 AI 设置
