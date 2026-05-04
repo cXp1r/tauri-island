@@ -171,8 +171,13 @@ impl AdbClient {
     /// Connect to a device over TCP/IP (`adb connect <host>`).
     /// The host format is `ip:port` (e.g. `192.168.1.100:5555`).
     pub async fn connect(host: &str) -> Result<()> {
+        Self::connect_with_adb_path(host, None).await
+    }
+
+    pub async fn connect_with_adb_path(host: &str, adb_path: Option<&str>) -> Result<()> {
         debug!("Connecting to {} via TCP/IP", host);
-        let mut cmd = TokioCommand::new("adb");
+        let adb_path = adb_path.map(str::trim).filter(|path| !path.is_empty()).unwrap_or("adb");
+        let mut cmd = TokioCommand::new(adb_path);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         let output = cmd.args(["connect", host]).output().await?;
@@ -193,8 +198,13 @@ impl AdbClient {
     /// Disconnect from a TCP/IP device (`adb disconnect <host>`).
     /// If host is empty, disconnects all TCP/IP devices.
     pub async fn disconnect(host: &str) -> Result<()> {
+        Self::disconnect_with_adb_path(host, None).await
+    }
+
+    pub async fn disconnect_with_adb_path(host: &str, adb_path: Option<&str>) -> Result<()> {
         debug!("Disconnecting from {}", if host.is_empty() { "all" } else { host });
-        let mut cmd = TokioCommand::new("adb");
+        let adb_path = adb_path.map(str::trim).filter(|path| !path.is_empty()).unwrap_or("adb");
+        let mut cmd = TokioCommand::new(adb_path);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         let output = cmd.args(["disconnect", host]).output().await?;

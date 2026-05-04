@@ -54,6 +54,14 @@ pub struct AdbDevicesResult {
     stderr: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AdbCommandResult {
+    ok: bool,
+    adb_path: String,
+    stdout: String,
+    stderr: String,
+}
+
 fn run_adb_version(adb_path: &str) -> Result<AdbCheckResult, String> {
     let output = Command::new(adb_path)
         .arg("version")
@@ -111,6 +119,21 @@ fn run_adb_devices(adb_path: &str) -> Result<AdbDevicesResult, String> {
         devices,
         stdout,
         stderr,
+    })
+}
+
+fn run_adb_kill_server(adb_path: &str) -> Result<AdbCommandResult, String> {
+    let output = Command::new(adb_path)
+        .arg("kill-server")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("failed to run adb kill-server: {}", e))?;
+
+    Ok(AdbCommandResult {
+        ok: output.status.success(),
+        adb_path: adb_path.to_string(),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
 }
 
@@ -205,6 +228,12 @@ pub fn tools_check_adb(adb_path: Option<String>) -> Result<AdbCheckResult, Strin
 pub fn tools_check_adb_devices(adb_path: Option<String>) -> Result<AdbDevicesResult, String> {
     let adb_path = adb_path.unwrap_or_else(|| "adb".to_string());
     run_adb_devices(&adb_path)
+}
+
+#[tauri::command]
+pub fn tools_kill_adb_server(adb_path: Option<String>) -> Result<AdbCommandResult, String> {
+    let adb_path = adb_path.unwrap_or_else(|| "adb".to_string());
+    run_adb_kill_server(&adb_path)
 }
 
 #[tauri::command]

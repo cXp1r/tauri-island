@@ -477,9 +477,23 @@ pub(crate) async fn sadb_inject_text(
 }
 
 #[tauri::command]
-pub(crate) async fn sadb_connect_device(serial: String) -> Result<(), String> {
-    logger::info("SADB", &format!("connecting to device via ADB: serial={}", serial));
-    sadb_core::adb::AdbClient::connect(&serial)
+pub(crate) async fn sadb_connect_device(
+    state: State<'_, IslandState>,
+    serial: String,
+    adb_path: Option<String>,
+) -> Result<(), String> {
+    let adb_path = adb_path
+        .unwrap_or_else(|| state.adb_path.lock().unwrap().clone())
+        .trim()
+        .to_string();
+    let adb_path_opt = if adb_path.is_empty() { None } else { Some(adb_path) };
+
+    logger::info("SADB", &format!(
+        "connecting to device via ADB: serial={}, adb_path={}",
+        serial,
+        adb_path_opt.as_deref().unwrap_or("adb")
+    ));
+    sadb_core::adb::AdbClient::connect_with_adb_path(&serial, adb_path_opt.as_deref())
         .await
         .map_err(|e| {
             logger::error("SADB", &format!("ADB connect failed: serial={}, error={}", serial, e));
@@ -490,9 +504,23 @@ pub(crate) async fn sadb_connect_device(serial: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) async fn sadb_disconnect_device(serial: String) -> Result<(), String> {
-    logger::info("SADB", &format!("disconnecting device: serial={}", serial));
-    sadb_core::adb::AdbClient::disconnect(&serial)
+pub(crate) async fn sadb_disconnect_device(
+    state: State<'_, IslandState>,
+    serial: String,
+    adb_path: Option<String>,
+) -> Result<(), String> {
+    let adb_path = adb_path
+        .unwrap_or_else(|| state.adb_path.lock().unwrap().clone())
+        .trim()
+        .to_string();
+    let adb_path_opt = if adb_path.is_empty() { None } else { Some(adb_path) };
+
+    logger::info("SADB", &format!(
+        "disconnecting device: serial={}, adb_path={}",
+        serial,
+        adb_path_opt.as_deref().unwrap_or("adb")
+    ));
+    sadb_core::adb::AdbClient::disconnect_with_adb_path(&serial, adb_path_opt.as_deref())
         .await
         .map_err(|e| {
             logger::warn("SADB", &format!("ADB disconnect failed: serial={}, error={}", serial, e));

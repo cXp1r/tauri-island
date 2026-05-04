@@ -75,6 +75,13 @@ type AdbDevicesResult = {
   stderr: string;
 };
 
+type AdbCommandResult = {
+  ok: boolean;
+  adb_path: string;
+  stdout: string;
+  stderr: string;
+};
+
 type AdbInstallResult = {
   install_dir: string;
   adb_path: string;
@@ -124,6 +131,8 @@ const adbPathFromPathBtn = document.getElementById("adb-path-from-path-btn") as 
 const adbInitBtn = document.getElementById("adb-init-btn") as HTMLButtonElement;
 const adbCheckBtn = document.getElementById("adb-check-btn") as HTMLButtonElement;
 const adbDevicesBtn = document.getElementById("adb-devices-btn") as HTMLButtonElement;
+const adbConnectDeviceBtn = document.getElementById("adb-connect-device-btn") as HTMLButtonElement;
+const adbKillServerBtn = document.getElementById("adb-kill-server-btn") as HTMLButtonElement;
 const adbCheckResult = document.getElementById("adb-check-result") as HTMLDivElement;
 const emailPollIntervalInput = document.getElementById("email-poll-interval") as HTMLInputElement;
 const emailUsernameInput = document.getElementById("email-username") as HTMLInputElement;
@@ -554,6 +563,78 @@ adbDevicesBtn.addEventListener("click", async () => {
   } finally {
     adbDevicesBtn.disabled = false;
     adbDevicesBtn.textContent = originalText;
+  }
+});
+
+adbConnectDeviceBtn.addEventListener("click", async () => {
+  const ip = sadbIpInput.value.trim();
+  const port = parseInt(sadbPortInput.value) || 5555;
+  const serial = `${ip}:${port}`;
+  const originalText = adbConnectDeviceBtn.textContent || "连接设备";
+
+  if (!ip) {
+    setAdbResult("请先填写默认 IP 地址。", true);
+    showStatus("请先填写默认 IP 地址", true);
+    return;
+  }
+
+  if (port < 1 || port > 65535) {
+    setAdbResult("端口范围应为 1-65535。", true);
+    showStatus("ADB WiFi 端口范围应为 1-65535", true);
+    return;
+  }
+
+  adbConnectDeviceBtn.disabled = true;
+  adbConnectDeviceBtn.textContent = "连接中...";
+  setAdbResult(`正在连接设备 ${serial}...`);
+
+  try {
+    await invoke("sadb_connect_device", {
+      serial,
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      "设备连接成功",
+      `设备地址: ${serial}`,
+      `ADB 路径: ${resolveAdbPathForCommand() || "adb"}`,
+    ].join("\n"));
+    showStatus(`设备连接成功: ${serial}`, false, 4500);
+  } catch (e) {
+    setAdbResult([
+      "设备连接失败",
+      `设备地址: ${serial}`,
+      `错误: ${String(e)}`,
+    ].join("\n"), true);
+    showStatus(`设备连接失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbConnectDeviceBtn.disabled = false;
+    adbConnectDeviceBtn.textContent = originalText;
+  }
+});
+
+adbKillServerBtn.addEventListener("click", async () => {
+  const originalText = adbKillServerBtn.textContent || "Kill Server";
+  adbKillServerBtn.disabled = true;
+  adbKillServerBtn.textContent = "执行中...";
+  setAdbResult("正在执行 adb kill-server...");
+
+  try {
+    const result = await invoke<AdbCommandResult>("tools_kill_adb_server", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      result.ok ? "ADB Server 已停止" : "ADB Server 停止失败",
+      `ADB 路径: ${result.adb_path}`,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"), !result.ok);
+    showStatus(result.ok ? "ADB Server 已停止" : "ADB Server 停止失败", !result.ok, 4500);
+  } catch (e) {
+    setAdbResult(`Kill Server 失败: ${String(e)}`, true);
+    showStatus(`Kill Server 失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbKillServerBtn.disabled = false;
+    adbKillServerBtn.textContent = originalText;
   }
 });
 
