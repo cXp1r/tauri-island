@@ -182,7 +182,7 @@ function rendererForType(type: NoticeType): NoticeRenderer {
     case "email":
       return {
         html: baseNoticeHtml,
-        bind: (item) => bindBaseNotice(item, () => handleEmailNotice()),
+        bind: (item) => bindBaseNotice(item, () => handleEmailNotice(item)),
       };
     default:
       return {
@@ -265,10 +265,20 @@ function handleClipboardNotice(item: NoticeItem): void {
   }
 }
 
-function handleEmailNotice(): void {
+function handleEmailNotice(item: NoticeItem): void {
   //console.log(`[NoticeQueue] email-action: active=${activeItem ? describeNotice(activeItem) : "none"}`);
-  void invoke("open_email_window");
+  const payload = item.payload as { uid?: string | number } | null;
+  openEmailWindow(payload?.uid);
   completeActiveNotice(true, "email-open");
+}
+
+function openEmailWindow(uid?: string | number): Promise<void> {
+  const normalizedUid = uid != null ? String(uid) : undefined;
+  console.log("[NoticeQueue] open_email_window test:", normalizedUid || "(no uid)");
+  if (normalizedUid) {
+    return invoke("open_email_window", { uid: normalizedUid });
+  }
+  return invoke("open_email_window");
 }
 
 function completeActiveNotice(shouldClearTimer = true, reason = "complete"): void {

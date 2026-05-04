@@ -594,7 +594,7 @@ pub fn run() {
                 logger::info("Shortcut", &format!("registering email shortcut: {}", email_sc));
                 match app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        window::open_email_window(app_h.clone());
+                        window::open_email_window_inner(app_h.clone(), None);
                     }
                 }) {
                     Ok(_) => logger::info("Shortcut", "email shortcut registered ok"),

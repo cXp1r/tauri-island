@@ -249,6 +249,7 @@
 
         let cacheDir = "";
         let activeUid = null;
+        let pendingOpenUid = new URLSearchParams(window.location.search).get("uid");
 
         // 全量 UID 列表（新→旧），由 fetch_email_uid_list 获取
         let allUids = [];
@@ -318,6 +319,36 @@
                 <div class="mail-item-date">${esc(meta.date || "")}</div>
             `;
             el.onclick = () => selectMail(meta);
+        }
+
+        async function openUid(uid) {
+            const uidStr = String(uid);
+            const cachedMeta = metaCache.get(uidStr);
+            if (cachedMeta) {
+                selectMail(cachedMeta);
+                return true;
+            }
+
+            const uidNum = Number(uidStr);
+            if (!Number.isFinite(uidNum)) return false;
+
+            try {
+                const metas = await invoke("fetch_email_metas_by_uids", { uids: [uidNum] });
+                const meta = metas && metas[0];
+                if (!meta) return false;
+                metaCache.set(meta.uid, meta);
+                if (!allUids.map(String).includes(String(meta.uid))) {
+                    allUids.unshift(uidNum);
+                    renderFullList();
+                } else {
+                    updateItemDom(meta.uid);
+                }
+                selectMail(meta);
+                return true;
+            } catch (e) {
+                console.error("open uid failed:", e);
+                return false;
+            }
         }
 
         // IntersectionObserver：当占位项进入视口时批量加载元数据
@@ -422,6 +453,25 @@
             }
         }
 
+        async function loadMailboxList(warmup = true) {
+            try {
+                allUids = await invoke("fetch_email_uid_list");
+            } catch (e) {
+                console.warn("fetch uid list failed, falling back to cached:", e);
+                allUids = cachedMetas.map(m => Number(m.uid));
+            }
+
+            renderFullList();
+
+            if (!warmup) return;
+            const warmupUids = allUids
+                .slice(0, 60)
+                .filter(uid => !metaCache.has(String(uid)));
+            if (warmupUids.length > 0) {
+                fetchMetasBatch(warmupUids);
+            }
+        }
+
         async function init() {
             try {
                 cacheDir = await invoke("get_email_cache_dir");
@@ -432,23 +482,14 @@
                     metaCache.set(m.uid, m);
                 }
 
-                // 2. 获取全量 UID 列表
-                try {
-                    allUids = await invoke("fetch_email_uid_list");
-                } catch (e) {
-                    console.warn("fetch uid list failed, falling back to cached:", e);
-                    // 后端未连通时回退到缓存列表
-                    allUids = cachedMetas.map(m => Number(m.uid));
+                if (pendingOpenUid) {
+                    const opened = await openUid(pendingOpenUid);
+                    pendingOpenUid = null;
+                    loadMailboxList(false);
+                    if (opened) return;
                 }
 
-                renderFullList();
-
-                const warmupUids = allUids
-                    .slice(0, 60)
-                    .filter(uid => !metaCache.has(String(uid)));
-                if (warmupUids.length > 0) {
-                    fetchMetasBatch(warmupUids);
-                }
+                await loadMailboxList();
 
                 // 自动选中第一封
                 if (allUids.length > 0 && !activeUid) {
@@ -538,6 +579,10 @@
             } catch {}
 
             renderFullList();
+        });
+
+        listen("email-open-uid", async (event) => {
+            await openUid(event.payload);
         });
 
         // 启动

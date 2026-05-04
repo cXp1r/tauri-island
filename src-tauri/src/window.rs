@@ -622,16 +622,36 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 }
 
 #[tauri::command]
-pub fn open_email_window(app: tauri::AppHandle) {
+pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
+    logger::debug("Window", &format!("open_email_window invoked: uid={}", uid.as_deref().unwrap_or("(none)")));
+    let app_for_task = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        open_email_window_inner(app_for_task, uid);
+    });
+}
+
+pub(crate) fn open_email_window_inner(app: tauri::AppHandle, uid: Option<String>) {
+    logger::debug("Window", &format!("open_email_window_inner: uid={}", uid.as_deref().unwrap_or("(none)")));
     // 如果已有 email 窗口则聚焦
     if let Some(win) = app.get_webview_window("email") {
+        logger::debug("Window", "open_email_window: focusing existing email window");
         let _ = win.set_focus();
+        if let Some(uid) = uid {
+            logger::debug("Window", &format!("open_email_window: emitting email-open-uid uid={uid}"));
+            let _ = win.emit("email-open-uid", uid);
+        }
         return;
     }
+    let url = uid
+        .as_ref()
+        .map(|uid| format!("email.html?uid={uid}"))
+        .unwrap_or_else(|| "email.html".to_string());
+    logger::debug("Window", &format!("open_email_window: creating email window url={url}"));
     let builder = tauri::WebviewWindowBuilder::new(
         &app,
         "email",
-        tauri::WebviewUrl::App("email.html".into()),
+        tauri::WebviewUrl::App(url.into()),
     )
     .title("邮件")
     .inner_size(960.0, 640.0)
@@ -640,6 +660,7 @@ pub fn open_email_window(app: tauri::AppHandle) {
     .decorations(true)
     .resizable(true);
 
+    logger::debug("Window", "open_email_window: builder.build start");
     match builder.build() {
         Ok(_) => logger::info("Window", "email window opened"),
         Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
