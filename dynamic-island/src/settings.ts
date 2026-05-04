@@ -23,6 +23,8 @@ type SettingsResponse = {
   log_level: string;
   sadb_ip: string;
   sadb_port: number;
+  adb_install_dir: string;
+  adb_path: string;
   email_poll_interval_secs: number;
   email_username: string;
   email_auth: string;
@@ -52,6 +54,44 @@ type PluginMarketRepairResult = {
   archive_patched: boolean;
 };
 
+type AdbCheckResult = {
+  ok: boolean;
+  adb_path: string;
+  version: string;
+  stdout: string;
+  stderr: string;
+};
+
+type AdbDeviceInfo = {
+  serial: string;
+  state: string;
+};
+
+type AdbDevicesResult = {
+  ok: boolean;
+  adb_path: string;
+  devices: AdbDeviceInfo[];
+  stdout: string;
+  stderr: string;
+};
+
+type AdbCommandResult = {
+  ok: boolean;
+  adb_path: string;
+  stdout: string;
+  stderr: string;
+};
+
+type AdbInstallResult = {
+  install_dir: string;
+  adb_path: string;
+  downloaded_zip: string;
+};
+
+type AdbPathResult = {
+  adb_path: string;
+};
+
 type CityResult = {
   name: string;
   country: string;
@@ -60,7 +100,7 @@ type CityResult = {
   longitude: number;
 };
 
-const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
+const INFLINK_URL = "https://docs.pyisland.com/guide/qa/ncm-music.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
@@ -85,6 +125,15 @@ const aiModelTypeResult = document.getElementById("ai-model-type-result") as HTM
 const agentWindowSizeSelect = document.getElementById("agent-window-size") as HTMLSelectElement;
 const sadbIpInput = document.getElementById("sadb-ip") as HTMLInputElement;
 const sadbPortInput = document.getElementById("sadb-port") as HTMLInputElement;
+const adbInstallDirInput = document.getElementById("adb-install-dir") as HTMLInputElement;
+const adbPathInput = document.getElementById("adb-path") as HTMLInputElement;
+const adbPathFromPathBtn = document.getElementById("adb-path-from-path-btn") as HTMLButtonElement;
+const adbInitBtn = document.getElementById("adb-init-btn") as HTMLButtonElement;
+const adbCheckBtn = document.getElementById("adb-check-btn") as HTMLButtonElement;
+const adbDevicesBtn = document.getElementById("adb-devices-btn") as HTMLButtonElement;
+const adbConnectDeviceBtn = document.getElementById("adb-connect-device-btn") as HTMLButtonElement;
+const adbKillServerBtn = document.getElementById("adb-kill-server-btn") as HTMLButtonElement;
+const adbCheckResult = document.getElementById("adb-check-result") as HTMLDivElement;
 const emailPollIntervalInput = document.getElementById("email-poll-interval") as HTMLInputElement;
 const emailUsernameInput = document.getElementById("email-username") as HTMLInputElement;
 const emailAuthInput = document.getElementById("email-auth") as HTMLInputElement;
@@ -115,12 +164,23 @@ async function loadSettings() {
   agentWindowSizeSelect.value = settings.agent_window_size || "medium";
   sadbIpInput.value = settings.sadb_ip || "";
   sadbPortInput.value = settings.sadb_port?.toString() || "5555";
+  adbInstallDirInput.value = settings.adb_install_dir || "";
+  adbPathInput.value = settings.adb_path || "";
+  if (!adbPathInput.value.trim()) {
+    try {
+      const result = await invoke<AdbPathResult>("tools_find_adb_in_path");
+      adbPathInput.value = result.adb_path;
+      setAdbResult(`已从系统 PATH 自动找到 ADB: ${result.adb_path}`);
+    } catch {
+      setAdbResult("未配置 ADB 路径，可留空使用系统 PATH，或点击“从 PATH 获取”。");
+    }
+  }
   emailPollIntervalInput.value = Math.max(1, settings.email_poll_interval_secs || 1).toString();
   emailUsernameInput.value = settings.email_username || "";
   emailAuthInput.value = settings.email_auth || "";
   emailAddressInput.value = settings.email_address || "";
   emailPortInput.value = (settings.email_port || 993).toString();
-  emailShortcutInput.value = settings.email_shortcut || "Alt+E";
+  emailShortcutInput.value = settings.email_shortcut || "Ctrl+Alt+E";
   autoStartToggle.checked = settings.auto_start || false;
 
   // 加载日志等级
@@ -301,12 +361,14 @@ saveBtn.addEventListener("click", async () => {
       logLevel: logLevelSelect ? logLevelSelect.value : undefined,
       sadbIp: sadbIpInput.value.trim(),
       sadbPort: parseInt(sadbPortInput.value) || 5555,
+      adbInstallDir: adbInstallDirInput.value.trim(),
+      adbPath: adbPathInput.value.trim(),
       emailPollIntervalSecs: Math.max(1, parseInt(emailPollIntervalInput.value) || 1),
       emailUsername: emailUsernameInput.value.trim(),
       emailAuth: emailAuthInput.value.trim(),
       emailAddress: emailAddressInput.value.trim(),
       emailPort: parseInt(emailPortInput.value) || 993,
-      emailShortcut: emailShortcutInput.value.trim() || "Alt+E",
+      emailShortcut: emailShortcutInput.value.trim() || "Ctrl+Alt+E",
     });
 
     // 保存 AI 设置
@@ -372,6 +434,207 @@ repairBtn.addEventListener("click", async () => {
   } finally {
     repairBtn.disabled = false;
     repairBtn.textContent = originalText;
+  }
+});
+
+function resolveAdbPathForCommand(): string | null {
+  const adbPath = adbPathInput.value.trim();
+  return adbPath || null;
+}
+
+function setAdbResult(text: string, isError = false) {
+  adbCheckResult.textContent = text;
+  adbCheckResult.style.color = isError ? "#ff6f7f" : "var(--text)";
+}
+
+adbInitBtn.addEventListener("click", async () => {
+  const installDir = adbInstallDirInput.value.trim();
+  const originalText = adbInitBtn.textContent || "初始化 ADB";
+
+  if (!installDir) {
+    setAdbResult("请先填写 ADB 工具安装目录。", true);
+    showStatus("请先填写 ADB 工具安装目录", true);
+    return;
+  }
+
+  adbInitBtn.disabled = true;
+  adbInitBtn.textContent = "初始化中...";
+  setAdbResult("正在下载 Android platform-tools 并解压，请稍候...");
+
+  try {
+    const result = await invoke<AdbInstallResult>("tools_download_and_install_adb", {
+      installDir,
+    });
+    adbInstallDirInput.value = result.install_dir;
+    adbPathInput.value = result.adb_path;
+    setAdbResult([
+      "初始化完成",
+      `安装目录: ${result.install_dir}`,
+      `ADB 路径: ${result.adb_path}`,
+      `下载文件: ${result.downloaded_zip}`,
+      "请点击“保存设置”保留该配置。",
+    ].join("\n"));
+    showStatus("ADB 初始化完成，请保存设置", false, 5000);
+  } catch (e) {
+    setAdbResult(`初始化失败: ${String(e)}`, true);
+    showStatus(`ADB 初始化失败: ${String(e)}`, true, 7000);
+  } finally {
+    adbInitBtn.disabled = false;
+    adbInitBtn.textContent = originalText;
+  }
+});
+
+adbPathFromPathBtn.addEventListener("click", async () => {
+  const originalText = adbPathFromPathBtn.textContent || "从 PATH 获取";
+  adbPathFromPathBtn.disabled = true;
+  adbPathFromPathBtn.textContent = "查找中...";
+  setAdbResult("正在从系统 PATH 查找 adb...");
+
+  try {
+    const result = await invoke<AdbPathResult>("tools_find_adb_in_path");
+    adbPathInput.value = result.adb_path;
+    setAdbResult([
+      "已从 PATH 找到 ADB",
+      `ADB 路径: ${result.adb_path}`,
+      "请点击“保存设置”保留该配置。",
+    ].join("\n"));
+    showStatus("已从 PATH 获取 ADB 路径，请保存设置", false, 5000);
+  } catch (e) {
+    setAdbResult(`从 PATH 获取失败: ${String(e)}`, true);
+    showStatus(`从 PATH 获取 ADB 失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbPathFromPathBtn.disabled = false;
+    adbPathFromPathBtn.textContent = originalText;
+  }
+});
+
+adbCheckBtn.addEventListener("click", async () => {
+  const originalText = adbCheckBtn.textContent || "命令检验";
+  adbCheckBtn.disabled = true;
+  adbCheckBtn.textContent = "检测中...";
+  setAdbResult("正在执行 adb version...");
+
+  try {
+    const result = await invoke<AdbCheckResult>("tools_check_adb", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      result.ok ? "命令检验通过" : "命令执行失败",
+      `ADB 路径: ${result.adb_path}`,
+      `版本: ${result.version || "未知"}`,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"));
+    showStatus(result.ok ? "ADB 命令检验通过" : "ADB 命令执行失败", !result.ok, 4500);
+  } catch (e) {
+    setAdbResult(`命令检验失败: ${String(e)}`, true);
+    showStatus(`ADB 命令检验失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbCheckBtn.disabled = false;
+    adbCheckBtn.textContent = originalText;
+  }
+});
+
+adbDevicesBtn.addEventListener("click", async () => {
+  const originalText = adbDevicesBtn.textContent || "设备检验";
+  adbDevicesBtn.disabled = true;
+  adbDevicesBtn.textContent = "检测中...";
+  setAdbResult("正在执行 adb devices...");
+
+  try {
+    const result = await invoke<AdbDevicesResult>("tools_check_adb_devices", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    const deviceLines = result.devices.length > 0
+      ? result.devices.map((device) => `${device.serial}  ${device.state}`)
+      : ["未发现设备"];
+    setAdbResult([
+      result.ok ? "设备检验完成" : "设备检验执行失败",
+      `ADB 路径: ${result.adb_path}`,
+      "设备列表:",
+      ...deviceLines,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"), !result.ok);
+    showStatus(result.devices.length > 0 ? `发现 ${result.devices.length} 个设备` : "未发现 ADB 设备", false, 4500);
+  } catch (e) {
+    setAdbResult(`设备检验失败: ${String(e)}`, true);
+    showStatus(`ADB 设备检验失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbDevicesBtn.disabled = false;
+    adbDevicesBtn.textContent = originalText;
+  }
+});
+
+adbConnectDeviceBtn.addEventListener("click", async () => {
+  const ip = sadbIpInput.value.trim();
+  const port = parseInt(sadbPortInput.value) || 5555;
+  const serial = `${ip}:${port}`;
+  const originalText = adbConnectDeviceBtn.textContent || "连接设备";
+
+  if (!ip) {
+    setAdbResult("请先填写默认 IP 地址。", true);
+    showStatus("请先填写默认 IP 地址", true);
+    return;
+  }
+
+  if (port < 1 || port > 65535) {
+    setAdbResult("端口范围应为 1-65535。", true);
+    showStatus("ADB WiFi 端口范围应为 1-65535", true);
+    return;
+  }
+
+  adbConnectDeviceBtn.disabled = true;
+  adbConnectDeviceBtn.textContent = "连接中...";
+  setAdbResult(`正在连接设备 ${serial}...`);
+
+  try {
+    await invoke("sadb_connect_device", {
+      serial,
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      "设备连接成功",
+      `设备地址: ${serial}`,
+      `ADB 路径: ${resolveAdbPathForCommand() || "adb"}`,
+    ].join("\n"));
+    showStatus(`设备连接成功: ${serial}`, false, 4500);
+  } catch (e) {
+    setAdbResult([
+      "设备连接失败",
+      `设备地址: ${serial}`,
+      `错误: ${String(e)}`,
+    ].join("\n"), true);
+    showStatus(`设备连接失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbConnectDeviceBtn.disabled = false;
+    adbConnectDeviceBtn.textContent = originalText;
+  }
+});
+
+adbKillServerBtn.addEventListener("click", async () => {
+  const originalText = adbKillServerBtn.textContent || "Kill Server";
+  adbKillServerBtn.disabled = true;
+  adbKillServerBtn.textContent = "执行中...";
+  setAdbResult("正在执行 adb kill-server...");
+
+  try {
+    const result = await invoke<AdbCommandResult>("tools_kill_adb_server", {
+      adbPath: resolveAdbPathForCommand(),
+    });
+    setAdbResult([
+      result.ok ? "ADB Server 已停止" : "ADB Server 停止失败",
+      `ADB 路径: ${result.adb_path}`,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "",
+    ].filter(Boolean).join("\n"), !result.ok);
+    showStatus(result.ok ? "ADB Server 已停止" : "ADB Server 停止失败", !result.ok, 4500);
+  } catch (e) {
+    setAdbResult(`Kill Server 失败: ${String(e)}`, true);
+    showStatus(`Kill Server 失败: ${String(e)}`, true, 6000);
+  } finally {
+    adbKillServerBtn.disabled = false;
+    adbKillServerBtn.textContent = originalText;
   }
 });
 
@@ -774,17 +1037,20 @@ const updateProgressWrapper = document.getElementById("update-progress-wrapper")
 const updateProgressText = document.getElementById("update-progress-text") as HTMLSpanElement;
 const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLSpanElement;
 const updateProgressBar = document.getElementById("update-progress-bar") as HTMLDivElement;
-const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
+const checkStableUpdateBtn = document.getElementById("check-stable-update-btn") as HTMLButtonElement;
+const checkPreviewUpdateBtn = document.getElementById("check-preview-update-btn") as HTMLButtonElement;
 const downloadUpdateBtn = document.getElementById("download-update-btn") as HTMLButtonElement;
 const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
 const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
-const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement;
-const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement;
-const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement;
-const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement;
+const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement | null;
+const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement | null;
+const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement | null;
+const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement | null;
 
+const stableReleaseUrl = "https://github.com/Python-island/Python-island/releases/latest";
+const previewReleaseUrl = "https://github.com/cXp1r/tauri-island/releases/latest";
 let pendingDownloadUrl = "";
-let showPreviewEnabled = false;
+let activeReleaseUrl = stableReleaseUrl;
 
 // 加载预览更新开关
 invoke<boolean>("get_preview_updates").then((enabled) => {
@@ -799,7 +1065,6 @@ if (previewUpdatesToggle) {
 
 // 后端控制：是否显示预览版开关行
 function applyPreviewVisibility(enabled: boolean) {
-  showPreviewEnabled = enabled;
   if (previewToggleRow) previewToggleRow.style.display = enabled ? "" : "none";
   if (disablePreviewWrap) disablePreviewWrap.style.display = enabled ? "" : "none";
 }
@@ -826,16 +1091,16 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-checkUpdateBtn.addEventListener("click", async () => {
-  checkUpdateBtn.disabled = true;
-  checkUpdateBtn.textContent = "检查中...";
+async function checkUpdate(isPreview: boolean, button: HTMLButtonElement) {
+  const defaultText = isPreview ? "预览版检查更新" : "稳定版检查更新";
+  activeReleaseUrl = isPreview ? previewReleaseUrl : stableReleaseUrl;
+  button.disabled = true;
+  button.textContent = "检查中...";
   updateStatusText.style.color = "var(--text-secondary)";
-  updateStatusText.textContent = "正在检查更新...";
+  updateStatusText.textContent = isPreview ? "正在检查预览版更新..." : "正在检查稳定版更新...";
   updateInfoCard.style.display = "none";
   downloadUpdateBtn.style.display = "none";
   openReleaseBtn.style.display = "none";
-
-  const isPreview = showPreviewEnabled && (previewUpdatesToggle?.checked ?? false);
 
   let failed = false;
   try {
@@ -857,8 +1122,8 @@ checkUpdateBtn.addEventListener("click", async () => {
       pendingDownloadUrl = info.download_url;
     } else {
       updateStatusText.textContent = isPreview
-        ? `当前是最新测试版 (v${info.current_version})`
-        : `当前是主分支最新版 (v${info.current_version})`;
+        ? `当前是最新预览版 (v${info.current_version})`
+        : `当前是最新稳定版 (v${info.current_version})`;
       updateStatusText.style.color = "var(--ok)";
     }
   } catch (e) {
@@ -867,24 +1132,31 @@ checkUpdateBtn.addEventListener("click", async () => {
     updateStatusText.style.color = "var(--danger)";
   } finally {
     if (failed) {
-      // 失败后冷却 10 秒，防止频繁触发 rate limit
       let cd = 10;
-      checkUpdateBtn.textContent = `重试 (${cd}s)`;
+      button.textContent = `重试 (${cd}s)`;
       const cdTimer = setInterval(() => {
         cd--;
         if (cd <= 0) {
           clearInterval(cdTimer);
-          checkUpdateBtn.disabled = false;
-          checkUpdateBtn.textContent = "检查更新";
+          button.disabled = false;
+          button.textContent = defaultText;
         } else {
-          checkUpdateBtn.textContent = `重试 (${cd}s)`;
+          button.textContent = `重试 (${cd}s)`;
         }
       }, 1000);
     } else {
-      checkUpdateBtn.disabled = false;
-      checkUpdateBtn.textContent = "检查更新";
+      button.disabled = false;
+      button.textContent = defaultText;
     }
   }
+}
+
+checkStableUpdateBtn.addEventListener("click", () => {
+  void checkUpdate(false, checkStableUpdateBtn);
+});
+
+checkPreviewUpdateBtn.addEventListener("click", () => {
+  void checkUpdate(true, checkPreviewUpdateBtn);
 });
 
 downloadUpdateBtn.addEventListener("click", async () => {
@@ -930,14 +1202,11 @@ listen<string>("update-error", (event) => {
 });
 
 openReleaseBtn.addEventListener("click", () => {
-  const url = (previewUpdatesToggle?.checked)
-    ? "https://github.com/cXp1r/Python-island/releases/tag/tauri-test"
-    : "https://github.com/Python-island/Python-island/releases/latest";
-  invoke("open_url", { url });
+  invoke("open_url", { url: activeReleaseUrl });
 });
 
 openGithubBtn.addEventListener("click", () => {
-  invoke("open_url", { url: "https://github.com/Python-island/Python-island" });
+  invoke("open_url", { url: "https://github.com/Python-island/Python-island/tree/tauri-island" });
 });
 
 const logPathText = document.getElementById("log-path-text") as HTMLParagraphElement;

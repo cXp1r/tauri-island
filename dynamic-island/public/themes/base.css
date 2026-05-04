@@ -30,6 +30,9 @@
     /* 注: Agent 展开态尺寸由后端 get_agent_window_size() 按档位返回
        small=380×400 / medium=520×540 / large=620×640 (window.rs)
        前端通过 CSS 变量 --agent-w, --agent-h 动态设置 */
+    
+    --notice-expanded-w: 330px;
+    --notice-expanded-h: 60px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -95,7 +98,8 @@ html, body {
 }
 
 #island-capsule.expanded.notice-active {
-    height: var(--expanded-h);
+    height: var(--notice-expanded-h);
+    width: var(--notice-expanded-w);
 }
 
 #island-capsule.switch-pulse {

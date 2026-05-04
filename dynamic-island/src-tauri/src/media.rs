@@ -3,6 +3,7 @@ use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus;
 use windows::Media::MediaPlaybackType as PlaybackType;
 use windows::Media::MediaPlaybackAutoRepeatMode;
+use crate::logger;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MediaInfo {
@@ -317,6 +318,7 @@ pub(crate) fn dump_smtc_session(app_id: &str) {
         let sid = session.SourceAppUserModelId().ok()
             .map(|s| s.to_string_lossy().to_ascii_lowercase())
             .unwrap_or_default();
+        logger::debug("SMTC-Dump", &format!("Session ID: {}", sid));
         if !app_id.is_empty() && !sid.to_ascii_lowercase().contains(&app_id.to_ascii_lowercase()) {
             continue;
         }
@@ -454,6 +456,7 @@ pub(crate) fn select_best_smtc_session(
             let allowed = !whitelist.app_ids.is_empty()
                 && whitelist.app_ids.iter().any(|id| app_id_lc.contains(id));
             if !allowed {
+                logger::debug("SMTC-WHITELIST", &format!("app_id not in whitelist: {}", app_id_lc));
                 continue;
             }
         }

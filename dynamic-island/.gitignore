@@ -22,3 +22,17 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+node_modules/
+dist/
+target/
+*.exe
+*.msi
+.vscode/
+.kiro/
+.claude/
+.windsurf/
+.agent/
+claude-psmux-team/
+release.md
+release.bat

@@ -26,6 +26,9 @@ pub struct Config {
     
     /// Device serial (if multiple devices)
     pub serial: Option<String>,
+
+    /// Path to adb executable
+    pub adb_path: Option<String>,
 }
 
 impl Default for Config {
@@ -39,6 +42,7 @@ impl Default for Config {
             log_level: "info".to_string(),
             force_forward: false,
             serial: None,
+            adb_path: None,
         }
     }
 }

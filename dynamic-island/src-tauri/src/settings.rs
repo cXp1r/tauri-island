@@ -103,6 +103,10 @@ pub(crate) struct SettingsData {
     pub sadb_ip: String,
     #[serde(default = "default_sadb_port")]
     pub sadb_port: u16,
+    #[serde(default = "default_adb_install_dir")]
+    pub adb_install_dir: String,
+    #[serde(default)]
+    pub adb_path: String,
     #[serde(default)]
     pub email_username: String,
     #[serde(default)]
@@ -140,6 +144,16 @@ fn default_sadb_port() -> u16 {
     5555
 }
 
+fn default_adb_install_dir() -> String {
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("dynamic-island")
+        .join("tools")
+        .join("adb")
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn default_show_preview_toggle() -> bool {
     false
 }
@@ -157,7 +171,7 @@ fn default_search_shortcut() -> String {
 }
 
 fn default_email_shortcut() -> String {
-    "Alt+E".to_string()
+    "Ctrl+Alt+E".to_string()
 }
 
 fn default_lyric_mode() -> String {
@@ -187,6 +201,7 @@ fn default_smtc_app_whitelist() -> Vec<String> {
         "cloudmusic.exe".to_string(),
         "qqmusic.exe".to_string(),
         "kugou".to_string(),
+        "appleinc.applemusicwin_nzyj5cx40ttqa!app".to_string(),
     ]
 }
 
@@ -245,6 +260,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         log_level: default_log_level(),
         sadb_ip: String::new(),
         sadb_port: default_sadb_port(),
+        adb_install_dir: default_adb_install_dir(),
+        adb_path: String::new(),
         email_username: String::new(),
         email_auth: String::new(),
         email_address: String::new(),
@@ -299,6 +316,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         log_level: crate::logger::get_level(),
         sadb_ip: state.sadb_ip.lock().unwrap().clone(),
         sadb_port: *state.sadb_port.lock().unwrap(),
+        adb_install_dir: state.adb_install_dir.lock().unwrap().clone(),
+        adb_path: state.adb_path.lock().unwrap().clone(),
         email_username: ec_username,
         email_auth: ec_auth,
         email_address: ec_address,
@@ -341,6 +360,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let smtc_app_whitelist = state.smtc_app_whitelist.lock().unwrap().clone();
     let sadb_ip = state.sadb_ip.lock().unwrap().clone();
     let sadb_port = *state.sadb_port.lock().unwrap();
+    let adb_install_dir = state.adb_install_dir.lock().unwrap().clone();
+    let adb_path = state.adb_path.lock().unwrap().clone();
     let email_poll_interval_secs = state.email_poll_interval_secs.load(Ordering::Relaxed);
     let email_cfg = state.email_config.lock().unwrap();
     let email_username = email_cfg.username.clone();
@@ -365,6 +386,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "log_level": crate::logger::get_level(),
         "sadb_ip": sadb_ip,
         "sadb_port": sadb_port,
+        "adb_install_dir": adb_install_dir,
+        "adb_path": adb_path,
         "email_poll_interval_secs": email_poll_interval_secs,
         "email_username": email_username,
         "email_auth": email_auth,
@@ -394,6 +417,8 @@ pub fn save_settings(
     log_level: Option<String>,
     sadb_ip: Option<String>,
     sadb_port: Option<u16>,
+    adb_install_dir: Option<String>,
+    adb_path: Option<String>,
     email_poll_interval_secs: Option<u64>,
     email_username: Option<String>,
     email_auth: Option<String>,
@@ -553,6 +578,14 @@ pub fn save_settings(
     if let Some(port) = sadb_port {
         settings_data.sadb_port = port;
         *state.sadb_port.lock().unwrap() = port;
+    }
+    if let Some(dir) = adb_install_dir {
+        settings_data.adb_install_dir = dir.clone();
+        *state.adb_install_dir.lock().unwrap() = dir;
+    }
+    if let Some(path) = adb_path {
+        settings_data.adb_path = path.clone();
+        *state.adb_path.lock().unwrap() = path;
     }
     if let Some(secs) = email_poll_interval_secs {
         let secs = secs.max(1);

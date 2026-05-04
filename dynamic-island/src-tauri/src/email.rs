@@ -1,8 +1,5 @@
 ﻿use std::path::PathBuf;
 use tokio::task;
-use crate::logger;
-
-const TAG: &str = "Email";
 
 /// 邮件缓存目录：config_dir/dynamic-island/email
 pub fn email_cache_dir() -> PathBuf {
@@ -46,7 +43,7 @@ impl Email {
             //logger::debug(TAG, &format!("get_latest_uid: building TLS connector"));
             let tls = match native_tls::TlsConnector::builder().build() {
                 Ok(t) => t,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_uid: TLS build failed: {e}"));
                     return None;
                 }
@@ -59,7 +56,7 @@ impl Email {
                 &tls,
             ) {
                 Ok(c) => c,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_uid: connect failed: {e}"));
                     return None;
                 }
@@ -68,14 +65,14 @@ impl Email {
             //logger::debug(TAG, "get_latest_uid: logging in");
             let mut session = match client.login(&config.username, &config.auth) {
                 Ok(s) => s,
-                Err((e, _)) => {
+                Err((_, _)) => {
                     //logger::debug(TAG, &format!("get_latest_uid: login failed: {e}"));
                     return None;
                 }
             };
 
             //logger::debug(TAG, "get_latest_uid: selecting INBOX");
-            if let Err(e) = session.select("INBOX") {
+            if let Err(_) = session.select("INBOX") {
                 //logger::debug(TAG, &format!("get_latest_uid: select INBOX failed: {e}"));
                 session.logout().ok();
                 return None;
@@ -84,7 +81,7 @@ impl Email {
             //logger::debug(TAG, "get_latest_uid: uid_search ALL");
             let messages = match session.uid_search("ALL") {
                 Ok(m) => m,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_uid: uid_search failed: {e}"));
                     session.logout().ok();
                     return None;
@@ -115,7 +112,7 @@ impl Email {
             //logger::debug(TAG, "get_latest_email: building TLS connector");
             let tls = match native_tls::TlsConnector::builder().build() {
                 Ok(t) => t,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_email: TLS build failed: {e}"));
                     return None;
                 }
@@ -128,7 +125,7 @@ impl Email {
                 &tls,
             ) {
                 Ok(c) => c,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_email: connect failed: {e}"));
                     return None;
                 }
@@ -137,14 +134,14 @@ impl Email {
             //logger::debug(TAG, "get_latest_email: logging in");
             let mut session = match client.login(&config.username, &config.auth) {
                 Ok(s) => s,
-                Err((e, _)) => {
+                Err((_, _)) => {
                     //logger::debug(TAG, &format!("get_latest_email: login failed: {e}"));
                     return None;
                 }
             };
 
             //logger::debug(TAG, "get_latest_email: selecting INBOX");
-            if let Err(e) = session.select("INBOX") {
+            if let Err(_) = session.select("INBOX") {
                 //logger::debug(TAG, &format!("get_latest_email: select INBOX failed: {e}"));
                 session.logout().ok();
                 return None;
@@ -153,7 +150,7 @@ impl Email {
             //logger::debug(TAG, "get_latest_email: search ALL");
             let messages = match session.search("ALL") {
                 Ok(m) => m,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_email: search failed: {e}"));
                     session.logout().ok();
                     return None;
@@ -172,7 +169,7 @@ impl Email {
             //logger::debug(TAG, &format!("get_latest_email: fetching RFC822 for {max_uid}"));
             let fetches = match session.fetch(max_uid.to_string(), "RFC822") {
                 Ok(f) => f,
-                Err(e) => {
+                Err(_) => {
                     //logger::debug(TAG, &format!("get_latest_email: fetch failed: {e}"));
                     session.logout().ok();
                     return None;
@@ -200,10 +197,6 @@ impl Email {
         let cache_dir = email_cache_dir();
 
         // 步骤名称
-        const STEPS: [&str; 9] = [
-            "not_configured", "tls", "connect", "login",
-            "select_inbox", "uid_search", "fetch_bodies", "envelopes", "done",
-        ];
         const DONE: u8 = 8;
 
         task::spawn_blocking(move || {
@@ -280,7 +273,7 @@ impl Email {
                                         //logger::debug(TAG, &format!("fetch_latest: UID {} body {} bytes", uid, body.len()));
                                         let html = extract_html_from_rfc822(body);
                                         let path = cache_dir.join(format!("{}.html", uid));
-                                        if let Err(e) = std::fs::write(&path, &html) {
+                                        if let Err(_) = std::fs::write(&path, &html) {
                                             //logger::debug(TAG, &format!("fetch_latest: write {uid}.html fail: {e}"));
                                         }
                                     }
@@ -384,7 +377,7 @@ pub fn load_email_metas() -> Vec<EmailMeta> {
 pub fn save_email_metas(metas: &[EmailMeta]) {
     let path = email_meta_path();
     if let Ok(json) = serde_json::to_string_pretty(metas) {
-        if let Err(e) = std::fs::write(&path, json) {
+        if let Err(_) = std::fs::write(&path, json) {
             //logger::debug(TAG, &format!("save_email_metas: write failed: {e}"));
         }
     }
@@ -643,7 +636,7 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
             handles.push(std::thread::spawn(move || {
                 let tls = match native_tls::TlsConnector::builder().build() {
                     Ok(t) => t,
-                    Err(e) => {
+                    Err(_) => {
                         //logger::debug(TAG, &format!("fetch_metas_by_uids: TLS build fail: {e}"));
                         return Vec::new();
                     }
@@ -653,19 +646,19 @@ pub async fn fetch_email_metas_by_uids(state: tauri::State<'_, crate::IslandStat
                     config_t.address.as_str(), &tls,
                 ) {
                     Ok(c) => c,
-                    Err(e) => {
+                    Err(_) => {
                         //logger::debug(TAG, &format!("fetch_metas_by_uids: connect fail: {e}"));
                         return Vec::new();
                     }
                 };
                 let mut session = match client.login(&config_t.username, &config_t.auth) {
                     Ok(s) => s,
-                    Err((e, _)) => {
+                    Err((_, _)) => {
                         //logger::debug(TAG, &format!("fetch_metas_by_uids: login fail: {e}"));
                         return Vec::new();
                     }
                 };
-                if let Err(e) = session.select("INBOX") {
+                if let Err(_) = session.select("INBOX") {
                     //logger::debug(TAG, &format!("fetch_metas_by_uids: select INBOX fail: {e}"));
                     session.logout().ok();
                     return Vec::new();

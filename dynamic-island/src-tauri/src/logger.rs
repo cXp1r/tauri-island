@@ -17,6 +17,7 @@ fn level_to_u8(level: &str) -> u8 {
         "DEBUG" => 0,
         "INFO"  => 1,
         "WARN"  => 2,
+        "ERROR" => 3,
         _ => 1,
     }
 }
@@ -106,6 +107,10 @@ pub fn info(tag: &str, message: &str) {
 
 pub fn warn(tag: &str, message: &str) {
     write_log(tag, "WARN", message);
+}
+
+pub fn error(tag: &str, message: &str) {
+    write_log(tag, "ERROR", message);
 }
 
 #[tauri::command]
