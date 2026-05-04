@@ -249,6 +249,9 @@ export function setView(mode: ViewMode, animated = true) {
     if (capsule.classList.contains("sadb-expanded")) {
       capsule.classList.remove("sadb-expanded");
       void invoke("set_sadb_expanded", { expanded: false });
+      window.setTimeout(() => {
+        void invoke("sadb_set_idle", { idle: false });
+      }, 200);
     }
     if (capsule.classList.contains("sadb-idle")) {
       capsule.classList.remove("sadb-idle");
