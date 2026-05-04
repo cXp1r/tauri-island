@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { capsule, noticeArea } from "../dom";
-import { isMinimized, userChosenView, setUserChosenView } from "../state";
+import { currentView, isMinimized, userChosenView, setUserChosenView } from "../state";
 import { getAvailableViews, setView, updateSwitcherUI, updateCapsuleSize } from "./view-switcher";
 
 // 从 notice-queue 重新导出，保持其他模块 import 路径不变
@@ -26,6 +26,7 @@ export function restoreUserView() {
 export function initNoticeUrl() {
   // 展开 / 收起（鼠标悬停、后端指令等）
   listen<boolean>("set-expand", (event) => {
+    if (currentView === "email") return;
     if (event.payload) {
       if (capsule.classList.contains("agent-expanded")) return;
       if (isMinimized) return;

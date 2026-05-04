@@ -530,7 +530,7 @@ pub fn save_settings(
         let sc_str = sc.clone();
         let _ = app.global_shortcut().on_shortcut(sc_str.as_str(), move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                crate::window::open_email_window_inner(app_h.clone(), None);
+                crate::window::open_email_window(app_h.clone(), None);
             }
         });
     }

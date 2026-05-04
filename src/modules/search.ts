@@ -4,6 +4,7 @@ import { capsule, searchInput, searchNextBtn, searchPageLabel, searchPrevBtn, se
 import { currentView, isMinimized } from "../state";
 import { setView } from "./view-switcher";
 import { expandFromMinimized } from "./minimize-drag";
+import type { ViewMode } from "../types";
 
 // ===== Types =====
 
@@ -29,7 +30,7 @@ let dismissSyncTimer: number | null = null;
 let isDismissingSearch = false;
 const DEBOUNCE_MS = 400;
 const PAGE_SIZE = 10;
-let previousView: "time" | "lyric" | "agent" = "time";
+let previousView: Exclude<ViewMode, "search"> = "time";
 let currentQuery = "";
 let currentOffset = 0;
 let hasNextPage = false;
@@ -220,10 +221,10 @@ export function activateSearch() {
 
   // Remember where we came from so we can go back
   if (currentView !== "search") {
-    previousView = currentView as "time" | "lyric" | "agent";
+    previousView = currentView;
   }
   // Clean other expand classes
-  capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded", "search-expanded");
+  capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded", "search-expanded", "email-expanded");
   capsule.classList.add("search-active");
   setView("search", false);
   searchRequestId += 1;

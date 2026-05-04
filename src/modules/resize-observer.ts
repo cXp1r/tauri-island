@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { capsule } from "../dom";
-import { setLyricMode, skipResizeSync } from "../state";
+import { currentView, setLyricMode, skipResizeSync } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
 // 根据窗口大小档位更新 CSS 变量
@@ -38,6 +38,7 @@ let resizeLogDirection: "up" | "down" | null = null;
 
 function syncHtmlHeight() {
   if (skipResizeSync) return;
+  if (currentView === "email") return;
   const h = document.documentElement.offsetHeight;
   if (h <= 0 || h === lastSyncedHtmlH) return;
   trackResizeLog(lastSyncedHtmlH, h);

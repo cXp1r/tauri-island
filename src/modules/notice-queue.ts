@@ -274,7 +274,6 @@ function handleEmailNotice(item: NoticeItem): void {
 
 function openEmailWindow(uid?: string | number): Promise<void> {
   const normalizedUid = uid != null ? String(uid) : undefined;
-  console.log("[NoticeQueue] open_email_window test:", normalizedUid || "(no uid)");
   if (normalizedUid) {
     return invoke("open_email_window", { uid: normalizedUid });
   }

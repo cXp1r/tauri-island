@@ -594,7 +594,7 @@ pub fn run() {
                 logger::info("Shortcut", &format!("registering email shortcut: {}", email_sc));
                 match app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        window::open_email_window_inner(app_h.clone(), None);
+                        window::open_email_window(app_h.clone(), None);
                     }
                 }) {
                     Ok(_) => logger::info("Shortcut", "email shortcut registered ok"),
@@ -658,13 +658,13 @@ pub fn run() {
                             } else if sadb_idle_m.load(Ordering::Relaxed) && view == "sadb" {
                                 // 待机面板：380×420 居中于 420px 窗口内
                                 (380.0, 420.0)
+                            } else if view == "search" || view == "email" {
+                                // 搜索/邮箱视图：宽度=窗口宽度，高度=实际窗口高度
+                                (win_w, win_h)
                             } else if expanded {
                                 (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
                             } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
                                 (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H)
-                            } else if view == "search" {
-                                // 搜索视图：宽度=窗口宽度，高度=实际窗口高度（结果展开后会变大）
-                                (win_w, win_h)
                             } else {
                                 // time 等收起态
                                 (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H)
@@ -679,18 +679,20 @@ pub fn run() {
                             fmx >= capsule_x && fmx <= capsule_x + cw * scale && fmy >= capsule_y && fmy <= capsule_y + ch * scale
                         } else { false };
 
-                        if on_capsule && !was_on_capsule {
+                        let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
+
+                        if hit_on_capsule && !was_on_capsule {
                             logger::debug("HitTest", "mouse ON capsule -> click-through OFF");
                             window::set_click_through(hwnd, false);
                             was_on_capsule = true;
-                        } else if !on_capsule && was_on_capsule {
+                        } else if !hit_on_capsule && was_on_capsule {
                             logger::debug("HitTest", "mouse OFF capsule -> click-through ON");
                             window::set_click_through(hwnd, true);
                             was_on_capsule = false;
                         }
 
                         let sadb_idle = sadb_idle_m.load(Ordering::Relaxed);
-                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
+                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" && view != "email" {
                             let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
                             if in_zone && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
@@ -818,6 +820,7 @@ pub fn run() {
             let exp_cb = is_expanded.clone();
             let cb_enabled = clipboard_enabled.clone();
             let pending_url_cb = pending_url.clone();
+            let current_view_cb = current_view.clone();
 
             thread::spawn(move || {
                 logger::info("Clipboard", "polling thread started");
@@ -847,6 +850,9 @@ pub fn run() {
                         if !urls.is_empty() {
                             logger::info("Clipboard", &format!("detected {} url(s): {:?}", urls.len(), urls));
                             *pending_url_cb.lock().unwrap() = urls.clone();
+                            if *current_view_cb.lock().unwrap() == "email" {
+                                continue;
+                            }
                             noti_cb.store(true, Ordering::Relaxed);
                             exp_cb.store(true, Ordering::Relaxed);
                             let _ = win_cb.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
@@ -866,6 +872,7 @@ pub fn run() {
             let email_interval_t = email_poll_interval_secs.clone();
             let latest_email_uid_t = latest_email_uid.clone();
             let cached_metas_t = cached_email_metas.clone();
+            let current_view_email = current_view.clone();
 
             thread::spawn(move || {
                 logger::info("EmailPoll", "polling thread started");
@@ -927,6 +934,9 @@ pub fn run() {
                         // 仅当有真正新邮件时发通知（新最大 UID > 旧最大 UID）
                         let new_top = metas.first().map(|m| m.uid.clone());
                         if new_top != old_top {
+                            if *current_view_email.lock().unwrap() == "email" {
+                                continue;
+                            }
                             noti_email.store(true, Ordering::Relaxed);
                             exp_email.store(true, Ordering::Relaxed);
                             let _ = win_email.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
