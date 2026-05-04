@@ -14,7 +14,7 @@ import { getAvailableViews, setView } from "./view-switcher";
 export type NoticeType = "clipboard" | "email" | "generic";
 
 
-const MAX_DURATION = 30000; // 每条通知最大显示 3s
+const MAX_DURATION = 3000; // 每条通知最大显示 3s
 
 // ===== 通知队列项 =====
 
