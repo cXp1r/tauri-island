@@ -525,27 +525,6 @@
 
           <div class="setting-group">
             <div class="setting-group-title">软件更新</div>
-            <div class="setting-item" id="preview-toggle-row">
-              <div class="setting-label">
-                <h3>预览版更新</h3>
-                <p>检查来自 tauri-test 通道的预览构建，可能不稳定</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="preview-updates-toggle" />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-            <div class="setting-item" id="disable-preview-wrap">
-              <div class="setting-label">
-                <h3>关闭预览版功能</h3>
-                <p>关闭后将从 UI 中隐藏预览版相关选项，如需重新开启请编辑本地配置文件。</p>
-              </div>
-              <div class="setting-control">
-                <button id="disable-preview-btn" class="btn btn-danger" type="button">关闭</button>
-              </div>
-            </div>
             <div class="setting-item" style="display: block; border: none; padding: 0;">
               <div id="update-status" style="margin-bottom: 12px;">
                 <p id="update-status-text" style="color: var(--text-secondary);">点击下方按钮检查是否有新版本。</p>
@@ -573,7 +552,8 @@
               </div>
 
               <div class="actions" style="gap: 8px;">
-                <button id="check-update-btn" class="btn btn-primary" type="button">检查更新</button>
+                <button id="check-stable-update-btn" class="btn btn-primary" type="button">稳定版检查更新</button>
+                <button id="check-preview-update-btn" class="btn" type="button">预览版检查更新</button>
                 <button id="download-update-btn" class="btn btn-primary" type="button" style="display: none;">下载更新</button>
                 <button id="open-release-btn" class="btn" type="button" style="display: none;">在浏览器中打开</button>
               </div>

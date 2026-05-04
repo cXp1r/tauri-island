@@ -93,7 +93,7 @@ type CityResult = {
   longitude: number;
 };
 
-const INFLINK_URL = "https://docs.pyisland.com/guide/tauri-island.html";
+const INFLINK_URL = "https://docs.pyisland.com/guide/qa/ncm-music.html";
 
 const clipboardToggle = document.getElementById("clipboard-toggle") as HTMLInputElement;
 const shortcutInput = document.getElementById("shortcut-input") as HTMLInputElement;
@@ -956,17 +956,20 @@ const updateProgressWrapper = document.getElementById("update-progress-wrapper")
 const updateProgressText = document.getElementById("update-progress-text") as HTMLSpanElement;
 const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLSpanElement;
 const updateProgressBar = document.getElementById("update-progress-bar") as HTMLDivElement;
-const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
+const checkStableUpdateBtn = document.getElementById("check-stable-update-btn") as HTMLButtonElement;
+const checkPreviewUpdateBtn = document.getElementById("check-preview-update-btn") as HTMLButtonElement;
 const downloadUpdateBtn = document.getElementById("download-update-btn") as HTMLButtonElement;
 const openReleaseBtn = document.getElementById("open-release-btn") as HTMLButtonElement;
 const openGithubBtn = document.getElementById("open-github-btn") as HTMLButtonElement;
-const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement;
-const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement;
-const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement;
-const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement;
+const previewUpdatesToggle = document.getElementById("preview-updates-toggle") as HTMLInputElement | null;
+const previewToggleRow = document.getElementById("preview-toggle-row") as HTMLElement | null;
+const disablePreviewWrap = document.getElementById("disable-preview-wrap") as HTMLElement | null;
+const disablePreviewBtn = document.getElementById("disable-preview-btn") as HTMLButtonElement | null;
 
+const stableReleaseUrl = "https://github.com/Python-island/Python-island/releases/latest";
+const previewReleaseUrl = "https://github.com/cXp1r/tauri-island/releases/latest";
 let pendingDownloadUrl = "";
-let showPreviewEnabled = false;
+let activeReleaseUrl = stableReleaseUrl;
 
 // 加载预览更新开关
 invoke<boolean>("get_preview_updates").then((enabled) => {
@@ -981,7 +984,6 @@ if (previewUpdatesToggle) {
 
 // 后端控制：是否显示预览版开关行
 function applyPreviewVisibility(enabled: boolean) {
-  showPreviewEnabled = enabled;
   if (previewToggleRow) previewToggleRow.style.display = enabled ? "" : "none";
   if (disablePreviewWrap) disablePreviewWrap.style.display = enabled ? "" : "none";
 }
@@ -1008,16 +1010,16 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-checkUpdateBtn.addEventListener("click", async () => {
-  checkUpdateBtn.disabled = true;
-  checkUpdateBtn.textContent = "检查中...";
+async function checkUpdate(isPreview: boolean, button: HTMLButtonElement) {
+  const defaultText = isPreview ? "预览版检查更新" : "稳定版检查更新";
+  activeReleaseUrl = isPreview ? previewReleaseUrl : stableReleaseUrl;
+  button.disabled = true;
+  button.textContent = "检查中...";
   updateStatusText.style.color = "var(--text-secondary)";
-  updateStatusText.textContent = "正在检查更新...";
+  updateStatusText.textContent = isPreview ? "正在检查预览版更新..." : "正在检查稳定版更新...";
   updateInfoCard.style.display = "none";
   downloadUpdateBtn.style.display = "none";
   openReleaseBtn.style.display = "none";
-
-  const isPreview = showPreviewEnabled && (previewUpdatesToggle?.checked ?? false);
 
   let failed = false;
   try {
@@ -1039,8 +1041,8 @@ checkUpdateBtn.addEventListener("click", async () => {
       pendingDownloadUrl = info.download_url;
     } else {
       updateStatusText.textContent = isPreview
-        ? `当前是最新测试版 (v${info.current_version})`
-        : `当前是主分支最新版 (v${info.current_version})`;
+        ? `当前是最新预览版 (v${info.current_version})`
+        : `当前是最新稳定版 (v${info.current_version})`;
       updateStatusText.style.color = "var(--ok)";
     }
   } catch (e) {
@@ -1049,24 +1051,31 @@ checkUpdateBtn.addEventListener("click", async () => {
     updateStatusText.style.color = "var(--danger)";
   } finally {
     if (failed) {
-      // 失败后冷却 10 秒，防止频繁触发 rate limit
       let cd = 10;
-      checkUpdateBtn.textContent = `重试 (${cd}s)`;
+      button.textContent = `重试 (${cd}s)`;
       const cdTimer = setInterval(() => {
         cd--;
         if (cd <= 0) {
           clearInterval(cdTimer);
-          checkUpdateBtn.disabled = false;
-          checkUpdateBtn.textContent = "检查更新";
+          button.disabled = false;
+          button.textContent = defaultText;
         } else {
-          checkUpdateBtn.textContent = `重试 (${cd}s)`;
+          button.textContent = `重试 (${cd}s)`;
         }
       }, 1000);
     } else {
-      checkUpdateBtn.disabled = false;
-      checkUpdateBtn.textContent = "检查更新";
+      button.disabled = false;
+      button.textContent = defaultText;
     }
   }
+}
+
+checkStableUpdateBtn.addEventListener("click", () => {
+  void checkUpdate(false, checkStableUpdateBtn);
+});
+
+checkPreviewUpdateBtn.addEventListener("click", () => {
+  void checkUpdate(true, checkPreviewUpdateBtn);
 });
 
 downloadUpdateBtn.addEventListener("click", async () => {
@@ -1112,14 +1121,11 @@ listen<string>("update-error", (event) => {
 });
 
 openReleaseBtn.addEventListener("click", () => {
-  const url = (previewUpdatesToggle?.checked)
-    ? "https://github.com/cXp1r/Python-island/releases/tag/tauri-test"
-    : "https://github.com/Python-island/Python-island/releases/latest";
-  invoke("open_url", { url });
+  invoke("open_url", { url: activeReleaseUrl });
 });
 
 openGithubBtn.addEventListener("click", () => {
-  invoke("open_url", { url: "https://github.com/Python-island/Python-island" });
+  invoke("open_url", { url: "https://github.com/Python-island/Python-island/tree/tauri-island" });
 });
 
 const logPathText = document.getElementById("log-path-text") as HTMLParagraphElement;

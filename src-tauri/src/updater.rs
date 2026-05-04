@@ -10,7 +10,7 @@ use crate::CREATE_NO_WINDOW;
 const GITHUB_API_URL: &str =
     "https://api.github.com/repos/Python-island/Python-island/releases/latest";
 const GITHUB_PREVIEW_API_URL: &str =
-    "https://api.github.com/repos/cXp1r/Python-island/releases/tags/tauri-test";
+    "https://api.github.com/repos/cXp1r/tauri-island/releases/latest";
 
 #[tauri::command]
 pub fn get_app_version(app: tauri::AppHandle) -> String {
@@ -98,16 +98,15 @@ pub fn check_for_updates(app: tauri::AppHandle, preview: Option<bool>) -> Result
         msg
     })?;
 
-    // 稳定版: tag_name = "tauri-vX.Y.Z"；预览版: tag_name = "tauri-test"
     let tag = json["tag_name"].as_str().ok_or("无法获取 tag_name")?;
-    let latest_version = if is_preview {
-        // 从 assets 文件名提取版本，如 DynamicIsland_0.5.0-1_x64-setup.exe
+    let latest_version = if tag.starts_with("tauri-v") {
+        tag.trim_start_matches("tauri-v").to_string()
+    } else if is_preview {
         let assets_arr = json["assets"].as_array().ok_or("无法获取 assets")?;
         let mut ver = tag.to_string();
         for asset in assets_arr {
             let name = asset["name"].as_str().unwrap_or("");
             if name.starts_with("DynamicIsland_") && name.ends_with(".exe") {
-                // DynamicIsland_0.5.0-1_x64-setup.exe
                 let stripped = name.trim_start_matches("DynamicIsland_");
                 if let Some(v) = stripped.split('_').next() {
                     ver = v.to_string();
@@ -117,7 +116,7 @@ pub fn check_for_updates(app: tauri::AppHandle, preview: Option<bool>) -> Result
         }
         ver
     } else {
-        tag.trim_start_matches("tauri-v").to_string()
+        tag.trim_start_matches('v').to_string()
     };
 
     let release_notes = json["body"].as_str().unwrap_or("").to_string();
