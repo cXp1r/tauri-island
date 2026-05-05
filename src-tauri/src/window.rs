@@ -464,6 +464,8 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
 
         || state.sadb_mirroring.load(Ordering::Relaxed)
 
+        || is_email_view(&state)
+
     {
 
         return;
@@ -497,6 +499,82 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         let w = window.clone();
 
         thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
+
+    }
+
+}
+
+
+
+#[tauri::command]
+
+pub fn snap_window_home(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
+
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    let cur_w = window.inner_size()
+
+        .map(|s| s.width as f64 / scale)
+
+        .unwrap_or(WIN_W);
+
+    let target_x = (state.screen_w - cur_w) / 2.0;
+
+    let target_y = TOP_MARGIN;
+
+    if let Ok(pos) = window.outer_position() {
+
+        let cx = pos.x as f64 / scale;
+
+        let cy = pos.y as f64 / scale;
+
+        let w = window.clone();
+
+        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
+
+    }
+
+}
+
+
+
+#[tauri::command]
+
+pub fn sync_window_home_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64) {
+
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    let new_w = width.max(200.0).min(state.screen_w.max(700.0));
+
+    let new_h = height.max(60.0).min(1100.0);
+
+    let target_x = (state.screen_w - new_w) / 2.0;
+
+    let target_y = TOP_MARGIN;
+
+    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.inner_size()) {
+
+        let from_x = pos.x as f64 / scale;
+
+        let from_y = pos.y as f64 / scale;
+
+        let from_w = size.width as f64 / scale;
+
+        let from_h = size.height as f64 / scale;
+
+        let w = window.clone();
+
+        thread::spawn(move || {
+
+            animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, new_w, new_h, SNAP_DURATION_MS);
+
+        });
+
+    } else {
+
+        let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
+
+        let _ = window.set_position(tauri::LogicalPosition::new(target_x, target_y));
 
     }
 

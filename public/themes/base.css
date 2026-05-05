@@ -320,6 +320,28 @@ html, body {
 
 
 
+#view-holder {
+
+    position: fixed;
+
+    left: -10000px;
+
+    top: -10000px;
+
+    width: var(--email-view-w);
+
+    height: var(--email-view-h);
+
+    overflow: hidden;
+
+    opacity: 0;
+
+    pointer-events: none;
+
+}
+
+
+
 .content-wrapper {
 
     display: flex;
@@ -2728,68 +2750,6 @@ body.minimized #collapsed-indicator { display: block; }
     height: var(--search-h);
 
 }
-
-#email-area {
-
-    width: 100%;
-
-    height: 100%;
-
-    padding: 10px;
-
-    align-items: stretch;
-
-    position: relative;
-
-}
-
-#email-frame {
-
-    width: 100%;
-
-    height: 100%;
-
-    border: 0;
-
-    border-radius: 18px;
-
-    background: transparent;
-
-}
-
-#email-resize-handle {
-
-    position: absolute;
-
-    right: 0;
-
-    bottom: 0;
-
-    width: 22px;
-
-    height: 22px;
-
-    cursor: nwse-resize;
-
-    z-index: 3;
-
-    isolation: isolate;
-
-    transform: translateZ(0);
-
-    display: none;
-
-    pointer-events: auto;
-
-}
-
-#island-capsule.email-expanded #email-resize-handle {
-
-    display: block;
-
-}
-
-
 
 #search-input-wrap .search-icon {
 

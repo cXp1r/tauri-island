@@ -318,7 +318,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            window::start_drag, window::end_drag, window::drag_move,
+            window::start_drag, window::end_drag, window::drag_move, window::snap_window_home, window::sync_window_home_size,
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
             window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
@@ -356,8 +356,8 @@ pub fn run() {
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
             tools::tools_check_adb, tools::tools_check_adb_devices, tools::tools_kill_adb_server, tools::tools_find_adb_in_path, tools::tools_download_adb,
             tools::tools_extract_adb, tools::tools_download_and_install_adb,
-            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::clear_email_cache,
-            email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_body_by_uid,
+            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::diagnose_email_cache, email::clear_email_cache,
+            email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_bodies_by_uids, email::fetch_email_metas_and_bodies_by_uids, email::fetch_email_body_by_uid, email::read_email_body_by_uid,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -900,9 +900,14 @@ pub fn run() {
                             *latest_email_uid_t.lock().unwrap() = Some(first.uid.clone());
                         }
                         // 保存到内存 + 磁盘
-                        *cached_metas_t.lock().unwrap() = metas.clone();
-                        email::save_email_metas(&metas);
-                        let _ = app_handle_email.emit("email-updated", ());
+                        if metas.is_empty() {
+                            logger::info("EmailPoll", "initial fetch returned 0 metas, keeping existing cache");
+                        } else {
+                            let mut cached = cached_metas_t.lock().unwrap();
+                            email::merge_email_metas(&mut cached, &metas);
+                            email::save_email_metas(&cached);
+                            let _ = app_handle_email.emit("email-updated", ());
+                        }
                         continue;
                     }
 
@@ -927,8 +932,15 @@ pub fn run() {
                         logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
 
                         let old_top = cached_metas_t.lock().unwrap().first().map(|m| m.uid.clone());
-                        *cached_metas_t.lock().unwrap() = metas.clone();
-                        email::save_email_metas(&metas);
+                        if metas.is_empty() {
+                            logger::info("EmailPoll", "fetch returned 0 metas, keeping existing cache");
+                            continue;
+                        }
+                        {
+                            let mut cached = cached_metas_t.lock().unwrap();
+                            email::merge_email_metas(&mut cached, &metas);
+                            email::save_email_metas(&cached);
+                        }
                         let _ = app_handle_email.emit("email-updated", ());
 
                         // 仅当有真正新邮件时发通知（新最大 UID > 旧最大 UID）

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { capsule, emailFrame, emailResizeHandle } from "../dom";
+import { capsule, emailPanel, emailResizeHandle } from "../dom";
 import { currentView, setSkipResizeSync } from "../state";
 
 const EMAIL_DEFAULT_W = 620;
@@ -39,6 +39,11 @@ export function applyEmailViewSize() {
   document.documentElement.style.setProperty("--email-view-h", `${emailViewH}px`);
 }
 
+export async function onEmailViewEntered() {
+  if (currentView !== "email") return;
+  applyEmailViewSize();
+}
+
 function setEmailViewSize(width: number, height: number) {
   const size = clampEmailSize(width, height);
   emailViewW = size.width;
@@ -67,7 +72,7 @@ export function initEmailResize() {
     resizeStartH = emailViewH;
     setSkipResizeSync(true);
     capsule.style.transition = "none";
-    emailFrame.style.pointerEvents = "none";
+    emailPanel.style.pointerEvents = "none";
   });
 
   document.addEventListener("mousemove", (e) => {
@@ -90,9 +95,9 @@ export function initEmailResize() {
     if (!resizing) return;
     resizing = false;
     capsule.style.transition = "";
-    emailFrame.style.pointerEvents = "";
+    emailPanel.style.pointerEvents = "";
     setSkipResizeSync(false);
     const size = getEmailWindowSize();
-    try { await invoke("sync_window_size", { width: size.width, height: size.height, reposition: true }); } catch { /* ignore */ }
+    try { await invoke("sync_window_size", { width: size.width, height: size.height, reposition: false }); } catch { /* ignore */ }
   });
 }

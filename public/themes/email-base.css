@@ -1,0 +1,364 @@
+#email-area {
+
+    width: 100%;
+
+    height: 100%;
+
+    padding: 38px 10px 10px 10px;
+
+    box-sizing: border-box;
+
+    align-items: stretch;
+
+    position: relative;
+
+}
+
+#email-panel {
+
+    width: 100%;
+
+    height: 100%;
+
+    border-radius: 18px;
+
+    background: #1a1a1a;
+
+    display: flex;
+
+    overflow: hidden;
+
+    color: #e0e0e0;
+
+}
+
+#email-list {
+    width: 320px;
+    min-width: 260px;
+    max-width: 380px;
+    height: 100%;
+    background: #222;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#email-list-header {
+    padding: 14px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+#email-actions {
+    display: flex;
+    gap: 6px;
+}
+
+#email-refresh-btn,
+#email-clear-cache-btn {
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    color: #bbb;
+    border-radius: 6px;
+    padding: 3px 7px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+#email-refresh-btn:hover,
+#email-clear-cache-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+#email-refresh-btn:disabled,
+#email-clear-cache-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#email-count {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 400;
+    color: #666;
+}
+
+#email-list-items {
+    flex: 1;
+    overflow-y: auto;
+
+}
+
+#email-list-items::-webkit-scrollbar,
+.email-content-body::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+#email-list-items::-webkit-scrollbar-track,
+.email-content-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#email-list-items::-webkit-scrollbar-button,
+.email-content-body::-webkit-scrollbar-button {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent !important;
+    background-image: none !important;
+    border: 0 !important;
+}
+
+#email-list-items::-webkit-scrollbar-button:vertical:start:decrement,
+#email-list-items::-webkit-scrollbar-button:vertical:end:increment,
+#email-list-items::-webkit-scrollbar-button:horizontal:start:decrement,
+#email-list-items::-webkit-scrollbar-button:horizontal:end:increment,
+.email-content-body::-webkit-scrollbar-button:vertical:start:decrement,
+.email-content-body::-webkit-scrollbar-button:vertical:end:increment,
+.email-content-body::-webkit-scrollbar-button:horizontal:start:decrement,
+.email-content-body::-webkit-scrollbar-button:horizontal:end:increment {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent !important;
+    background-image: none !important;
+    border: 0 !important;
+}
+
+#email-list-items::-webkit-scrollbar-thumb,
+.email-content-body::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.6);
+    border-radius: 10px;
+}
+
+#email-list-items::-webkit-scrollbar-thumb:hover,
+.email-content-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.9);
+}
+
+#email-list-items::-webkit-scrollbar-corner,
+.email-content-body::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.email-item {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    cursor: pointer;
+    min-height: 72px;
+    transition: background 0.15s;
+}
+
+.email-item:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.email-item.active {
+    background: rgba(100,160,255,0.12);
+    border-left: 3px solid #5b9df0;
+}
+
+.email-item-from {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ddd;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.email-item-subject {
+    font-size: 13px;
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.email-item-date {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
+
+.email-item.placeholder div {
+    height: 12px;
+    margin-bottom: 7px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.06);
+    animation: email-shimmer 1.5s infinite;
+}
+
+#email-content {
+    flex: 1;
+    height: 100%;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.email-content-header {
+    padding: 16px 22px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.email-content-subject {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.email-content-meta {
+    font-size: 12px;
+    color: #888;
+}
+
+.email-content-body {
+    flex: 1;
+    overflow: auto;
+    background: #fff;
+    color: #111;
+    padding: 18px;
+}
+
+.email-content-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+.email-empty-state,
+.email-loading-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #666;
+    font-size: 14px;
+}
+
+#email-drag-handle {
+
+    position: absolute;
+
+    left: 14px;
+
+    top: 10px;
+
+    right: 14px;
+
+    height: 20px;
+
+    min-height: 20px;
+
+    max-height: 20px;
+
+    cursor: grab;
+
+    z-index: 3;
+
+    display: none;
+
+    pointer-events: auto;
+
+    touch-action: none;
+
+    user-select: none;
+
+    border-radius: 999px;
+
+    background: #1a1a1a;
+
+    box-shadow: none;
+
+    backdrop-filter: none;
+
+    -webkit-backdrop-filter: none;
+
+    align-items: center;
+
+    justify-content: center;
+
+}
+
+#email-drag-handle::before {
+
+    content: "⋮⋮⋮";
+
+    color: rgba(20, 24, 32, 0.52);
+
+    font-size: 9px;
+
+    font-weight: 800;
+
+    line-height: 8px;
+
+    letter-spacing: 2px;
+
+}
+
+#email-drag-handle:active {
+
+    cursor: grabbing;
+
+}
+
+#island-capsule.email-expanded #email-drag-handle {
+
+    display: flex;
+
+}
+
+#email-resize-handle {
+
+    position: absolute;
+
+    right: 0;
+
+    bottom: 0;
+
+    width: 22px;
+
+    height: 22px;
+
+    cursor: nwse-resize;
+
+    z-index: 3;
+
+    isolation: isolate;
+
+    transform: translateZ(0);
+
+    display: none;
+
+    pointer-events: auto;
+
+}
+
+#island-capsule.email-expanded #email-resize-handle {
+
+    display: block;
+
+}
+
+@keyframes email-shimmer {
+    0% { opacity: 0.45; }
+    50% { opacity: 0.9; }
+    100% { opacity: 0.45; }
+}

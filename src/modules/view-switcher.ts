@@ -42,6 +42,7 @@ import {
 
 import { onSadbViewEntered } from "./sadb";
 import { applyEmailViewSize, getEmailWindowSize } from "./email-resize";
+import { showEmbeddedEmailView } from "./email-view";
 
 
 
@@ -502,13 +503,17 @@ export function setView(mode: ViewMode, animated = true) {
 
       capsule.classList.remove("sadb-expanded");
 
-      void invoke("set_sadb_expanded", { expanded: false });
+      if (!enteringEmail) {
 
-      window.setTimeout(() => {
+        void invoke("set_sadb_expanded", { expanded: false });
 
-        void invoke("sadb_set_idle", { idle: false });
+        window.setTimeout(() => {
 
-      }, 200);
+          void invoke("sadb_set_idle", { idle: false });
+
+        }, 200);
+
+      }
 
     }
 
@@ -518,7 +523,7 @@ export function setView(mode: ViewMode, animated = true) {
 
       // 后端动画回默认尺寸并 snap 回顶部
 
-      window.setTimeout(() => {
+      if (!enteringEmail) window.setTimeout(() => {
 
         void invoke("sadb_set_idle", { idle: false });
 
@@ -542,11 +547,15 @@ export function setView(mode: ViewMode, animated = true) {
 
   if (leavingEmail) {
 
+    setSkipResizeSync(true);
+
     capsule.classList.remove("email-expanded");
 
     void backendViewSynced.then(() => {
-      void invoke("sync_window_size", { width: 420, height: 84, reposition: false });
+      void invoke("sync_window_home_size", { width: 420, height: 84 });
     });
+
+    window.setTimeout(() => { setSkipResizeSync(false); }, 360);
 
   }
 
@@ -560,9 +569,11 @@ export function setView(mode: ViewMode, animated = true) {
 
     capsule.classList.add("email-expanded");
 
+    void showEmbeddedEmailView();
+
     void backendViewSynced.then(() => {
       const size = getEmailWindowSize();
-      void invoke("sync_window_size", { width: size.width, height: size.height, reposition: true });
+      void invoke("sync_window_size", { width: size.width, height: size.height, reposition: false });
     });
 
   }
@@ -573,11 +584,9 @@ export function setView(mode: ViewMode, animated = true) {
 
   if (mode === "sadb" && previous !== "sadb") {
 
-    window.setTimeout(() => onSadbViewEntered(), 50);
+    window.setTimeout(() => onSadbViewEntered(), 0);
 
   }
-
-
 
   if (animated) {
 

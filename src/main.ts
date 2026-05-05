@@ -12,6 +12,7 @@ import { initResizeObserver } from "./modules/resize-observer";
 import { initSearch } from "./modules/search";
 import { initSadb } from "./modules/sadb";
 import { initEmailResize } from "./modules/email-resize";
+import { initEmailView } from "./modules/email-view";
 import { initNoticeQueue } from "./modules/notice-queue";
 
 initNoticeUrl();
@@ -26,6 +27,7 @@ initCapsuleInteraction();
 initAgent();
 initSearch();
 initSadb();
+initEmailView();
 initEmailResize();
 initResizeObserver();
 

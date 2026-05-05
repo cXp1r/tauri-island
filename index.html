@@ -8,6 +8,8 @@
 
     <link rel="stylesheet" href="themes/base.css" />
 
+    <link rel="stylesheet" href="themes/email-base.css" />
+
     <link rel="stylesheet" href="themes/agent-base.css" />
 
     <link rel="stylesheet" href="themes/classic.css" />
@@ -104,7 +106,7 @@
 
     <!-- 视图暗仓：所有视图元素存放在此，由 JS 按需移入 #current-view -->
 
-    <div id="view-holder" style="display:none">
+    <div id="view-holder" aria-hidden="true">
 
         <div id="time-wrapper" class="content-wrapper">
 
@@ -363,7 +365,23 @@
         </div>
 
         <div id="email-area" class="content-wrapper">
-            <iframe id="email-frame" src="email.html?embed=1"></iframe>
+            <div id="email-drag-handle" aria-label="拖动邮箱视图"></div>
+            <div id="email-panel">
+                <div id="email-list">
+                    <div id="email-list-header">
+                        <span>收件箱</span>
+                        <div id="email-actions">
+                            <button id="email-refresh-btn" type="button">刷新</button>
+                            <button id="email-clear-cache-btn" type="button">清空缓存</button>
+                        </div>
+                        <span id="email-count"></span>
+                    </div>
+                    <div id="email-list-items"></div>
+                </div>
+                <div id="email-content">
+                    <div class="email-empty-state">选择一封邮件查看详情</div>
+                </div>
+            </div>
             <div id="email-resize-handle"></div>
         </div>
 

@@ -249,7 +249,9 @@
 
         let cacheDir = "";
         let activeUid = null;
-        let pendingOpenUid = new URLSearchParams(window.location.search).get("uid");
+        const searchParams = new URLSearchParams(window.location.search);
+        let pendingOpenUid = searchParams.get("uid");
+        let viewVisible = !searchParams.has("embed");
 
         // 全量 UID 列表（新→旧），由 fetch_email_uid_list 获取
         let allUids = [];
@@ -411,6 +413,30 @@
             }
         }
 
+        function bindMailBodyLinkOpen(iframe) {
+            const bind = () => {
+                try {
+                    const doc = iframe.contentDocument;
+                    if (!doc) return;
+                    if (doc.__mailLinkOpenBound) return;
+                    doc.__mailLinkOpenBound = true;
+                    doc.addEventListener("click", (e) => {
+                        const link = e.target?.closest?.("a[href]");
+                        if (!link) return;
+                        const url = new URL(link.getAttribute("href"), doc.baseURI).toString();
+                        if (!url.startsWith("http://") && !url.startsWith("https://")) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        invoke("open_url", { url });
+                    }, true);
+                } catch (e) {
+                    console.warn("bind mail body link failed:", e);
+                }
+            };
+            iframe.addEventListener("load", bind);
+            bind();
+        }
+
         async function selectMail(meta) {
             activeUid = meta.uid;
             // 更新列表高亮
@@ -445,6 +471,8 @@
                         <iframe src="${src}" sandbox="allow-same-origin"></iframe>
                     </div>
                 `;
+                const iframe = contentEl.querySelector(".mail-content-body iframe");
+                if (iframe) bindMailBodyLinkOpen(iframe);
             } catch (e) {
                 console.error("fetch email body failed:", e);
                 if (activeUid !== meta.uid) return;
@@ -472,6 +500,29 @@
             }
         }
 
+        async function ensureFirstMailSelected() {
+            if (activeUid || pendingOpenUid) return;
+            let firstMeta = cachedMetas[0] || metaCache.get(String(allUids[0]));
+            if (!firstMeta && allUids.length > 0) {
+                const uidNum = Number(allUids[0]);
+                if (Number.isFinite(uidNum)) {
+                    try {
+                        const metas = await invoke("fetch_email_metas_by_uids", { uids: [uidNum] });
+                        firstMeta = metas && metas[0];
+                        if (firstMeta) {
+                            metaCache.set(firstMeta.uid, firstMeta);
+                            updateItemDom(firstMeta.uid);
+                        }
+                    } catch (e) {
+                        console.warn("fetch first email meta failed:", e);
+                    }
+                }
+            }
+            if (firstMeta) {
+                await selectMail(firstMeta);
+            }
+        }
+
         async function init() {
             try {
                 cacheDir = await invoke("get_email_cache_dir");
@@ -480,6 +531,13 @@
                 cachedMetas = await invoke("fetch_emails");
                 for (const m of cachedMetas) {
                     metaCache.set(m.uid, m);
+                }
+                if (cachedMetas.length > 0) {
+                    allUids = cachedMetas.map(m => Number(m.uid));
+                    renderFullList();
+                    if (viewVisible) {
+                        await ensureFirstMailSelected();
+                    }
                 }
 
                 if (pendingOpenUid) {
@@ -492,12 +550,8 @@
                 await loadMailboxList();
 
                 // 自动选中第一封
-                if (allUids.length > 0 && !activeUid) {
-                    const firstUid = String(allUids[0]);
-                    const firstMeta = metaCache.get(firstUid);
-                    if (firstMeta) {
-                        selectMail(firstMeta);
-                    }
+                if (viewVisible) {
+                    await ensureFirstMailSelected();
                 }
             } catch (e) {
                 console.error("init failed:", e);
@@ -562,6 +616,17 @@
             clearCache();
         });
 
+        window.addEventListener("message", async (event) => {
+            if (event.data?.type !== "email-view-visible") return;
+            viewVisible = true;
+            observePlaceholders();
+            await ensureFirstMailSelected();
+        });
+
+        function notifyParentReady() {
+            window.parent?.postMessage({ type: "email-frame-ready" }, "*");
+        }
+
         // 后台轮询推送新邮件时刷新
         listen("email-updated", async () => {
             // 重新加载缓存元数据
@@ -586,7 +651,8 @@
         });
 
         // 启动
-        init();
+        notifyParentReady();
+        init().finally(notifyParentReady);
     </script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   capsule,
   collapsedIndicator,
+  emailDragHandle,
 } from "../dom";
 import {
   isMinimized, setIsMinimized,
@@ -109,6 +110,78 @@ export function showContextMenu() {
 
 
 
+function beginWindowDrag(screenX: number, screenY: number) {
+
+  setIsDragging(true);
+
+  setDragStarted(false);
+
+  setLastX(screenX);
+
+  setLastY(screenY);
+
+  setMouseDownX(screenX);
+
+  setMouseDownY(screenY);
+
+}
+
+
+
+function moveWindowDrag(screenX: number, screenY: number) {
+
+  if (!isDragging) return;
+
+  const dx = screenX - lastX;
+
+  const dy = screenY - lastY;
+
+  if (!dragStarted) {
+
+    const totalDx = Math.abs(screenX - mouseDownX);
+
+    const totalDy = Math.abs(screenY - mouseDownY);
+
+    if (totalDx < DRAG_THRESHOLD && totalDy < DRAG_THRESHOLD) return;
+
+    setDragStarted(true);
+
+    void invoke("start_drag");
+
+  }
+
+  setLastX(screenX);
+
+  setLastY(screenY);
+
+  if (dx !== 0 || dy !== 0) {
+
+    void invoke("drag_move", { dx, dy });
+
+  }
+
+}
+
+
+
+function endWindowDrag() {
+
+  if (!isDragging) return;
+
+  setIsDragging(false);
+
+  if (dragStarted) {
+
+    void invoke("end_drag");
+
+    window.setTimeout(() => { setDragStarted(false); }, 100);
+
+  }
+
+}
+
+
+
 export function initMinimizeDrag() {
 
   // 监听菜单动作
@@ -152,7 +225,7 @@ export function initMinimizeDrag() {
 
     const target = e.target as HTMLElement;
 
-    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
+    if (target.closest("#email-drag-handle") || target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
 
       return;
 
@@ -172,17 +245,63 @@ export function initMinimizeDrag() {
 
 
 
-    setIsDragging(true);
+    beginWindowDrag(e.screenX, e.screenY);
 
-    setDragStarted(false);
+  });
 
-    setLastX(e.screenX);
 
-    setLastY(e.screenY);
 
-    setMouseDownX(e.screenX);
+  emailDragHandle.addEventListener("pointerdown", (e: PointerEvent) => {
 
-    setMouseDownY(e.screenY);
+    if (currentView !== "email" || e.button !== 0) return;
+
+    e.preventDefault();
+
+    e.stopPropagation();
+
+    emailDragHandle.setPointerCapture(e.pointerId);
+
+    beginWindowDrag(e.screenX, e.screenY);
+
+  });
+
+  emailDragHandle.addEventListener("pointermove", (e: PointerEvent) => {
+
+    if (currentView !== "email" || !emailDragHandle.hasPointerCapture(e.pointerId)) return;
+
+    e.preventDefault();
+
+    moveWindowDrag(e.screenX, e.screenY);
+
+  });
+
+  emailDragHandle.addEventListener("pointerup", (e: PointerEvent) => {
+
+    if (emailDragHandle.hasPointerCapture(e.pointerId)) {
+
+      emailDragHandle.releasePointerCapture(e.pointerId);
+
+    }
+
+    endWindowDrag();
+
+  });
+
+  emailDragHandle.addEventListener("pointercancel", (e: PointerEvent) => {
+
+    if (emailDragHandle.hasPointerCapture(e.pointerId)) {
+
+      emailDragHandle.releasePointerCapture(e.pointerId);
+
+    }
+
+    endWindowDrag();
+
+  });
+
+  emailDragHandle.addEventListener("lostpointercapture", () => {
+
+    endWindowDrag();
 
   });
 
@@ -204,65 +323,16 @@ export function initMinimizeDrag() {
 
     if (!isDragging) return;
 
-
-
-    const dx = e.screenX - lastX;
-
-    const dy = e.screenY - lastY;
-
-
-
-    // 检查是否超过拖动阈值
-
-    if (!dragStarted) {
-
-      const totalDx = Math.abs(e.screenX - mouseDownX);
-
-      const totalDy = Math.abs(e.screenY - mouseDownY);
-
-      if (totalDx < DRAG_THRESHOLD && totalDy < DRAG_THRESHOLD) return;
-
-      setDragStarted(true);
-
-      void invoke("start_drag");
-
-    }
-
-
-
-    setLastX(e.screenX);
-
-    setLastY(e.screenY);
-
-
-
-    if (dx !== 0 || dy !== 0) {
-
-      void invoke("drag_move", { dx, dy });
-
-    }
+    moveWindowDrag(e.screenX, e.screenY);
 
   });
-
 
 
   document.addEventListener("mouseup", () => {
 
     if (!isDragging) return;
 
-    setIsDragging(false);
-
-    if (dragStarted) {
-
-      void invoke("end_drag");
-
-      // 不立即重置 dragStarted，留给 click handler 检测并阻断点击
-
-      // 安全兜底：如果 click 事件未触发（如焦点丢失），100ms 后自动重置
-
-      window.setTimeout(() => { setDragStarted(false); }, 100);
-
-    }
+    endWindowDrag();
 
   });
 

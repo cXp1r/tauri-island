@@ -234,7 +234,19 @@ export const sadbFps = document.getElementById("sadb-fps") as HTMLSpanElement;
 
 export const emailArea = document.getElementById("email-area") as HTMLDivElement;
 
-export const emailFrame = document.getElementById("email-frame") as HTMLIFrameElement;
+export const emailPanel = document.getElementById("email-panel") as HTMLDivElement;
+
+export const emailListItems = document.getElementById("email-list-items") as HTMLDivElement;
+
+export const emailContent = document.getElementById("email-content") as HTMLDivElement;
+
+export const emailCount = document.getElementById("email-count") as HTMLSpanElement;
+
+export const emailRefreshBtn = document.getElementById("email-refresh-btn") as HTMLButtonElement;
+
+export const emailClearCacheBtn = document.getElementById("email-clear-cache-btn") as HTMLButtonElement;
+
+export const emailDragHandle = document.getElementById("email-drag-handle") as HTMLDivElement;
 
 export const emailResizeHandle = document.getElementById("email-resize-handle") as HTMLDivElement;
 
