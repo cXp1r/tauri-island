@@ -7,6 +7,9 @@ import {
   sadbDeviceName, sadbResolution, sadbFps,
 } from "../dom";
 import { setSkipResizeSync } from "../state";
+import { loge } from "../logger";
+
+const TAG: string = "SADB";
 
 type PacketEvent =
   | { type: "meta"; device_name: string; codec: string; width: number; height: number }
@@ -247,7 +250,7 @@ function initDecoder(codec: string, width: number, height: number) {
   decoder = new VideoDecoder({
     output: renderFrame,
     error: (e) => {
-      console.error("VideoDecoder error:", e);
+      loge(TAG, "VideoDecoder error:", e);
       setStatus(`解码器错误: ${e.message}`);
     },
   });
@@ -319,7 +322,7 @@ function initAudioDecoder(configData: Uint8Array) {
       const t = audioBaseTime + (audioData.timestamp - audioBasePts) / 1_000_000;
       source.start(Math.max(t, audioCtx.currentTime));
     },
-    error: (e) => console.error("AudioDecoder error:", e),
+    error: (e) => loge(TAG, "AudioDecoder error:", e),
   });
 
   audioDecoder.configure({
@@ -372,7 +375,7 @@ function handleEvent(evt: PacketEvent) {
         timestamp: evt.pts,
         data: avcc,
       });
-      try { decoder.decode(chunk); } catch (e) { console.error("decode error:", e); }
+      try { decoder.decode(chunk); } catch (e) { loge(TAG, "decode error:", e); }
       break;
     }
     case "audio_packet": {
@@ -432,7 +435,7 @@ async function startStream() {
     streaming = true;
     return;
   } catch (e) {
-    console.error("USB mirroring failed:", e);
+    loge(TAG, "USB mirroring failed:", e);
     setStatus(`USB失败: ${e}`);
   }
 
@@ -443,7 +446,7 @@ async function startStream() {
     try {
       await invoke("sadb_connect_device", { serial });
     } catch (e) {
-      console.error("WiFi connect failed:", e);
+      loge(TAG, "WiFi connect failed:", e);
       setStatus(`WiFi连接失败: ${e}`);
       sadbBtnStart.disabled = false;
       sadbBtnStop.disabled = true;
@@ -462,7 +465,7 @@ async function startStream() {
       streaming = true;
       return;
     } catch (e) {
-      console.error("WiFi mirroring failed:", e);
+      loge(TAG, "WiFi mirroring failed:", e);
       setStatus(`镜像失败: ${e}`);
       sadbBtnStart.disabled = false;
       sadbBtnStop.disabled = true;

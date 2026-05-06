@@ -7,7 +7,8 @@ import {
   emailListItems,
   emailRefreshBtn,
 } from "../dom";
-
+import { setEmailConfigure } from "../state";
+import { logd, logi } from "../logger";
 type EmailMeta = {
   uid: string;
   from: string;
@@ -23,11 +24,13 @@ let allUids: number[] = [];
 let cachedMetas: EmailMeta[] = [];
 const metaCache = new Map<string, EmailMeta>();
 
+const TAG: string = "Email"
+
 function debugEmail(message: string, data?: unknown) {
   if (data === undefined) {
-    console.debug("[EmailView]", message);
+    logd(TAG, "[EmailView]", message);
   } else {
-    console.debug("[EmailView]", message, data);
+    logd(TAG, "[EmailView]", message, data);
   }
 }
 
@@ -219,6 +222,11 @@ export async function showEmbeddedEmailView() {
 }
 
 export function initEmailView() {
+  invoke<boolean>("is_email_configured").then(res => {
+    logi("Email",`is_configured: ${res}`);
+    setEmailConfigure(res);
+  })
+  
   debugEmail("initEmailView");
   emailRefreshBtn.addEventListener("click", () => { void refreshMailbox(); });
   emailClearCacheBtn.addEventListener("click", () => { void clearCache(); });
@@ -236,5 +244,9 @@ export function initEmailView() {
     debugEmail("event:email-updated");
     initialized = false;
     await showEmbeddedEmailView();
+  });
+  void listen<boolean>("email-configured", (event) => {
+    logi(TAG, event.payload);
+    setEmailConfigure(event.payload);
   });
 }

@@ -8,7 +8,9 @@ import {
 } from "../state";
 import { truncateUrl } from "../utils";
 import { getAvailableViews, setView } from "./view-switcher";
+import { logi } from "../logger";
 
+const TAG: string = "NoticeQueue";
 // ===== 通知类型 =====
 
 export type NoticeType = "clipboard" | "email" | "generic";
@@ -55,11 +57,11 @@ let urlListMode = false; // notice-area 当前是否展示 URL 列表
 export function enqueueNotice(item: NoticeItem): void {
   item.duration = Math.min(item.duration, MAX_DURATION);
   item.uuid = item.uuid || createNoticeUuid();
-  console.log(`[NoticeQueue] enqueue: ${describeNotice(item)} duration=${item.duration}ms queueBefore=${queue.length} active=${activeItem?.id || "none"} urlListMode=${urlListMode}`);
+  logi(TAG, `enqueue: ${describeNotice(item)} duration=${item.duration}ms queueBefore=${queue.length} active=${activeItem?.id || "none"} urlListMode=${urlListMode}`);
   queue.push(item);
-  console.log(`[NoticeQueue] queued: id=${item.id} queueAfter=${queue.length}`);
+  logi(TAG, `queued: id=${item.id} queueAfter=${queue.length}`);
   if (!activeItem && !urlListMode) {
-    console.log(`[NoticeQueue] enqueue-trigger-show: id=${item.id}`);
+    logi(TAG, `enqueue-trigger-show: id=${item.id}`);
     showNext();
   }
 }
@@ -78,7 +80,7 @@ export function showNotice(msg: string): void {
 
 /** 清空队列并关闭显示 */
 export function clearQueue(): void {
-  console.log(`[NoticeQueue] clearQueue: active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length} urlListMode=${urlListMode}`);
+  logi(TAG, `clearQueue: active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length} urlListMode=${urlListMode}`);
   queue.length = 0;
   activeItem = null;
   urlListMode = false;
@@ -98,7 +100,7 @@ function iconForType(type: NoticeType): string {
 
 /** 渲染消息模式（图标 + 文本） */
 function renderMessage(item: NoticeItem): void {
-  console.log(`[NoticeQueue] renderMessage: ${describeNotice(item)}`);
+  logi(TAG, `renderMessage: ${describeNotice(item)}`);
   noticeArea.classList.remove("notice-urllist");
   const renderer = rendererForType(item.type);
   noticeArea.innerHTML = renderer.html(item);
@@ -107,7 +109,7 @@ function renderMessage(item: NoticeItem): void {
 
 /** 渲染 URL 列表模式 */
 function renderUrlList(urls: string[]): void {
-  console.log(`[NoticeQueue] renderUrlList: count=${urls.length} active=${activeItem ? describeNotice(activeItem) : "none"}`);
+  logi(TAG, `renderUrlList: count=${urls.length} active=${activeItem ? describeNotice(activeItem) : "none"}`);
   noticeArea.classList.add("notice-urllist");
   noticeArea.innerHTML = "";
   urls.forEach((url) => {
@@ -117,7 +119,7 @@ function renderUrlList(urls: string[]): void {
     el.title = url;
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      console.log(`[NoticeQueue] url-click: url=${url}`);
+      logi(TAG, `url-click: url=${url}`);
       void invoke("open_link_with_handler", { url });
       void invoke("set_interacting", { active: false });
       exitUrlListMode();
@@ -154,20 +156,20 @@ function bindBaseNotice(item: NoticeItem, action: () => void): void {
   main?.addEventListener("click", (e) => {
     e.stopPropagation();
     if (activeItem?.id !== item.id) {
-      console.log(`[NoticeQueue] main-click-ignored: clicked=${item.id} active=${activeItem?.id || "none"}`);
+      logi(TAG, `main-click-ignored: clicked=${item.id} active=${activeItem?.id || "none"}`);
       return;
     }
-    console.log(`[NoticeQueue] main-click: ${describeNotice(item)}`);
+    logi(TAG, `main-click: ${describeNotice(item)}`);
     action();
   });
 
   dismiss?.addEventListener("click", (e) => {
     e.stopPropagation();
     if (activeItem?.id !== item.id) {
-      console.log(`[NoticeQueue] dismiss-ignored: clicked=${item.id} active=${activeItem?.id || "none"}`);
+      logi(TAG, `dismiss-ignored: clicked=${item.id} active=${activeItem?.id || "none"}`);
       return;
     }
-    console.log(`[NoticeQueue] dismiss: ${describeNotice(item)} queued=${queue.length}`);
+    logi(TAG, `dismiss: ${describeNotice(item)} queued=${queue.length}`);
     completeActiveNotice(true, "dismiss");
   });
 }
@@ -198,19 +200,19 @@ function showNext(): void {
   clearTimer();
 
   if (urlListMode) {
-    console.log(`[NoticeQueue] showNext-deferred: urlListMode=true queued=${queue.length} active=${activeItem?.id || "none"}`);
+    logi(TAG, `showNext-deferred: urlListMode=true queued=${queue.length} active=${activeItem?.id || "none"}`);
     return;
   }
 
   if (queue.length === 0) {
-    console.log(`[NoticeQueue] showNext-empty: active=${activeItem?.id || "none"}`);
+    logi(TAG, `showNext-empty: active=${activeItem?.id || "none"}`);
     activeItem = null;
     finishAll();
     return;
   }
 
   activeItem = queue.shift()!;
-  console.log(`[NoticeQueue] showNext: ${describeNotice(activeItem)} remaining=${queue.length}`);
+  logi(TAG, `showNext: ${describeNotice(activeItem)} remaining=${queue.length}`);
   renderMessage(activeItem);
   capsule.classList.add("notice-active");
   noticeArea.classList.add("active");
@@ -222,9 +224,9 @@ function showNext(): void {
   displayTimer = window.setTimeout(() => {
     const expired = activeItem;
     if (expired) {
-      console.log(`[NoticeQueue] timeout: ${describeNotice(expired)} queued=${queue.length}`);
+      logi(TAG, `timeout: ${describeNotice(expired)} queued=${queue.length}`);
     } else {
-      console.log(`[NoticeQueue] timeout: active=none queued=${queue.length}`);
+      logi(TAG, `timeout: active=none queued=${queue.length}`);
     }
     activeItem = null;
     displayTimer = null;
@@ -237,28 +239,28 @@ function showNext(): void {
 function handleClick(): void {
   // URL 列表模式下点击空白区域 → 退出
   if (urlListMode) {
-    console.log(`[NoticeQueue] notice-area-click: exit-url-list active=${activeItem ? describeNotice(activeItem) : "none"}`);
+    logi(TAG, `notice-area-click: exit-url-list active=${activeItem ? describeNotice(activeItem) : "none"}`);
     exitUrlListMode();
     return;
   }
 
   if (!activeItem) {
-    console.log("[NoticeQueue] notice-area-click: no active notice");
+    logi("[NoticeQueue] notice-area-click: no active notice");
     return;
   }
-  console.log(`[NoticeQueue] notice-area-click: ignored active=${describeNotice(activeItem)}`);
+  logi(TAG, `notice-area-click: ignored active=${describeNotice(activeItem)}`);
 }
 
 function handleClipboardNotice(item: NoticeItem): void {
   const urls = item.payload as string[];
-  console.log(`[NoticeQueue] clipboard-action: ${describeNotice(item)} urlCount=${urls.length}`);
+  logi(TAG, `clipboard-action: ${describeNotice(item)} urlCount=${urls.length}`);
   clearTimer();
   if (urls.length === 1) {
-    console.log(`[NoticeQueue] clipboard-open-single: id=${item.id} url=${urls[0]}`);
+    logi(TAG, `clipboard-open-single: id=${item.id} url=${urls[0]}`);
     void invoke("open_link_with_handler", { url: urls[0] });
     completeActiveNotice(false, "clipboard-open-single");
   } else {
-    console.log(`[NoticeQueue] clipboard-open-list: id=${item.id} count=${urls.length}`);
+    logi(TAG, `clipboard-open-list: id=${item.id} count=${urls.length}`);
     urlListMode = true;
     void invoke("set_interacting", { active: true });
     renderUrlList(urls);
@@ -266,7 +268,7 @@ function handleClipboardNotice(item: NoticeItem): void {
 }
 
 function handleEmailNotice(item: NoticeItem): void {
-  //console.log(`[NoticeQueue] email-action: active=${activeItem ? describeNotice(activeItem) : "none"}`);
+  //logi(TAG, `email-action: active=${activeItem ? describeNotice(activeItem) : "none"}`);
   const payload = item.payload as { uid?: string | number } | null;
   openEmailWindow(payload?.uid);
   completeActiveNotice(true, "email-open");
@@ -281,7 +283,7 @@ function openEmailWindow(uid?: string | number): Promise<void> {
 }
 
 function completeActiveNotice(shouldClearTimer = true, reason = "complete"): void {
-  console.log(`[NoticeQueue] complete: reason=${reason} active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length} clearTimer=${shouldClearTimer}`);
+  logi(TAG, `complete: reason=${reason} active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length} clearTimer=${shouldClearTimer}`);
   if (shouldClearTimer) clearTimer();
   activeItem = null;
   urlListMode = false;
@@ -291,16 +293,16 @@ function completeActiveNotice(shouldClearTimer = true, reason = "complete"): voi
 
 function advanceOrFinish(): void {
   if (queue.length > 0) {
-    console.log(`[NoticeQueue] advance: queued=${queue.length}`);
+    logi(TAG, `advance: queued=${queue.length}`);
     showNext();
   } else {
-    console.log("[NoticeQueue] advance: queue empty, finish");
+    logi("[NoticeQueue] advance: queue empty, finish");
     finishAll();
   }
 }
 
 function exitUrlListMode(): void {
-  console.log(`[NoticeQueue] exitUrlListMode: active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length}`);
+  logi(TAG, `exitUrlListMode: active=${activeItem ? describeNotice(activeItem) : "none"} queued=${queue.length}`);
   urlListMode = false;
   activeItem = null;
   void invoke("set_interacting", { active: false });
@@ -317,7 +319,7 @@ function clearTimer(): void {
 }
 
 function finishAll(): void {
-  console.log(`[NoticeQueue] finishAll: queue empty, collapsing`);
+  logi(TAG, `finishAll: queue empty, collapsing`);
   // 先收起胶囊，再移除 overlay，避免底层视图闪烁
   capsule.classList.remove("expanded");
   capsule.classList.remove("notice-active");
@@ -381,7 +383,7 @@ export function initNoticeQueue(): void {
 
   // 后端通用 show-notice（兜底）
   listen<string>("show-notice", (event) => {
-    console.log(`[NoticeQueue] show-notice event received: "${event.payload}"`);
+    logi(TAG, `show-notice event received: "${event.payload}"`);
     enqueueNotice({
       id: `generic-${++noticeIdCounter}`,
       type: "generic",

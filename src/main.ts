@@ -1,3 +1,4 @@
+import { initLogLevel } from "./logger"
 import { currentView } from "./state";
 import { hidePrivacyPopup, initPrivacy } from "./modules/privacy";
 import { initNoticeUrl } from "./modules/notice-url";
@@ -15,6 +16,7 @@ import { initEmailResize } from "./modules/email-resize";
 import { initEmailView } from "./modules/email-view";
 import { initNoticeQueue } from "./modules/notice-queue";
 
+initLogLevel()
 initNoticeUrl();
 initNoticeQueue();
 initWeather();

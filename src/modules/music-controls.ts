@@ -27,7 +27,9 @@ import {
 import { formatTime } from "../utils";
 import { updatePlayIcon, updateSwitcherUI } from "./view-switcher";
 import { resetMpLyricFlipState } from "./lyric-renderer";
+import { logw, logi } from "../logger";
 
+const TAG: string = "MusicController";
 // ===== 面板音量滑块 =====
 
 // 展开面板时获取当前音量
@@ -86,7 +88,7 @@ export function initMusicControls() {
     setIsMusicPlaying(true);
     setCurrentSongTitle(event.payload.title);
     setCurrentArtistName(event.payload.artist);
-    console.log(`[SMTC] genre='${event.payload.genre ?? ""}' title='${event.payload.title}' artist='${event.payload.artist}'`);
+    logi("SMTC", `genre='${event.payload.genre ?? ""}' title='${event.payload.title}' artist='${event.payload.artist}'`);
     lyricTextInner.textContent = "♪";
     lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
     mpLyricText.textContent = "♪";
@@ -206,7 +208,7 @@ export function initMusicControls() {
     mpVolumeBar.classList.remove("seeking");
     const pct = updateMpVolumeFromMouse(e);
     void invoke("media_set_volume", { volume: pct }).catch((err: unknown) => {
-      console.warn("Set volume failed:", err);
+      logw(TAG, "Set volume failed:", err);
     });
   });
 
@@ -232,7 +234,7 @@ export function initMusicControls() {
     const pct = updateProgressFromMouse(e);
     const seekMs = Math.round(pct * currentDurationMs);
     void invoke("media_seek", { positionMs: seekMs }).catch((err: unknown) => {
-      console.warn("Seek failed:", err);
+      logw(TAG, "Seek failed:", err);
     });
   });
 
@@ -258,7 +260,7 @@ export function initMusicControls() {
     const pct = updateMpProgressFromMouse(e);
     const seekMs = Math.round(pct * currentDurationMs);
     void invoke("media_seek", { positionMs: seekMs }).catch((err: unknown) => {
-      console.warn("Seek failed:", err);
+      logw(TAG, "Seek failed:", err);
     });
   });
 

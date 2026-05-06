@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import katex from "katex";
+// @ts-ignore
 import "katex/dist/katex.min.css";
 import { hljs } from "../highlight-setup";
 import {
@@ -21,6 +22,9 @@ import {
   currentAssistantContainer, setCurrentAssistantContainer,
 } from "../state";
 import { updateSwitcherUI } from "./view-switcher";
+import { logd, loge, logi } from "../logger";
+
+const TAG: string = "Ai";
 
 // ==================== AI Agent 功能 ====================
 
@@ -516,7 +520,7 @@ async function sendMessage() {
 
   } catch (error) {
 
-    console.error("发送消息失败:", error);
+    loge(TAG, "发送消息失败:", error);
 
     // 在消息区域显示错误
 
@@ -874,11 +878,11 @@ export function initAgent() {
 
   invoke<{ api_url: string; model: string }>("ai_get_settings").then((settings) => {
 
-    console.log("AI settings loaded:", settings);
+    logd(TAG, "AI settings loaded:", settings);
 
     setAiEnabled(!!(settings.api_url && settings.model));
 
-    console.log("AI enabled:", aiEnabled);
+    logi(TAG, "AI enabled:", aiEnabled);
 
     if (aiEnabled) {
 
@@ -894,7 +898,7 @@ export function initAgent() {
 
   }).catch((error) => {
 
-    console.error("加载 AI 设置失败:", error);
+    loge(TAG, "加载 AI 设置失败:", error);
 
   });
 

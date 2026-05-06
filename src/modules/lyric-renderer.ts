@@ -35,6 +35,9 @@ import {
 import { formatTime } from "../utils";
 import { setView, updateSwitcherUI, updatePlayIcon } from "./view-switcher";
 import { updateSeekable } from "./music-controls";
+import { logd } from "../logger";
+
+const TAG: string = "Lyrics"
 
 /**
  * 生成 token 列表的稳定标识，用于判断 DOM 是否需要重建。
@@ -237,7 +240,7 @@ function ensureLyricTokenAnimationLoop() {
     const elapsed = now - lyricFpsWindowStartMs;
     if (elapsed >= 2000) {
       const fps = (lyricFpsFrameCount * 1000) / elapsed;
-      console.debug(`[LyricSweep] raf fps=${fps.toFixed(1)} playing=${isPlaying}`);
+      logd(TAG, `[LyricSweep] raf fps=${fps.toFixed(1)} playing=${isPlaying}`);
       setLyricFpsWindowStartMs(now);
       setLyricFpsFrameCount(0);
     }

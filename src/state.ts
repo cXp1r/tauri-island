@@ -162,6 +162,12 @@ export function setLyricFpsFrameCount(v: number) { lyricFpsFrameCount = v; }
 export let tokenAnimationId: number | null = null;
 export function setTokenAnimationId(v: number | null) { tokenAnimationId = v; }
 
+
+//邮件相关
+export let emailConfigure = false;
+export function setEmailConfigure(v: boolean) { emailConfigure = v; }
+
+
 // --- 拖拽状态 ---
 
 export let isDragging = false;
