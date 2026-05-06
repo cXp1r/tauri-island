@@ -15,8 +15,6 @@ mod email;
 mod cc;
 mod tools;
 
-use std::process::{Command, Stdio};
-use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -52,7 +50,7 @@ pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
 
-/// 全局复用的 HTTP client，避免每次歌词请求重新初始化 TLS
+/// 全局复用的 HTTP client，天气处调用
 pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -67,46 +65,6 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
 pub(crate) const SNAP_FRAME_MS: u64 = 10;
 const PRIVACY_POLL_MS: u64 = 1200;
 
-/// PowerShell 带超时执行，超时自动 kill 进程
-fn run_powershell_with_timeout(args: &[&str], timeout: Duration) -> Option<String> {
-    use std::io::Read;
-    let mut child = Command::new("powershell")
-        .args(args)
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    return None;
-                }
-                let mut stdout = String::new();
-                if let Some(mut out) = child.stdout.take() {
-                    let _ = out.read_to_string(&mut stdout);
-                }
-                return Some(stdout);
-            }
-            Ok(None) => {
-                if start.elapsed() > timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                return None;
-            }
-        }
-    }
-}
-
 /// 位置信息
 #[derive(Debug, Clone, serde::Serialize)]
 struct LocationInfo {
@@ -116,55 +74,10 @@ struct LocationInfo {
     city: Option<String>,
 }
 
-/// 使用 Windows 系统定位获取位置
-fn get_system_location() -> Option<LocationInfo> {
-    // 使用 PowerShell 调用 WinRT 地理位置 API
-    let ps_script = r#"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-try {
-    $locator = [Windows.Devices.Geolocation.Geolocator]::new()
-    $locator.DesiredAccuracy = [Windows.Devices.Geolocation.PositionAccuracy]::Default
-    $task = $locator.GetGeopositionAsync().AsTask()
-    $task.Wait(10000)
-    if ($task.IsCompleted -and $task.Result) {
-        $pos = $task.Result.Coordinate.Point.Position
-        Write-Output "$($pos.Latitude),$($pos.Longitude)"
-    }
-} catch {
-    # 忽略错误，返回空
-}
-"#;
 
-    let raw = run_powershell_with_timeout(
-        &["-NoProfile", "-Command", ps_script],
-        Duration::from_secs(12),
-    );
-    let stdout = match raw {
-        Some(s) => s.trim().to_string(),
-        None => return None,
-    };
-    if stdout.is_empty() || !stdout.contains(',') {
-        return None;
-    }
 
-    let parts: Vec<&str> = stdout.split(',').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let lat = parts[0].trim().parse::<f64>().ok()?;
-    let lon = parts[1].trim().parse::<f64>().ok()?;
-
-    Some(LocationInfo {
-        latitude: lat,
-        longitude: lon,
-        source: "system".to_string(),
-        city: None,
-    })
-}
-
-/// 使用 IP 定位获取位置（备用方案）
-fn get_ip_location() -> Option<LocationInfo> {
+#[tauri::command]
+fn get_location() -> Option<LocationInfo> {
     let url = "http://ip-api.com/json?fields=status,lat,lon,city&lang=zh-CN";
 
     let resp = shared_http_client()
@@ -173,11 +86,13 @@ fn get_ip_location() -> Option<LocationInfo> {
         .ok()?;
 
     if !resp.status().is_success() {
+        logger::warn("init", "定位失败");
         return None;
     }
 
     let json: serde_json::Value = resp.json().ok()?;
     if json["status"].as_str()? != "success" {
+        logger::warn("init", "定位失败");
         return None;
     }
 
@@ -187,24 +102,6 @@ fn get_ip_location() -> Option<LocationInfo> {
         source: "ip".to_string(),
         city: json["city"].as_str().map(|s| s.to_string()),
     })
-}
-
-#[tauri::command]
-fn get_location() -> Option<LocationInfo> {
-    // 优先使用系统定位
-    if let Some(loc) = get_system_location() {
-        println!("[Location] 系统定位成功: {:.4}, {:.4}", loc.latitude, loc.longitude);
-        return Some(loc);
-    }
-
-    // 备用：IP 定位
-    if let Some(loc) = get_ip_location() {
-        println!("[Location] IP定位成功: {:.4}, {:.4} ({})", loc.latitude, loc.longitude, loc.city.as_deref().unwrap_or("未知"));
-        return Some(loc);
-    }
-
-    println!("[Location] 定位失败");
-    None
 }
 
 // ===== Open-Meteo 天气代码映射 =====
@@ -314,6 +211,7 @@ fn save_weather_city(app: tauri::AppHandle, state: tauri::State<'_, IslandState>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    //注册函数
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -324,7 +222,7 @@ pub fn run() {
             window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
             window::set_sadb_expanded, window::open_email_window,
             window::sadb_set_idle,
-            window::set_music_expanded,
+            window::set_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
             settings::set_lyric_offset_enabled, settings::delete_lyric_offset_player,
@@ -347,7 +245,7 @@ pub fn run() {
             settings::get_preview_updates, settings::set_preview_updates,
             settings::get_show_preview_toggle, settings::set_show_preview_toggle,
             updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
-            logger::get_log_path, logger::open_log_dir,
+            logger::get_log_path, logger::open_log_dir, logger::get_log_level_num,
             logger::get_log_level, logger::set_log_level,
             sadb::sadb_start_mirroring, sadb::sadb_stop_mirroring,
             sadb::sadb_send_touch_event, sadb::sadb_send_scroll_event,
@@ -356,7 +254,7 @@ pub fn run() {
             sadb::sadb_connect_device, sadb::sadb_disconnect_device,
             tools::tools_check_adb, tools::tools_check_adb_devices, tools::tools_kill_adb_server, tools::tools_find_adb_in_path, tools::tools_download_adb,
             tools::tools_extract_adb, tools::tools_download_and_install_adb,
-            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::diagnose_email_cache, email::clear_email_cache,
+            email::is_email_configured, email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::diagnose_email_cache, email::clear_email_cache,
             email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_bodies_by_uids, email::fetch_email_metas_and_bodies_by_uids, email::fetch_email_body_by_uid, email::read_email_body_by_uid,
         ])
         .setup(|app| {
@@ -405,6 +303,9 @@ pub fn run() {
             ));
             let ai_generating = Arc::new(AtomicBool::new(false));
             let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
+            
+            //窗口态注册
+            let email_expanded = Arc::new(AtomicBool::new(false));
             let agent_expanded = Arc::new(AtomicBool::new(false));
             let sadb_expanded = Arc::new(AtomicBool::new(false));
             let sadb_idle = Arc::new(AtomicBool::new(false));
@@ -468,6 +369,7 @@ pub fn run() {
                 lyric_offsets_by_player: lyric_offsets_by_player.clone(),
                 active_player_app_id: active_player_app_id.clone(),
                 current_view: current_view.clone(),
+                email_expanded: email_expanded.clone(),
                 agent_expanded: agent_expanded.clone(),
                 sadb_expanded: sadb_expanded.clone(),
                 sadb_idle: sadb_idle.clone(),
@@ -628,7 +530,7 @@ pub fn run() {
                 let zone_top = (12.0 * scale) as i32;
                 let zone_bottom = (90.0 * scale) as i32;
                 let mut was_on_capsule = false;
-
+                //顶部展开
                 loop {
                     if let Some((mx, my)) = window::get_cursor_pos() {
                         // 根据当前状态确定胶囊宽度
@@ -876,23 +778,23 @@ pub fn run() {
 
             thread::spawn(move || {
                 logger::info("EmailPoll", "polling thread started");
-                let mut first_run = true;
+                let mut is_configured = false;
+                thread::sleep(Duration::from_secs(3));
                 loop {
-                    if first_run {
-                        thread::sleep(Duration::from_secs(3));
-                    } else {
-                        let interval = email_interval_t.load(Ordering::Relaxed).max(1);
-                        thread::sleep(Duration::from_secs(interval));
-                    }
-
+                    let interval = email_interval_t.load(Ordering::Relaxed).max(1); 
+                    thread::sleep(Duration::from_secs(interval));
                     let config = email_config_t.lock().unwrap().clone();
                     if !config.is_configured() {
-                        first_run = false;
+                        if is_configured {
+                            let _ = app_handle_email.emit("email-configured", false);//状态更改才发
+                        }
+                        is_configured = false;
+                        thread::sleep(Duration::from_secs(2));
                         continue;
-                    }
-
-                    if first_run {
-                        first_run = false;
+                    }else if !is_configured && config.is_configured() {//状态更改
+                        is_configured = true;//配置快照 避免重复发送
+                        let _ = app_handle_email.emit("email-configured", true);
+                        thread::sleep(Duration::from_secs(1));
                         logger::info("EmailPoll", "initial fetch: pulling latest 10 emails");
                         let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
                         logger::info("EmailPoll", &format!("initial fetch done: {} emails cached", metas.len()));
@@ -910,6 +812,8 @@ pub fn run() {
                         }
                         continue;
                     }
+                    
+
 
                     // 增量检查：对比服务器最新 UID 与本地已知 UID
                     let uid = tauri::async_runtime::block_on(config.get_latest_uid());
@@ -1542,6 +1446,7 @@ pub struct IslandState {
     /// 当前命中的播放器 app_id（小写），供 settings 子页高亮
     pub active_player_app_id: Arc<Mutex<Option<String>>>,
     pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
+    pub email_expanded: Arc<AtomicBool>,
     pub agent_expanded: Arc<AtomicBool>,
     pub music_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,

@@ -119,6 +119,11 @@ pub fn get_log_level() -> String {
 }
 
 #[tauri::command]
+pub fn get_log_level_num() -> u8 {
+    LOG_LEVEL.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
 pub fn set_log_level(level: String) {
     set_level(&level);
     info("Logger", &format!("日志等级已设为: {}", get_level()));

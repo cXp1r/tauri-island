@@ -7,9 +7,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
 const EMAIL_VIEW_W: f64 = 620.0;
-fn is_email_view(state: &IslandState) -> bool {
-    *state.current_view.lock().unwrap() == "email"
-}
+
 
 pub(crate) fn get_foreground_process_name() -> Option<String> {
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
@@ -232,7 +230,7 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
     if state.agent_expanded.load(Ordering::Relaxed)
         || state.music_expanded.load(Ordering::Relaxed)
         || state.sadb_mirroring.load(Ordering::Relaxed)
-        || is_email_view(&state)
+        || state.email_expanded.load(Ordering::Relaxed)
     {
         return;
     }
@@ -385,7 +383,7 @@ pub(crate) fn force_foreground(hwnd: HWND) {
 #[tauri::command]
 pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
     state.agent_expanded.store(expanded, Ordering::Relaxed);
-    if is_email_view(&state) {
+    if state.email_expanded.load(Ordering::Relaxed) {
         return;
     }
     let screen_w = state.screen_w;
@@ -458,7 +456,7 @@ pub fn set_sadb_expanded(_window: tauri::WebviewWindow, state: tauri::State<'_, 
 #[tauri::command]
 pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, idle: bool) {
     state.sadb_idle.store(idle, Ordering::Relaxed);
-    if is_email_view(&state) {
+    if state.email_expanded.load(Ordering::Relaxed) {
         return;
     }
     let screen_w = state.screen_w;
@@ -495,63 +493,11 @@ pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, Islan
     }
 }
 
-#[tauri::command]
-pub fn set_music_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
-    state.music_expanded.store(expanded, Ordering::Relaxed);
-    if is_email_view(&state) {
-        return;
-    }
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-
-    if expanded {
-        let target_w = width;
-        let target_h = height;
-        let target_x = (screen_w - target_w) / 2.0;
-
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let target_y = from_y;
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
-        }
-    } else {
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((width, height));
-            let center_x = from_x + from_w / 2.0;
-            let target_x = center_x - WIN_W / 2.0;
-            let target_y = from_y;
-            let target_w = WIN_W;
-            let target_h = WIN_H_DEFAULT;
-
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
-        }
-    }
-}
 
 #[tauri::command]
 pub fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, minimized: bool) {
     state.is_minimized.store(minimized, Ordering::Relaxed);
-    if is_email_view(&state) {
+    if state.email_expanded.load(Ordering::Relaxed) {
         return;
     }
     let screen_w = state.screen_w;
@@ -680,6 +626,7 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let is_email = normalized == "email";
     *state.current_view.lock().unwrap() = normalized;
     if is_email {
+        state.email_expanded.store(true, Ordering::Relaxed);
         state.is_notifying.store(false, Ordering::Relaxed);
         state.is_expanded.store(false, Ordering::Relaxed);
         state.is_interacting.store(false, Ordering::Relaxed);
@@ -691,6 +638,63 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     }
 }
 
+#[tauri::command]
+pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
+    let v = state.current_view.lock().unwrap().as_str().to_string();
+    logger::debug("Window", &format!("view: {}, expanded: {}, width: {}, height: {}", v, expanded, width, height));
+    match v.as_str() {
+        "lyric" => state.music_expanded.store(expanded, Ordering::Relaxed),
+        "agent" => state.agent_expanded.store(expanded, Ordering::Relaxed),
+        "sadb" => state.sadb_expanded.store(expanded, Ordering::Relaxed),
+        "email" => state.email_expanded.store(expanded, Ordering::Relaxed),
+        _ => return,
+    }
+    let screen_w = state.screen_w;
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    if expanded {
+        let target_w = width;
+        let target_h = height;
+        let target_x = (screen_w - target_w) / 2.0;
+
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((WIN_W, WIN_H_DEFAULT));
+            let target_y = from_y;
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
+        }
+    } else {
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let (from_w, from_h) = window.inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .unwrap_or((width, height));
+            let center_x = from_x + from_w / 2.0;
+            let target_x = center_x - WIN_W / 2.0;
+            let target_y = from_y;
+            let target_w = WIN_W;
+            let target_h = WIN_H_DEFAULT;
+
+            let home_x = (screen_w - WIN_W) / 2.0;
+            let w = window.clone();
+            thread::spawn(move || {
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
+                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
+            });
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+        }
+    }
+}
 #[tauri::command]
 pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
     // 如果已有 email 窗口则聚焦
