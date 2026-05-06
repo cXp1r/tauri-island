@@ -1,12 +1,19 @@
 ﻿use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::logger;
 use tokio::task;
 
 const TAG: &str = "Email";
 
 static EMAIL_META_SAVE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static CONFIGURED: AtomicBool = AtomicBool::new(false);
 
+// remember to call `.manage(MyState::default())`
+#[tauri::command]
+pub fn is_email_configured() -> bool {
+    CONFIGURED.load(Ordering::Relaxed)
+}
 /// 邮件缓存目录：config_dir/dynamic-island/email
 pub fn email_cache_dir() -> PathBuf {
     let dir = dirs::config_dir()
@@ -31,6 +38,7 @@ impl Email {
             && !self.auth.trim().is_empty()
             && !self.address.trim().is_empty()
             && self.port > 0;
+        CONFIGURED.store(ok, Ordering::Relaxed);
         //logger::debug(TAG, &format!("is_configured = {} (user={}, addr={}, port={})",
         //    ok, self.username, self.address, self.port));
         ok
