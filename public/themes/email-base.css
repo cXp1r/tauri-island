@@ -1,4 +1,23 @@
-#email-area {
+#island-capsule:not(.email-expanded) #email-drag-handle {
+    display: none;
+}
+#island-capsule:not(.email-expanded) #email-panel {
+    display: none;
+}
+#island-capsule:not(.email-expanded) #email-content {
+    display: none;
+}
+
+#island-capsule:not(.email-expanded) #email-area::before {
+    content: "email";
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+#island-capsule.email-expanded #email-area {
 
     width: 100%;
 

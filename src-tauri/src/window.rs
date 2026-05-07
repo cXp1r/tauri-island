@@ -7,7 +7,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
 const EMAIL_VIEW_W: f64 = 620.0;
-
+const TAG: &str = "Window";
 
 pub(crate) fn get_foreground_process_name() -> Option<String> {
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
@@ -110,6 +110,7 @@ pub(crate) fn get_window_rect(hwnd: HWND) -> Option<windows::Win32::Foundation::
     }
 }
 
+
 pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     unsafe {
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
@@ -180,6 +181,7 @@ pub(crate) fn animate_resize(
     to_x: f64, to_y: f64, to_w: f64, to_h: f64,
     duration_ms: f64,
 ) {
+    logger::debug(TAG, &format!("animate_resize: to_w: {}, to_h: {}", to_w, to_h));
     let scale = window.scale_factor().unwrap_or(1.0);
     let hwnd = HWND(window.hwnd().unwrap().0);
     let start = Instant::now();
@@ -380,67 +382,6 @@ pub(crate) fn force_foreground(hwnd: HWND) {
     }
 }
 
-#[tauri::command]
-pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
-    state.agent_expanded.store(expanded, Ordering::Relaxed);
-    if state.email_expanded.load(Ordering::Relaxed) {
-        return;
-    }
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-
-    // 从设置中获取窗口大小档位
-    let size_setting = state.agent_window_size.lock().unwrap().clone();
-    let (agent_w, agent_h) = get_agent_window_size(&size_setting);
-
-    if expanded {
-        // 展开：从当前窗口尺寸动画到 agent 展开尺寸
-        let target_w = agent_w;
-        let target_h = agent_h + 10.0;
-        let target_x = (screen_w - target_w) / 2.0;
-
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let target_y = from_y;
-
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
-        }
-    } else {
-        // 收起：从 agent 展开尺寸动画缩小到默认尺寸，然后 snap_back 到顶部
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((agent_w, agent_h + 10.0));
-            // 缩小后保持中心不变
-            let center_x = from_x + from_w / 2.0;
-            let target_x = center_x - WIN_W / 2.0;
-            let target_y = from_y;
-            let target_w = WIN_W;
-            let target_h = WIN_H_DEFAULT;
-
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-                // 缩小完成后吸附回顶部
-                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
-        }
-    }
-}
 
 #[tauri::command]
 pub fn set_sadb_expanded(_window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
@@ -623,21 +564,10 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
         "time" | "lyric" | "agent" | "search" | "sadb" | "email" => view,
         _ => "time".to_string(),
     };
-    let is_email = normalized == "email";
     *state.current_view.lock().unwrap() = normalized;
-    if is_email {
-        state.email_expanded.store(true, Ordering::Relaxed);
-        state.is_notifying.store(false, Ordering::Relaxed);
-        state.is_expanded.store(false, Ordering::Relaxed);
-        state.is_interacting.store(false, Ordering::Relaxed);
-        state.agent_expanded.store(false, Ordering::Relaxed);
-        state.music_expanded.store(false, Ordering::Relaxed);
-        state.is_minimized.store(false, Ordering::Relaxed);
-        state.expand_anim_id.fetch_add(1, Ordering::Relaxed);
-        state.expand_anim_id.store(0, Ordering::Relaxed);
-    }
 }
 
+//统一封装函数之通用展开设置
 #[tauri::command]
 pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
     let v = state.current_view.lock().unwrap().as_str().to_string();

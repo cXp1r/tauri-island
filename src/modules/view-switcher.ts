@@ -192,34 +192,13 @@ function animateViewSwitch(from: ViewMode, to: ViewMode) {
 // ---------------------------------------------------------------------------
 // 胶囊 class 统一管理
 // ---------------------------------------------------------------------------
-
+let cl: string[] = ["lyric", "email"];
+let cll: string[] = ["lyric-collapsed", "email"]
 export function updateCapsuleSize() {
-  // 搜索/sadb/email 视图各自管理自己的尺寸 class
-  if (currentView === "search" || currentView === "sadb" || currentView === "email") {
-    capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded");
-    return;
-  }
-
-  // Agent 视图不使用 expanded 类，使用独立的 agent-expanded 类
-  if (currentView === "agent") {
-    capsule.classList.remove("expanded", "lyric-collapsed", "email-expanded");
-    // agent-expanded 由单击事件控制，这里不处理
-    return;
-  }
-
-  // 其他视图的展开态
-  if (capsule.classList.contains("expanded")) {
-    capsule.classList.remove("lyric-collapsed", "agent-expanded", "music-expanded", "email-expanded");
-    return;
-  }
-
-  // 收起态
-  capsule.classList.remove("agent-expanded", "music-expanded", "email-expanded");
-
-  if (currentView === "lyric" && isMusicPlaying) {
-    capsule.classList.add("lyric-collapsed");
-  } else {
-    capsule.classList.remove("lyric-collapsed");
+  capsule.classList.value = "";
+  const cls = cll[cl.indexOf(currentView)];
+  if (cls) {
+    capsule.classList.add(cls);
   }
 }
 
@@ -228,22 +207,19 @@ export function updateCapsuleSize() {
 // ---------------------------------------------------------------------------
 
 export function setView(mode: ViewMode, animated = true) {
-  const previous = currentView;
+  const previous = currentView;//快照
   setCurrentView(mode);
   const backendViewSynced = syncCurrentView(mode);
-  const enteringEmail = mode === "email" && previous !== "email";
-  const leavingEmail = previous === "email" && mode !== "email";
-
   // 如果从 agent 展开态切走，收起并恢复窗口大小
-  if (!enteringEmail && previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded")) {
+  if (previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded")) {
     capsule.classList.remove("agent-expanded");
     window.setTimeout(() => {
-      void invoke("set_agent_expanded", { expanded: false });
+      void invoke("set_expanded", { expanded: false });
     }, 380);
   }
 
   // 如果从 lyric 展开态切走，收起
-  if (!enteringEmail && previous === "lyric" && mode !== "lyric" && capsule.classList.contains("music-expanded")) {
+  if (previous === "lyric" && mode !== "lyric" && capsule.classList.contains("music-expanded")) {
     setSkipResizeSync(true);
     setIsExpandAnimating(false);
     capsule.classList.remove("music-expanded");
@@ -258,17 +234,12 @@ export function setView(mode: ViewMode, animated = true) {
     capsule.style.height = "";
     if (capsule.classList.contains("sadb-expanded")) {
       capsule.classList.remove("sadb-expanded");
-      if (!enteringEmail) {
-        void invoke("set_sadb_expanded", { expanded: false });
-        window.setTimeout(() => {
-          void invoke("sadb_set_idle", { idle: false });
-        }, 200);
-      }
+      void invoke("set_sadb_expanded", { expanded: false });
     }
     if (capsule.classList.contains("sadb-idle")) {
       capsule.classList.remove("sadb-idle");
       // 后端动画回默认尺寸并 snap 回顶部
-      if (!enteringEmail) window.setTimeout(() => {
+      window.setTimeout(() => {
         void invoke("sadb_set_idle", { idle: false });
       }, 200);
     }
@@ -279,24 +250,13 @@ export function setView(mode: ViewMode, animated = true) {
     capsule.classList.remove("search-active", "search-expanded");
   }
 
-  if (leavingEmail) {
+  if (previous === "email" && mode !== "email") {
     setSkipResizeSync(true);
     capsule.classList.remove("email-expanded");
     void backendViewSynced.then(() => {
       void invoke("sync_window_home_size", { width: 420, height: 84 });
     });
     window.setTimeout(() => { setSkipResizeSync(false); }, 360);
-  }
-
-  if (enteringEmail) {
-    capsule.classList.remove("expanded", "lyric-collapsed", "agent-expanded", "music-expanded", "search-active", "search-expanded", "sadb-idle", "sadb-expanded");
-    applyEmailViewSize();
-    capsule.classList.add("email-expanded");
-    void showEmbeddedEmailView();
-    void backendViewSynced.then(() => {
-      const size = getEmailWindowSize();
-      void invoke("sync_window_size", { width: size.width, height: size.height, reposition: false });
-    });
   }
 
   // 切入 sadb 视图：恢复 idle / expanded 状态和窗口位置

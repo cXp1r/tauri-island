@@ -166,7 +166,8 @@ export function setTokenAnimationId(v: number | null) { tokenAnimationId = v; }
 //邮件相关
 export let emailConfigure = false;
 export function setEmailConfigure(v: boolean) { emailConfigure = v; }
-
+export let emailClickTimer: number | null = null; // 音乐单击延时
+export function setEmailClickTimer(v: number | null) { emailClickTimer = v; }
 
 // --- 拖拽状态 ---
 

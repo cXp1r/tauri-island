@@ -13,11 +13,13 @@ import {
   isExpandAnimating, setIsExpandAnimating,
   setSkipResizeSync,
   currentSongTitle, currentArtistName, currentThumbnailUrl,
+  emailClickTimer,
+  setEmailClickTimer,
 } from "../state";
 import { switchToNextView } from "./view-switcher";
 import { fetchAndUpdateVolume } from "./music-controls";
 import { showContextMenu } from "./minimize-drag";
-import { logd } from "../logger";
+import { logd, logi } from "../logger";
 
 export function initCapsuleInteraction() {
   capsule.addEventListener("click", (e: MouseEvent) => {
@@ -157,6 +159,28 @@ export function initCapsuleInteraction() {
       }, 250));
       return;
     }
+    // email 视图
+    if (currentView === "email") {
+      if (emailClickTimer) {
+        clearTimeout(emailClickTimer);
+        setEmailClickTimer(null);
+        return;
+      }
+      setEmailClickTimer(window.setTimeout(() => {
+        if (capsule.classList.contains("email-expanded")){
+          capsule.classList.remove("email-expanded");
+          void invoke('set_expanded', { expanded: false });
+          return;
+        }
+        const rootStyles = getComputedStyle(document.documentElement);
+
+        const emailW = parseFloat(rootStyles.getPropertyValue("--email-view-w").trim().replace("px", ".0"));
+        const emailH = parseFloat(rootStyles.getPropertyValue("--email-view-h").trim().replace("px", ".0"));
+        logi("Interaction", emailW, emailH);
+        void invoke('set_expanded', { expanded: true, width: emailW, height: emailH });
+        capsule.classList.add("email-expanded");
+      }, 250));
+    }
   });
   capsule.addEventListener("dblclick", (e: MouseEvent) => {
     logd("Capsule",`double click on view '${currentView}'`);
@@ -178,6 +202,11 @@ export function initCapsuleInteraction() {
     if (sadbClickTimer) {
       clearTimeout(sadbClickTimer);
       setSadbClickTimer(null);
+    }
+
+    if (emailClickTimer) {
+      clearTimeout(emailClickTimer);
+      setEmailClickTimer(null);
     }
     e.stopPropagation();
     switchToNextView();
