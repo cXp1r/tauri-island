@@ -21,8 +21,6 @@ import {
   setSkipResizeSync,
 } from "../state";
 import { onSadbViewEntered } from "./sadb";
-import { applyEmailViewSize, getEmailWindowSize } from "./email-resize";
-import { showEmbeddedEmailView } from "./email-view";
 
 // ---------------------------------------------------------------------------
 // 可用视图列表（search 不参与循环切换和底部 dots）

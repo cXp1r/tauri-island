@@ -87,6 +87,15 @@ export function initResizeObserver() {
   const htmlObserver = new ResizeObserver(() => syncHtmlHeight());
   htmlObserver.observe(document.documentElement);
 
+  const el = document.getElementById("island-capsule");
+  const bodyObserver = new ResizeObserver(() => {
+    void invoke('set_capsule_rect',{ height: el?.offsetHeight,width: el?.offsetWidth})
+  });
+  if (el) {
+    bodyObserver.observe(el);
+  }
+
+
   invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {
 
     setLyricMode(s.lyric_mode || "lyric");

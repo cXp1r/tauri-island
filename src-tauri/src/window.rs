@@ -211,14 +211,6 @@ pub(crate) fn animate_resize(
     }
 }
 
-pub(crate) fn get_agent_window_size(size: &str) -> (f64, f64) {
-    match size {
-        "small" => (380.0, 400.0),
-        "large" => (620.0, 640.0),
-        _ => (520.0, 540.0), // medium (default)
-    }
-}
-
 #[tauri::command]
 pub fn start_drag(state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(true, Ordering::Relaxed);
@@ -570,6 +562,7 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 //统一封装函数之通用展开设置
 #[tauri::command]
 pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
+    state.is_expanded.store(expanded, Ordering::Relaxed);
     let v = state.current_view.lock().unwrap().as_str().to_string();
     logger::debug("Window", &format!("view: {}, expanded: {}, width: {}, height: {}", v, expanded, width, height));
     match v.as_str() {

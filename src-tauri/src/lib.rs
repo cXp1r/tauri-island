@@ -35,11 +35,17 @@ pub(crate) const TOP_MARGIN: f64 = 0.0;
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ── 胶囊尺寸（与 base.css :root 变量对应） ──
+#[allow(unused)]
 pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0; // CSS --collapsed-w
+#[allow(unused)]
 pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;  // CSS --collapsed-h
+#[allow(unused)]
 pub(crate) const CAPSULE_LYRIC_W: f64 = 340.0;     // CSS --lyric-collapsed-w
+#[allow(unused)]
 pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;  // CSS --expanded-w
+#[allow(unused)]
 pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
+#[allow(unused)]
 pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
 
 pub(crate) const WIN_H_DEFAULT: f64 = 84.0;        // CAPSULE_EXPANDED_H + padding
@@ -49,6 +55,10 @@ pub(crate) const MINIMIZED_W: f64 = 70.0;
 pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
+
+static DH: AtomicU64 = AtomicU64::new(0);
+static DW: AtomicU64 = AtomicU64::new(0);
+
 
 /// 全局复用的 HTTP client，天气处调用
 pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
@@ -74,6 +84,12 @@ struct LocationInfo {
     city: Option<String>,
 }
 
+#[tauri::command]
+fn set_capsule_rect(width: u64, height: u64) {
+    DW.store(width, Ordering::Relaxed);
+    DH.store(height, Ordering::Relaxed);
+    logger::debug("LIB",&format!("recieve size from webview, width: {}, height: {}", width, height));
+}
 
 
 #[tauri::command]
@@ -216,6 +232,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            set_capsule_rect,
             window::start_drag, window::end_drag, window::drag_move, window::snap_window_home, window::sync_window_home_size,
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
@@ -505,80 +522,46 @@ pub fn run() {
 
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
-            let noti_m = is_notifying.clone();
-            let exp_m = is_expanded.clone();
             let drag_m = is_dragging.clone();
-            let interact_m = is_interacting.clone();
-            let lyric_mode_m = lyric_mode.clone();
-            let current_view_m = current_view.clone();
-            let agent_expanded_m = agent_expanded.clone();
-            let sadb_expanded_m = sadb_expanded.clone();
-            let sadb_idle_m = sadb_idle.clone();
-            let music_expanded_m = music_expanded.clone();
-            let agent_window_size_m = agent_window_size.clone();
-            let expand_anim_id_m = expand_anim_id.clone();
-            let is_minimized_m = is_minimized.clone();
+            let is_expanded_m = is_expanded.clone();
             let hwnd_raw = hwnd.0 as usize;
+            let expand_anim_id_m = expand_anim_id.clone();
             let is_music = Arc::new(AtomicBool::new(false));
-            let is_music_m = is_music.clone();
+            let current_view_m = current_view.clone();
 
             thread::spawn(move || {
+                let mut was_on_capsule = false;//穿透快照
+                let mut was_in_zone = false;//顶部展开快照
                 let hwnd = HWND(hwnd_raw as *mut _);
-                let center_x = (screen_w * scale / 2.0) as i32;
-                let zone_half = (75.0 * scale) as i32;
-                let zone_top = (12.0 * scale) as i32;
-                let zone_bottom = (90.0 * scale) as i32;
-                let mut was_on_capsule = false;
                 //顶部展开
                 loop {
                     if let Some((mx, my)) = window::get_cursor_pos() {
-                        // 根据当前状态确定胶囊宽度
-                        let expanded = exp_m.load(Ordering::Relaxed);
-                        let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
-                        let sadb_exp = sadb_expanded_m.load(Ordering::Relaxed);
-                        let music_exp = music_expanded_m.load(Ordering::Relaxed);
-                        let view = current_view_m.lock().unwrap().clone();
-                        let lyric_mode = lyric_mode_m.lock().unwrap().clone();
+                        let fmx = mx as f64;
+                        let fmy = my as f64;
+                        
+
                         // 直接用实际窗口矩形判断鼠标是否在胶囊上
-                        let rect = window::get_window_rect(hwnd);
-                        let on_capsule = if let Some(rect) = rect {
-                            let win_w = (rect.right - rect.left) as f64 / scale;
-                            let win_h = (rect.bottom - rect.top) as f64 / scale;
+                        let Some(rect) = window::get_window_rect(hwnd) else { continue };
+                        let win_w = (rect.right - rect.left) as f64 / scale;
+                        //let win_h = (rect.bottom - rect.top) as f64 / scale;
+                        let win_x = rect.left as f64;
+                        let win_y = rect.top as f64;
+                        let dw = DW.load(Ordering::Relaxed) as f64;
+                        let dh = DH.load(Ordering::Relaxed) as f64;
+                        //logger::debug("LIB", &format!("{} {} {} {}",win_x + (win_w - dw) / 2.0 , win_x + (win_w + dw) / 2.0, win_y , win_y + dh));
+                        // 大于左起的x 
+                        let on_capsule = (fmx >= win_x + (win_w - dw) / 2.0) && (fmx <= win_x + (win_w + dw) / 2.0) && (fmy >= win_y + 10.0) && (fmy <= win_y + 10.0 + dh);
+                        let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
-                            let (cw, ch) = if is_minimized_m.load(Ordering::Relaxed) {
-                                (MINIMIZED_W, MINIMIZED_H)
-                            } else if music_exp && view == "lyric" {
-                                // 音乐大面板：占满窗口
-                                (win_w, win_h)
-                            } else if agent_exp && view == "agent" {
-                                let size_setting = agent_window_size_m.lock().unwrap().clone();
-                                let (aw, ah) = window::get_agent_window_size(&size_setting);
-                                (aw, ah)
-                            } else if sadb_exp && view == "sadb" {
-                                (win_w, win_h)
-                            } else if sadb_idle_m.load(Ordering::Relaxed) && view == "sadb" {
-                                // 待机面板：380×420 居中于 420px 窗口内
-                                (380.0, 420.0)
-                            } else if view == "search" || view == "email" {
-                                // 搜索/邮箱视图：宽度=窗口宽度，高度=实际窗口高度
-                                (win_w, win_h)
-                            } else if expanded {
-                                (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
-                            } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
-                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H)
-                            } else {
-                                // time 等收起态
-                                (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H)
-                            };
-
-                            let win_x = rect.left as f64;
-                            let win_y = rect.top as f64;
-                            let capsule_x = win_x + (win_w * scale - cw * scale) / 2.0;
-                            let capsule_y = win_y + CAPSULE_TOP_PAD * scale;
-                            let fmx = mx as f64;
-                            let fmy = my as f64;
-                            fmx >= capsule_x && fmx <= capsule_x + cw * scale && fmy >= capsule_y && fmy <= capsule_y + ch * scale
-                        } else { false };
+                        if hit_on_capsule && !was_on_capsule {
+                            logger::debug("HitTest", "mouse ON capsule -> click-through OFF");
+                            window::set_click_through(hwnd, false);
+                            was_on_capsule = true;
+                        } else if !hit_on_capsule && was_on_capsule {
+                            logger::debug("HitTest", "mouse OFF capsule -> click-through ON");
+                            window::set_click_through(hwnd, true);
+                            was_on_capsule = false;
+                        }
 
                         let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
@@ -592,11 +575,12 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        let sadb_idle = sadb_idle_m.load(Ordering::Relaxed);
-                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" && view != "email" {
-                            let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
-                            if in_zone && !exp_m.load(Ordering::Relaxed) {
-                                exp_m.store(true, Ordering::Relaxed);
+                        let v = current_view_m.lock().unwrap().as_str().to_string();
+                        if v == "time" || v == "lyric" && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
+                            let in_zone = (fmx >= win_x + (win_w - dw) / 2.0) && (fmx <= win_x + (win_w + dw) / 2.0) && (fmy >= win_y) && (fmy <= win_y + 10.0);
+                            if in_zone && !was_in_zone {
+                                was_in_zone = true;
+                                is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(60.0);
@@ -605,8 +589,9 @@ pub fn run() {
                                 thread::spawn(move || {
                                     window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
                                 });
-                            } else if my > zone_bottom && exp_m.load(Ordering::Relaxed) {
-                                exp_m.store(false, Ordering::Relaxed);
+                            }else if was_in_zone && !in_zone {
+                                was_in_zone = false;
+                                is_expanded_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(WIN_H_DEFAULT);
