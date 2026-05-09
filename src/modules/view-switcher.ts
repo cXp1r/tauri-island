@@ -21,7 +21,7 @@ import {
   setSkipResizeSync,
 } from "../state";
 import { onSadbViewEntered } from "./sadb";
-
+import { logi, logw } from "../logger";
 // ---------------------------------------------------------------------------
 // 可用视图列表（search 不参与循环切换和底部 dots）
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ function playSwitchPulse() {
 
 export function switchToNextView() {
   const views = getAvailableViews();
-  console.log("[ViewSwitcher] switchToNextView views:", views, "isMusicPlaying:", isMusicPlaying, "lyricMode:", lyricMode, "aiEnabled:", aiEnabled);
+  logi("ViewSwitcher", "switchToNextView views:", views, "isMusicPlaying:", isMusicPlaying, "lyricMode:", lyricMode, "aiEnabled:", aiEnabled);
   if (views.length < 2) return;
 
   const currentIndex = views.indexOf(currentView);
@@ -207,7 +207,6 @@ export function updateCapsuleSize() {
 export function setView(mode: ViewMode, animated = true) {
   const previous = currentView;//快照
   setCurrentView(mode);
-  const backendViewSynced = syncCurrentView(mode);
   // 如果从 agent 展开态切走，收起并恢复窗口大小
   if (previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded")) {
     capsule.classList.remove("agent-expanded");
@@ -221,7 +220,7 @@ export function setView(mode: ViewMode, animated = true) {
     setSkipResizeSync(true);
     setIsExpandAnimating(false);
     capsule.classList.remove("music-expanded");
-    void invoke("set_expanded", { expanded: false, width: 380, height: 430 });
+    void invoke("set_expanded", { expanded: false });
     window.setTimeout(() => { setSkipResizeSync(false); }, 500);
   }
 
@@ -248,25 +247,20 @@ export function setView(mode: ViewMode, animated = true) {
     capsule.classList.remove("search-active", "search-expanded");
   }
 
-  if (previous === "email" && mode !== "email") {
+  if (previous === "email" && mode !== "email" && capsule.classList.contains("email-expanded")) {
     setSkipResizeSync(true);
     capsule.classList.remove("email-expanded");
-    void backendViewSynced.then(() => {
-      void invoke("sync_window_home_size", { width: 420, height: 84 });
-    });
+    void invoke("set_expanded", { expanded: false });
     window.setTimeout(() => { setSkipResizeSync(false); }, 360);
   }
 
-  // 切入 sadb 视图：恢复 idle / expanded 状态和窗口位置
-  if (mode === "sadb" && previous !== "sadb") {
-    window.setTimeout(() => onSadbViewEntered(), 0);
-  }
+  
   if (animated) {
     animateViewSwitch(previous, mode);
   } else {
     showOnlyView(mode);
   }
-
+  syncCurrentView(mode);
   updateCapsuleSize();
   updateSwitcherUI();
 }
@@ -277,7 +271,7 @@ export function setView(mode: ViewMode, animated = true) {
 
 export function syncCurrentView(mode: ViewMode) {
   return invoke("set_current_view", { view: mode }).catch((e) => {
-    console.warn("sync current view failed:", e);
+    logw("sync current view failed:", e);
   });
 }
 

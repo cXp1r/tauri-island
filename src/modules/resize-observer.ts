@@ -36,16 +36,6 @@ let resizeLogFrom = 0;
 let resizeLogExtreme = 0;
 let resizeLogDirection: "up" | "down" | null = null;
 
-function syncHtmlHeight() {
-  if (skipResizeSync) return;
-  if (currentView === "email") return;
-  const h = document.documentElement.offsetHeight;
-  if (h <= 0 || h === lastSyncedHtmlH) return;
-  trackResizeLog(lastSyncedHtmlH, h);
-  lastSyncedHtmlH = h;
-  void invoke("sync_window_height", { height: h });
-}
-
 function trackResizeLog(from: number, to: number) {
   const direction = to > from ? "up" : "down";
   if (resizeLogDirection && resizeLogDirection !== direction) {
@@ -82,11 +72,6 @@ function flushResizeLog() {
 
 
 export function initResizeObserver() {
-
-  // html 高度变化 → 实时同步窗口高度（不改宽度，避免偏左回弹）
-  const htmlObserver = new ResizeObserver(() => syncHtmlHeight());
-  htmlObserver.observe(document.documentElement);
-
   const el = document.getElementById("island-capsule");
   let timer: number | null = null;
   const bodyObserver = new ResizeObserver(() => {

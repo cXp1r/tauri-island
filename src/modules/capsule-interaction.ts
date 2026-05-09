@@ -101,11 +101,10 @@ export function initCapsuleInteraction() {
         setAgentClickTimer(null);
         if (isExpandAnimating) return;
         setIsExpandAnimating(true);
-        const willExpand = !capsule.classList.contains("agent-expanded");
-        if (willExpand) {
+        if (!capsule.classList.contains("agent-expanded")) {
           setSkipResizeSync(true);
           capsule.classList.add("agent-expanded");
-          void invoke("set_agent_expanded", { expanded: true });
+          void invoke("set_expanded", { expanded: true, width: 620, height: 640 });
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
         } else {
           setSkipResizeSync(true);
@@ -113,12 +112,12 @@ export function initCapsuleInteraction() {
           if (agentArea) agentArea.classList.add("collapsing");
           window.setTimeout(() => {
             capsule.classList.remove("agent-expanded");
-            void invoke("set_agent_expanded", { expanded: false });
+            void invoke("set_expanded", { expanded: false, width: 620, height: 640 });
             window.setTimeout(() => {
               if (agentArea) agentArea.classList.remove("collapsing");
               setSkipResizeSync(false);
               setIsExpandAnimating(false);
-            }, 500);
+            }, 50);
           }, 100);
         }
       }, 250));
@@ -169,7 +168,7 @@ export function initCapsuleInteraction() {
       setEmailClickTimer(window.setTimeout(() => {
         if (capsule.classList.contains("email-expanded")){
           capsule.classList.remove("email-expanded");
-          void invoke('set_expanded', { expanded: false });
+          void invoke('set_expanded', { expanded: false, width: 0, height: 0 });
           return;
         }
         const rootStyles = getComputedStyle(document.documentElement);
@@ -177,7 +176,7 @@ export function initCapsuleInteraction() {
         const emailW = parseFloat(rootStyles.getPropertyValue("--email-view-w").trim().replace("px", ".0"));
         const emailH = parseFloat(rootStyles.getPropertyValue("--email-view-h").trim().replace("px", ".0"));
         logi("Interaction", emailW, emailH);
-        void invoke('set_expanded', { expanded: true, width: emailW, height: emailH });
+        void invoke('set_expanded', { expanded: true, width: emailW, height: emailH + 10});
         capsule.classList.add("email-expanded");
       }, 250));
     }
