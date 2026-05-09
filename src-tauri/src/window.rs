@@ -6,6 +6,8 @@ use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
+
+
 const EMAIL_VIEW_W: f64 = 620.0;
 const TAG: &str = "Window";
 
@@ -29,6 +31,43 @@ pub(crate) fn get_foreground_process_name() -> Option<String> {
         path.rsplit('\\').next().map(|s| s.to_lowercase())
     }
 }
+
+/// 强制窗口成为前台窗口，绕过 Windows 前台锁（AttachThreadInput 技巧）
+pub(crate) fn force_foreground(hwnd: HWND) {
+    use windows::Win32::System::Threading::{GetCurrentThreadId, AttachThreadInput};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, BringWindowToTop,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            let _ = SetForegroundWindow(hwnd);
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetFocus(Some(hwnd));
+            return;
+        }
+        let fg_thread = GetWindowThreadProcessId(fg, None);
+        let cur_thread = GetCurrentThreadId();
+        let target_thread = GetWindowThreadProcessId(hwnd, None);
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, true);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, true);
+        }
+        let _ = SetForegroundWindow(hwnd);
+        let _ = BringWindowToTop(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        if fg_thread != 0 && fg_thread != cur_thread {
+            let _ = AttachThreadInput(fg_thread, cur_thread, false);
+        }
+        if target_thread != 0 && target_thread != cur_thread {
+            let _ = AttachThreadInput(target_thread, cur_thread, false);
+        }
+    }
+}
+
 
 pub(crate) fn is_any_blacklisted_fullscreen(blacklist: &[String]) -> bool {
     use windows::Win32::Foundation::{LPARAM, RECT};
@@ -110,6 +149,15 @@ pub(crate) fn get_window_rect(hwnd: HWND) -> Option<windows::Win32::Foundation::
     }
 }
 
+#[tauri::command]
+pub(crate) fn set_capsule_rect(state: tauri::State<'_, IslandState>, width: u64, height: u64) {
+    state.capsule_w.store(width, Ordering::Relaxed);
+    state.capsule_h.store(height, Ordering::Relaxed);
+    //打日志吃io性能,不打了.有报错自己把这里去掉注释看
+    //logger::debug(TAG,&format!("recieve size from webview, width: {}, height: {}", width, height));
+}
+
+
 
 pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     unsafe {
@@ -137,6 +185,7 @@ pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64,
     }
 }
 
+//专门给垂直展开用,避免左右展开弹跳位移,
 pub(crate) fn animate_window_height(
     hwnd: HWND,
     scale: f64,
@@ -217,10 +266,23 @@ pub fn start_drag(state: tauri::State<'_, IslandState>) {
 }
 
 #[tauri::command]
+pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
+    if let Ok(pos) = window.outer_position() {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let logical_x = pos.x as f64 / scale;
+        let logical_y = pos.y as f64 / scale;
+        let _ = window.set_position(tauri::LogicalPosition::new(
+            logical_x + dx as f64,
+            logical_y + dy as f64,
+        ));
+    }
+}
+
+#[tauri::command]
 pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(false, Ordering::Relaxed);
 
-    // 镜像流推送中允许拖动，不自动吸附
+    // 一下状态不自动吸附
     if state.agent_expanded.load(Ordering::Relaxed)
         || state.music_expanded.load(Ordering::Relaxed)
         || state.sadb_mirroring.load(Ordering::Relaxed)
@@ -283,38 +345,6 @@ pub fn sync_window_home_size(window: tauri::WebviewWindow, state: tauri::State<'
     }
 }
 
-#[tauri::command]
-pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
-    if let Ok(pos) = window.outer_position() {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let logical_x = pos.x as f64 / scale;
-        let logical_y = pos.y as f64 / scale;
-        let _ = window.set_position(tauri::LogicalPosition::new(
-            logical_x + dx as f64,
-            logical_y + dy as f64,
-        ));
-    }
-}
-
-#[tauri::command]
-pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64) {
-    // 展开/收起动画进行中，跳过 ResizeObserver 驱动的同步
-    if state.expand_anim_id.load(Ordering::Relaxed) != 0 {
-        //logger::debug("Window", "sync_window_height skipped (anim in progress)");
-        return;
-    }
-    if *state.current_view.lock().unwrap() == "email" {
-        return;
-    }
-    let max_h = if state.sadb_mirroring.load(Ordering::Relaxed) { 1200.0 } else { 700.0 };
-    let new_h = height.max(60.0).min(max_h) + 2.0;//防抖
-    if let Ok(size) = window.inner_size() {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let cur_w = size.width as f64 / scale;
-        logger::debug("Window", &format!("sync_window_height: height={height:.0} → new_h={new_h:.0}, cur_w={cur_w:.0}"));
-        let _ = window.set_size(tauri::LogicalSize::new(cur_w, new_h));
-    }
-}
 
 #[tauri::command]
 pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, reposition: Option<bool>) {
@@ -338,41 +368,6 @@ pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, Is
     let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
 }
 
-/// 强制窗口成为前台窗口，绕过 Windows 前台锁（AttachThreadInput 技巧）
-pub(crate) fn force_foreground(hwnd: HWND) {
-    use windows::Win32::System::Threading::{GetCurrentThreadId, AttachThreadInput};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, BringWindowToTop,
-    };
-    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
-    unsafe {
-        let fg = GetForegroundWindow();
-        if fg.0.is_null() {
-            let _ = SetForegroundWindow(hwnd);
-            let _ = BringWindowToTop(hwnd);
-            let _ = SetFocus(Some(hwnd));
-            return;
-        }
-        let fg_thread = GetWindowThreadProcessId(fg, None);
-        let cur_thread = GetCurrentThreadId();
-        let target_thread = GetWindowThreadProcessId(hwnd, None);
-        if fg_thread != 0 && fg_thread != cur_thread {
-            let _ = AttachThreadInput(fg_thread, cur_thread, true);
-        }
-        if target_thread != 0 && target_thread != cur_thread {
-            let _ = AttachThreadInput(target_thread, cur_thread, true);
-        }
-        let _ = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
-        let _ = SetFocus(Some(hwnd));
-        if fg_thread != 0 && fg_thread != cur_thread {
-            let _ = AttachThreadInput(fg_thread, cur_thread, false);
-        }
-        if target_thread != 0 && target_thread != cur_thread {
-            let _ = AttachThreadInput(target_thread, cur_thread, false);
-        }
-    }
-}
 
 
 #[tauri::command]

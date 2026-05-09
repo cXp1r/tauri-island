@@ -56,8 +56,7 @@ pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
 
-static DH: AtomicU64 = AtomicU64::new(0);
-static DW: AtomicU64 = AtomicU64::new(0);
+
 
 
 /// 全局复用的 HTTP client，天气处调用
@@ -84,12 +83,7 @@ struct LocationInfo {
     city: Option<String>,
 }
 
-#[tauri::command]
-fn set_capsule_rect(width: u64, height: u64) {
-    DW.store(width, Ordering::Relaxed);
-    DH.store(height, Ordering::Relaxed);
-    logger::debug("LIB",&format!("recieve size from webview, width: {}, height: {}", width, height));
-}
+
 
 
 #[tauri::command]
@@ -232,12 +226,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            set_capsule_rect,
             window::start_drag, window::end_drag, window::drag_move, window::snap_window_home, window::sync_window_home_size,
             link_handler::open_url, link_handler::open_url_with_whitelist,
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
-            window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
-            window::set_sadb_expanded, window::open_email_window,
+            window::sync_window_size, window::set_minimized, window::show_context_menu,
+            window::set_capsule_rect, window::set_sadb_expanded, window::open_email_window,
             window::sadb_set_idle, window::set_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
@@ -275,11 +268,14 @@ pub fn run() {
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
-
+            
             let scale = window.scale_factor().unwrap_or(1.0);
             let screen_w = if let Ok(Some(monitor)) = window.current_monitor() {
                 monitor.size().width as f64 / monitor.scale_factor()
             } else { 1920.0 };
+
+            let capsule_w: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+            let capsule_h: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
             let home_x = (screen_w - WIN_W) / 2.0;
             let _ = window.set_position(tauri::LogicalPosition::new(home_x, TOP_MARGIN));
@@ -360,13 +356,15 @@ pub fn run() {
             let email_shortcut = Arc::new(Mutex::new(settings.email_shortcut.clone()));
             let cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>> = Arc::new(Mutex::new(email::load_email_metas()));
             let cc_routes: Arc<Mutex<Vec<cc::CcRoute>>> = Arc::new(Mutex::new(settings.cc.clone()));
-
+            
             media::update_smtc_whitelist(
                 smtc_whitelist_enabled.load(Ordering::Relaxed),
                 smtc_app_whitelist.lock().unwrap().clone(),
             );
 
             app.manage(IslandState {
+                capsule_w: capsule_w.clone(),
+                capsule_h: capsule_h.clone(),
                 sadb_session: tokio::sync::Mutex::new(None),
                 sadb_ip: Arc::new(Mutex::new(settings.sadb_ip.clone())),
                 sadb_port: Arc::new(Mutex::new(settings.sadb_port)),
@@ -528,7 +526,8 @@ pub fn run() {
             let expand_anim_id_m = expand_anim_id.clone();
             let is_music = Arc::new(AtomicBool::new(false));
             let current_view_m = current_view.clone();
-
+            let capsule_h_m = capsule_h.clone();
+            let capsule_w_m = capsule_w.clone();
             thread::spawn(move || {
                 let mut was_on_capsule = false;//穿透快照
                 let mut was_in_zone = false;//顶部展开快照
@@ -536,21 +535,19 @@ pub fn run() {
                 //顶部展开
                 loop {
                     if let Some((mx, my)) = window::get_cursor_pos() {
-                        let fmx = mx as f64;
-                        let fmy = my as f64;
-                        
-
                         // 直接用实际窗口矩形判断鼠标是否在胶囊上
                         let Some(rect) = window::get_window_rect(hwnd) else { continue };
                         let win_w = (rect.right - rect.left) as f64 / scale;
                         //let win_h = (rect.bottom - rect.top) as f64 / scale;
                         let win_x = rect.left as f64;
                         let win_y = rect.top as f64;
-                        let dw = DW.load(Ordering::Relaxed) as f64;
-                        let dh = DH.load(Ordering::Relaxed) as f64;
+                        let fmx = mx as f64 - win_x;//相对定位
+                        let fmy = my as f64 - win_y;//相对定位
+                        let dw = capsule_w_m.load(Ordering::Relaxed) as f64;
+                        let dh = capsule_h_m.load(Ordering::Relaxed) as f64;
                         //logger::debug("LIB", &format!("{} {} {} {}",win_x + (win_w - dw) / 2.0 , win_x + (win_w + dw) / 2.0, win_y , win_y + dh));
                         // 大于左起的x 
-                        let on_capsule = (fmx >= win_x + (win_w - dw) / 2.0) && (fmx <= win_x + (win_w + dw) / 2.0) && (fmy >= win_y + 10.0) && (fmy <= win_y + 10.0 + dh);
+                        let on_capsule = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 10.0) && (fmy <= 10.0 + dh);
                         let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
                         if hit_on_capsule && !was_on_capsule {
@@ -576,8 +573,8 @@ pub fn run() {
                         }
 
                         let v = current_view_m.lock().unwrap().as_str().to_string();
-                        if v == "time" || v == "lyric" && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
-                            let in_zone = (fmx >= win_x + (win_w - dw) / 2.0) && (fmx <= win_x + (win_w + dw) / 2.0) && (fmy >= win_y) && (fmy <= win_y + 10.0);
+                        if (v == "time" || v == "lyric") && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
+                            let in_zone = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 was_in_zone = true;
                                 is_expanded_m.store(true, Ordering::Relaxed);
@@ -1415,6 +1412,8 @@ fn create_tray_icon() -> Vec<u8> {
 }
 
 pub struct IslandState {
+    pub capsule_w: Arc<AtomicU64>,
+    pub capsule_h: Arc<AtomicU64>,
     pub is_notifying: Arc<AtomicBool>,
     pub is_expanded: Arc<AtomicBool>,
     pub is_dragging: Arc<AtomicBool>,
