@@ -172,6 +172,7 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
 }
 
 pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64) {
+    logger::debug("Window", &format!("snap_back"));
     let start = Instant::now();
     loop {
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -288,6 +289,7 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         || state.sadb_mirroring.load(Ordering::Relaxed)
         || state.email_expanded.load(Ordering::Relaxed)
     {
+        logger::debug(TAG, "reach expanded");
         return;
     }
 
@@ -309,6 +311,7 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
 
 #[tauri::command]
 pub fn snap_window_home(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
+    logger::debug("Window", &format!("snap_window_home"));
     let scale = window.scale_factor().unwrap_or(1.0);
     let cur_w = window.inner_size()
         .map(|s| s.width as f64 / scale)
@@ -325,6 +328,7 @@ pub fn snap_window_home(window: tauri::WebviewWindow, state: tauri::State<'_, Is
 
 #[tauri::command]
 pub fn sync_window_home_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64) {
+    logger::debug("Window", &format!("sync_window_home_size: w={width:.0} h={height:.0}"));
     let scale = window.scale_factor().unwrap_or(1.0);
     let new_w = width.max(200.0).min(state.screen_w.max(700.0));
     let new_h = height.max(60.0).min(1100.0);
@@ -547,16 +551,30 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
+    let v = state.current_view.lock().unwrap().as_str().to_string();
+    logger::debug(TAG, &format!("{} -> {}", v, &view));
     let normalized = match view.as_str() {
         "time" | "lyric" | "agent" | "search" | "sadb" | "email" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
+    //清理旧展开态
+    match v.as_str() {
+        "lyric" => state.music_expanded.store(false, Ordering::Relaxed),
+        "agent" => state.agent_expanded.store(false, Ordering::Relaxed),
+        "sadb" => state.sadb_expanded.store(false, Ordering::Relaxed),
+        "email" => state.email_expanded.store(false, Ordering::Relaxed),
+        _ => return,
+    }
+    
 }
 
 //统一封装函数之通用展开设置
 #[tauri::command]
-pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: f64, height: f64) {
+pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: u64, height: u64) {
+    //一展开必须带一次收回否则会出现状态争夺
+    let width: f64 = (width as f64 + 20.0).max(WIN_W);
+    let height: f64 = (height as f64 + 20.0).max(WIN_H_DEFAULT);
     state.is_expanded.store(expanded, Ordering::Relaxed);
     let v = state.current_view.lock().unwrap().as_str().to_string();
     logger::debug("Window", &format!("view: {}, expanded: {}, width: {}, height: {}", v, expanded, width, height));
@@ -571,25 +589,59 @@ pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Island
     let scale = window.scale_factor().unwrap_or(1.0);
 
     if expanded {
-        let target_w = width;
-        let target_h = height;
-        let target_x = (screen_w - target_w) / 2.0;
+        let hwnd_raw = window.hwnd().unwrap().0 as usize;
+        
+        
 
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let target_y = from_y;
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
-        }
+        thread::spawn(move || {
+            let hwnd = HWND(hwnd_raw as *mut _);
+            let Some(rect) = get_window_rect(hwnd) else { return; };
+            let win_w = (rect.right - rect.left) as f64 / scale;
+            //let win_h = (rect.bottom - rect.top) as f64 / scale;
+            let win_x = rect.left as f64;
+            let win_y = rect.top as f64;
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    ((win_x + (win_w - width) / 2.0) * scale).round() as i32,
+                    (win_y * scale).round() as i32,
+                    (width * scale).round() as i32,
+                    (height * scale).round() as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        });
+        return;
     } else {
+        let hwnd_raw = window.hwnd().unwrap().0 as usize;
+        thread::spawn(move || {
+            let hwnd = HWND(hwnd_raw as *mut _);
+            let Some(rect) = get_window_rect(hwnd) else { return; };
+            let win_w = (rect.right - rect.left) as f64 / scale;
+            //let win_h = (rect.bottom - rect.top) as f64 / scale;
+            let win_x = rect.left as f64;
+            let win_y = rect.top as f64;
+            thread::sleep(Duration::from_millis(600));
+
+            let new_x = ((win_x + (win_w - WIN_W) / 2.0) * scale).round() as i32;
+            let new_y = (win_y * scale).round() as i32;
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    new_x,
+                    new_y,
+                    (WIN_W * scale).round() as i32,
+                    (WIN_H_DEFAULT * scale).round() as i32 + 10,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            thread::sleep(Duration::from_millis(50));
+            snap_back(&window, new_x as f64, new_y as f64, (screen_w - WIN_W) / 2.0, 0.0);
+        });
+        return;
+
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
@@ -604,6 +656,25 @@ pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Island
 
             let home_x = (screen_w - WIN_W) / 2.0;
             let w = window.clone();
+            let hwnd_raw = window.hwnd().unwrap().0 as usize;
+
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(500));
+                let hwnd = HWND(hwnd_raw as *mut _);
+
+                unsafe {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        ((from_x + (from_w - width) / 2.0) * scale).round() as i32,
+                        (from_y * scale).round() as i32,
+                        (width * scale).round() as i32,
+                        (height * scale).round() as i32,
+                        SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
+            });
+            return;
             thread::spawn(move || {
                 animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
                 snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);

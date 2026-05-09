@@ -30,7 +30,7 @@ use ai::ChatMessage;
 use email::Email;
 use link_handler::LinkHandler;
 
-pub(crate) const WIN_W: f64 = 420.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
+pub(crate) const WIN_W: f64 = 620.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
 pub(crate) const TOP_MARGIN: f64 = 0.0;
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -536,7 +536,10 @@ pub fn run() {
                 loop {
                     if let Some((mx, my)) = window::get_cursor_pos() {
                         // 直接用实际窗口矩形判断鼠标是否在胶囊上
-                        let Some(rect) = window::get_window_rect(hwnd) else { continue };
+                        let Some(rect) = window::get_window_rect(hwnd) else { 
+                            thread::sleep(Duration::from_millis(16)); 
+                            continue 
+                        };
                         let win_w = (rect.right - rect.left) as f64 / scale;
                         //let win_h = (rect.bottom - rect.top) as f64 / scale;
                         let win_x = rect.left as f64;
@@ -576,6 +579,7 @@ pub fn run() {
                         if (v == "time" || v == "lyric") && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
                             let in_zone = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
+                                logger::debug("HitTest", "in_zone");
                                 was_in_zone = true;
                                 is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
@@ -587,6 +591,7 @@ pub fn run() {
                                     window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
                                 });
                             }else if was_in_zone && !in_zone {
+                                logger::debug("HitTest", "in_zone -> not_in_zone");
                                 was_in_zone = false;
                                 is_expanded_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
