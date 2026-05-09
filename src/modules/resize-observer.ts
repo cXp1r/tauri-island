@@ -88,8 +88,14 @@ export function initResizeObserver() {
   htmlObserver.observe(document.documentElement);
 
   const el = document.getElementById("island-capsule");
+  let timer: number | null = null;
   const bodyObserver = new ResizeObserver(() => {
-    void invoke('set_capsule_rect',{ height: el?.offsetHeight,width: el?.offsetWidth})
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+    timer = window.setTimeout(() => {
+      void invoke('set_capsule_rect', { height: el?.offsetHeight, width: el?.offsetWidth });
+    }, 50);
   });
   if (el) {
     bodyObserver.observe(el);
