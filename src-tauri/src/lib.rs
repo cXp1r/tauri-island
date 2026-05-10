@@ -71,7 +71,7 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
             .expect("failed to create http client")
     })
 }
-pub(crate) const SNAP_FRAME_MS: u64 = 10;
+pub(crate) const SNAP_FRAME_MS: u64 = 5;
 const PRIVACY_POLL_MS: u64 = 1200;
 
 /// 位置信息
@@ -537,32 +537,18 @@ pub fn run() {
                     if let Some((mx, my)) = window::get_cursor_pos() {
                         // 直接用实际窗口矩形判断鼠标是否在胶囊上
                         let Some(rect) = window::get_window_rect(hwnd) else { 
-                            thread::sleep(Duration::from_millis(16)); 
+                            thread::sleep(Duration::from_millis(33)); 
                             continue 
                         };
-                        let win_w = (rect.right - rect.left) as f64 / scale;
-                        //let win_h = (rect.bottom - rect.top) as f64 / scale;
-                        let win_x = rect.left as f64;
-                        let win_y = rect.top as f64;
-                        let fmx = mx as f64 - win_x;//相对定位
-                        let fmy = my as f64 - win_y;//相对定位
+                        let current_scale = win_m.scale_factor().unwrap_or(scale).max(0.1);
+                        let win_w = (rect.right - rect.left) as f64 / current_scale;
+                        let fmx = (mx as f64 - rect.left as f64) / current_scale;
+                        let fmy = (my as f64 - rect.top as f64) / current_scale;
                         let dw = capsule_w_m.load(Ordering::Relaxed) as f64;
                         let dh = capsule_h_m.load(Ordering::Relaxed) as f64;
                         //logger::debug("LIB", &format!("{} {} {} {}",win_x + (win_w - dw) / 2.0 , win_x + (win_w + dw) / 2.0, win_y , win_y + dh));
                         // 大于左起的x 
                         let on_capsule = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 10.0) && (fmy <= 10.0 + dh);
-                        let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
-
-                        if hit_on_capsule && !was_on_capsule {
-                            logger::debug("HitTest", "mouse ON capsule -> click-through OFF");
-                            window::set_click_through(hwnd, false);
-                            was_on_capsule = true;
-                        } else if !hit_on_capsule && was_on_capsule {
-                            logger::debug("HitTest", "mouse OFF capsule -> click-through ON");
-                            window::set_click_through(hwnd, true);
-                            was_on_capsule = false;
-                        }
-
                         let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
                         if hit_on_capsule && !was_on_capsule {
@@ -584,29 +570,29 @@ pub fn run() {
                                 is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
-                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(60.0);
+                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(60.0);
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
+                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
                                 });
-                            }else if was_in_zone && !in_zone {
+                            }else if was_in_zone && !in_zone && !hit_on_capsule {
                                 logger::debug("HitTest", "in_zone -> not_in_zone");
                                 was_in_zone = false;
                                 is_expanded_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
-                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(WIN_H_DEFAULT);
+                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(WIN_H_DEFAULT);
                                 let collapsed_h = CAPSULE_COLLAPSED_H + 10.0;
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, collapsed_h, WIN_W, 350.0, anim_id, gen);
+                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, collapsed_h, WIN_W, 350.0, anim_id, gen);
                                 });
                             }
                         }
                     }
-                    thread::sleep(Duration::from_millis(16));
+                    thread::sleep(Duration::from_millis(33));
                 }
             });
 

@@ -149,6 +149,7 @@ pub(crate) fn get_window_rect(hwnd: HWND) -> Option<windows::Win32::Foundation::
     }
 }
 
+
 #[tauri::command]
 pub(crate) fn set_capsule_rect(state: tauri::State<'_, IslandState>, width: u64, height: u64) {
     state.capsule_w.store(width, Ordering::Relaxed);
@@ -573,6 +574,7 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 #[tauri::command]
 pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: u64, height: u64) {
     //一展开必须带一次收回否则会出现状态争夺
+    //以下长宽皆为逻辑像素,需要转换成物理像素i32才能交给win32用
     let width: f64 = (width as f64 + 20.0).max(WIN_W);
     let height: f64 = (height as f64 + 20.0).max(WIN_H_DEFAULT);
     state.is_expanded.store(expanded, Ordering::Relaxed);
@@ -585,102 +587,76 @@ pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, Island
         "email" => state.email_expanded.store(expanded, Ordering::Relaxed),
         _ => return,
     }
-    let screen_w = state.screen_w;
     let scale = window.scale_factor().unwrap_or(1.0);
 
     if expanded {
         let hwnd_raw = window.hwnd().unwrap().0 as usize;
-        
-        
-
-        thread::spawn(move || {
-            let hwnd = HWND(hwnd_raw as *mut _);
-            let Some(rect) = get_window_rect(hwnd) else { return; };
-            let win_w = (rect.right - rect.left) as f64 / scale;
-            //let win_h = (rect.bottom - rect.top) as f64 / scale;
-            let win_x = rect.left as f64;
-            let win_y = rect.top as f64;
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    ((win_x + (win_w - width) / 2.0) * scale).round() as i32,
-                    (win_y * scale).round() as i32,
-                    (width * scale).round() as i32,
-                    (height * scale).round() as i32,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
-        });
-        return;
-    } else {
-        let hwnd_raw = window.hwnd().unwrap().0 as usize;
-        thread::spawn(move || {
-            let hwnd = HWND(hwnd_raw as *mut _);
-            let Some(rect) = get_window_rect(hwnd) else { return; };
-            let win_w = (rect.right - rect.left) as f64 / scale;
-            //let win_h = (rect.bottom - rect.top) as f64 / scale;
-            let win_x = rect.left as f64;
-            let win_y = rect.top as f64;
-            thread::sleep(Duration::from_millis(600));
-
-            let new_x = ((win_x + (win_w - WIN_W) / 2.0) * scale).round() as i32;
-            let new_y = (win_y * scale).round() as i32;
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    new_x,
-                    new_y,
-                    (WIN_W * scale).round() as i32,
-                    (WIN_H_DEFAULT * scale).round() as i32 + 10,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
-            thread::sleep(Duration::from_millis(50));
-            snap_back(&window, new_x as f64, new_y as f64, (screen_w - WIN_W) / 2.0, 0.0);
-        });
-        return;
-
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
             let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((width, height));
-            let center_x = from_x + from_w / 2.0;
-            let target_x = center_x - WIN_W / 2.0;
+            let from_w = window.inner_size()
+                .map(|s| s.width as f64 / scale)
+                .unwrap_or(WIN_W);
+            let target_x = from_x + (from_w - width) / 2.0;
             let target_y = from_y;
-            let target_w = WIN_W;
-            let target_h = WIN_H_DEFAULT;
-
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let w = window.clone();
-            let hwnd_raw = window.hwnd().unwrap().0 as usize;
-
             thread::spawn(move || {
-                thread::sleep(Duration::from_millis(500));
                 let hwnd = HWND(hwnd_raw as *mut _);
-
                 unsafe {
                     let _ = SetWindowPos(
                         hwnd,
                         None,
-                        ((from_x + (from_w - width) / 2.0) * scale).round() as i32,
-                        (from_y * scale).round() as i32,
+                        (target_x * scale).round() as i32,
+                        (target_y * scale).round() as i32,
+                        (width * scale).round() as i32,
+                        (height * scale).round() as i32,
+                        SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
+
+            });
+        } else {
+            panic!("");
+        }
+    } else {
+        let hwnd_raw = window.hwnd().unwrap().0 as usize;
+        if let Ok(pos) = window.outer_position() {
+            let from_x = pos.x as f64 / scale;
+            let from_y = pos.y as f64 / scale;
+            let from_w = window.inner_size()
+                .map(|s| s.width as f64 / scale)
+                .unwrap_or(WIN_W);
+            let target_x = from_x + (from_w - WIN_W) / 2.0;
+            let target_y = from_y;
+            thread::spawn(move || {
+                let hwnd = HWND(hwnd_raw as *mut _);
+                unsafe {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        (target_x * scale).round() as i32,
+                        (target_y * scale).round() as i32,
                         (width * scale).round() as i32,
                         (height * scale).round() as i32,
                         SWP_NOZORDER | SWP_NOACTIVATE,
                     );
                 }
             });
-            return;
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
-            });
+            let scale = window.scale_factor().unwrap_or(1.0);
+            // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
+            let cur_w = window.inner_size()
+                .map(|s| s.width as f64 / scale)
+                .unwrap_or(WIN_W);
+            let target_x = (state.screen_w - cur_w) / 2.0;
+            let target_y = TOP_MARGIN;
+
+            if let Ok(pos) = window.outer_position() {
+                let cx = pos.x as f64 / scale;
+                let cy = pos.y as f64 / scale;
+                let w = window.clone();
+                thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
+            }
         } else {
-            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
+            panic!("");
         }
     }
 }
