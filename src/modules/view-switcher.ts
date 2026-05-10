@@ -20,7 +20,6 @@ import {
   setIsExpandAnimating,
   setSkipResizeSync,
 } from "../state";
-import { onSadbViewEntered } from "./sadb";
 import { logi, logw } from "../logger";
 // ---------------------------------------------------------------------------
 // 可用视图列表（search 不参与循环切换和底部 dots）
@@ -211,8 +210,8 @@ export function setView(mode: ViewMode, animated = true) {
   if (previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded")) {
     capsule.classList.remove("agent-expanded");
     window.setTimeout(() => {
-      void invoke("set_expanded", { expanded: false });
-    }, 380);
+      void invoke("set_expanded", { expanded: false, width: 0, height: 0 });
+    }, 100);
   }
 
   // 如果从 lyric 展开态切走，收起
@@ -220,7 +219,7 @@ export function setView(mode: ViewMode, animated = true) {
     setSkipResizeSync(true);
     setIsExpandAnimating(false);
     capsule.classList.remove("music-expanded");
-    void invoke("set_expanded", { expanded: false });
+    void invoke("set_expanded", { expanded: false, width: 0, height: 0 });
     window.setTimeout(() => { setSkipResizeSync(false); }, 500);
   }
 
@@ -250,7 +249,7 @@ export function setView(mode: ViewMode, animated = true) {
   if (previous === "email" && mode !== "email" && capsule.classList.contains("email-expanded")) {
     setSkipResizeSync(true);
     capsule.classList.remove("email-expanded");
-    void invoke("set_expanded", { expanded: false });
+    void invoke("set_expanded", { expanded: false, width: 0, height: 0 });
     window.setTimeout(() => { setSkipResizeSync(false); }, 360);
   }
 
