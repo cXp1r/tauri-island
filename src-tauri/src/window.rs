@@ -187,6 +187,7 @@ pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64,
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
+    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
 }
 
 //专门给垂直展开用,避免左右展开弹跳位移,
@@ -268,6 +269,7 @@ pub(crate) fn animate_resize(
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
+    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -322,80 +324,55 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
 }
 
 
-
 #[tauri::command]
-pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, reposition: Option<bool>) {
+pub fn sync_window_size(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, IslandState>,
+    width: f64,
+    height: f64,
+    reposition: Option<bool>,
+) {
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
+
     let current_view = state.current_view.lock().unwrap().clone();
     let new_w = (width + 50.0).max(200.0);
     let new_h = (height + 50.0).max(60.0);
-    logger::debug("Window", &format!("sync_window_size: w={width:.0}→{new_w:.0} h={height:.0}→{new_h:.0}"));
-    // 只在明确要求居中时（流启动 / 拖拽释放）才重定位，拖拽过程中不移窗口
-    if (state.sadb_mirroring.load(Ordering::Relaxed) || current_view == "email") && reposition.unwrap_or(false) {
+
+    let should_reposition = reposition.unwrap_or(false)
+        && (state.sadb_mirroring.load(Ordering::Relaxed) || current_view == "email");
+
+    if should_reposition {
         let scale = window.scale_factor().unwrap_or(1.0);
-        let cur_y = window.outer_position().map(|p| p.y as f64 / scale).unwrap_or(TOP_MARGIN);
-        let new_x = (state.screen_w - new_w) / 2.0;
-        let _ = window.set_position(tauri::LogicalPosition::new(new_x, cur_y));
-    }
-    let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
-}
+        let (from_w, from_h) = window
+            .inner_size()
+            .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+            .unwrap_or((new_w, new_h));
+        let (from_x, from_y) = window
+            .outer_position()
+            .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
+            .unwrap_or((0.0, TOP_MARGIN));
 
+        let target_x = (state.screen_w - new_w) / 2.0;
+        let target_y = from_y; // 纵向不动
 
+        let w = window.clone();
+        let anim_id = state.expand_anim_id.clone();
+        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
 
-#[tauri::command]
-pub fn set_sadb_expanded(_window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
-    state.sadb_expanded.store(expanded, Ordering::Relaxed);
-    if expanded {
-        // 流开始，清除待机 flag
-        state.sadb_idle.store(false, Ordering::Relaxed);
-    }
-    // 窗口大小由前端 autoFitWindow + ResizeObserver 统一管理
-}
-
-/// sadb 待机面板：进入时动画到顶部居中 + 420×430 尺寸；退出时动画回默认并吸顶
-#[tauri::command]
-pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, idle: bool) {
-    state.sadb_idle.store(idle, Ordering::Relaxed);
-    if state.email_expanded.load(Ordering::Relaxed) {
-        return;
-    }
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let home_x = (screen_w - WIN_W) / 2.0;
-
-    if idle {
-        // 流结束/主动展开待机面板：动画移回顶部并调整到待机尺寸
-        let target_h = 430.0; // 420px capsule + 10px body padding
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let w = window.clone();
-            let anim_id = state.expand_anim_id.clone();
-            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, target_h, 350.0, anim_id, gen);
-            });
-        }
+        thread::spawn(move || {
+            animate_resize(
+                &w,
+                from_x, from_y, from_w, from_h,
+                target_x, target_y, new_w, new_h,
+                250.0, anim_id, gen,
+            );
+        });
     } else {
-        // 收起待机面板回胶囊：动画到默认尺寸并确保吸顶居中
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, 430.0));
-            let w = window.clone();
-            let anim_id = state.expand_anim_id.clone();
-            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT, 300.0, anim_id, gen);
-            });
-        }
+        let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
     }
 }
+
+
 
 
 #[tauri::command]
@@ -588,23 +565,19 @@ pub fn set_expanded(
     } else {
         (home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT)
     };
-
-    let w = window.clone();
     let anim_id = state.expand_anim_id.clone();
-    let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-
+    let w = window.clone();
     thread::spawn(move || {
         // 这里是子线程不怕阻塞
+        
+        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
         if !expanded {
             snap_back(&w, from_x, from_y, home_x, TOP_MARGIN, anim_id.clone(), gen);
             thread::sleep(Duration::from_millis(200));
         }
 
-        if anim_id.load(Ordering::Relaxed) != gen {
-            return;
-        }
-
         // 重新采样
+        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
         let scale = w.scale_factor().unwrap_or(1.0);
         let (actual_from_w, actual_from_h) = w
             .inner_size()
@@ -639,6 +612,7 @@ pub fn set_expanded(
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 );
             }
+            let _ = anim_id.compare_exchange(gen, 0, Ordering::Relaxed, Ordering::Relaxed);
         } else {
             animate_resize(
                 &w,

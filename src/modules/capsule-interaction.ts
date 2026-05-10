@@ -66,12 +66,12 @@ export function initCapsuleInteraction() {
           }
           fetchAndUpdateVolume();
           const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-          void invoke("set_expanded", { expanded: true, width: 380, height: 420 + bodyPad + 5 });
+          void invoke("set_expanded", { expanded: true, width: 0, height: 420 + bodyPad + 5 });
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
         } else {
           setSkipResizeSync(true);
           capsule.classList.remove("music-expanded");
-          void invoke("set_expanded", { expanded: false, width: 380, height: 420 });
+          void invoke("set_expanded", { expanded: false, width: 0, height: 420 });
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 500);
         }
       }, 250));
@@ -104,7 +104,7 @@ export function initCapsuleInteraction() {
         if (!capsule.classList.contains("agent-expanded")) {
           setSkipResizeSync(true);
           capsule.classList.add("agent-expanded");
-          void invoke("set_expanded", { expanded: true, width: 620, height: 640 });
+          void invoke("set_expanded", { expanded: true, width: 0, height: 640 });
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
         } else {
           setSkipResizeSync(true);
@@ -112,7 +112,7 @@ export function initCapsuleInteraction() {
           if (agentArea) agentArea.classList.add("collapsing");
           window.setTimeout(() => {
             capsule.classList.remove("agent-expanded");
-            void invoke("set_expanded", { expanded: false, width: 620, height: 640 });
+            void invoke("set_expanded", { expanded: false, width: 0, height: 640 });
             window.setTimeout(() => {
               if (agentArea) agentArea.classList.remove("collapsing");
               setSkipResizeSync(false);
@@ -138,7 +138,7 @@ export function initCapsuleInteraction() {
           setIsExpandAnimating(true);
           setSkipResizeSync(true);
           capsule.classList.remove("sadb-idle");
-          void invoke("sadb_set_idle", { idle: false });
+          void invoke("set_expanded", { expanded: false ,width: 0, height: 0});
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
         }, 250));
         return;
@@ -153,7 +153,7 @@ export function initCapsuleInteraction() {
         setIsExpandAnimating(true);
         setSkipResizeSync(true);
         capsule.classList.add("sadb-idle");
-        void invoke("sadb_set_idle", { idle: true });
+        void invoke("set_expanded", { expanded: true, width: 0, height: 430});
         window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
       }, 250));
       return;

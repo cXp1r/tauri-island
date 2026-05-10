@@ -55,7 +55,8 @@ pub(crate) const MINIMIZED_W: f64 = 70.0;
 pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
-
+pub(crate) const SNAP_FRAME_MS: u64 = 16;
+const PRIVACY_POLL_MS: u64 = 1200;
 
 
 
@@ -71,8 +72,7 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
             .expect("failed to create http client")
     })
 }
-pub(crate) const SNAP_FRAME_MS: u64 = 5;
-const PRIVACY_POLL_MS: u64 = 1200;
+
 
 /// 位置信息
 #[derive(Debug, Clone, serde::Serialize)]
@@ -226,12 +226,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            window::start_drag, window::end_drag, window::drag_move, window::snap_window_home, window::sync_window_home_size,
-            link_handler::open_url, link_handler::open_url_with_whitelist,
+            window::start_drag, window::end_drag, window::drag_move,//三个移动函数
+            link_handler::open_url, link_handler::open_url_with_whitelist,//两个url跳转函数
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
             window::sync_window_size, window::set_minimized, window::show_context_menu,
-            window::set_capsule_rect, window::set_sadb_expanded, window::open_email_window,
-            window::sadb_set_idle, window::set_expanded,
+            window::set_capsule_rect, window::open_email_window, window::set_expanded,
             settings::open_settings, settings::get_settings, settings::save_settings,
             settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
             settings::set_lyric_offset_enabled, settings::delete_lyric_offset_player,

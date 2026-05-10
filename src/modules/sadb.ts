@@ -7,7 +7,7 @@ import {
   sadbDeviceName, sadbResolution, sadbFps,
 } from "../dom";
 import { setSkipResizeSync } from "../state";
-import { loge } from "../logger";
+import { loge, logd, logi, logw } from "../logger";
 
 const TAG: string = "SADB";
 
@@ -201,6 +201,7 @@ function updateDrawRect() {
 }
 
 async function autoFitWindow() {
+  
   if (!deviceW || !deviceH) return;
   const phoneAR = deviceW / deviceH;
   const chrome = getSadbChromeSize();
@@ -212,6 +213,7 @@ async function autoFitWindow() {
   capsule.style.height = `${capH}px`;
   requestAnimationFrame(updateDrawRect);
   const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 5;
+  logd(TAG, "reach sync_window_size")
   invoke("sync_window_size", { width: capW, height: capH + bodyPad + 5, reposition: true }).catch(() => {});
 }
 
@@ -283,11 +285,11 @@ function applyConfigPacket(data: Uint8Array) {
 
 function initAudioDecoder(configData: Uint8Array) {
   if (typeof AudioDecoder === "undefined") {
-    console.warn("AudioDecoder not available in this browser");
+    logw(TAG, "AudioDecoder not available in this browser");
     return;
   }
   if (configData.length < 19) {
-    console.warn("Opus config packet too short:", configData.length);
+    logw(TAG, "Opus config packet too short:", configData.length);
     return;
   }
   const channelCount = configData[9];
@@ -331,7 +333,7 @@ function initAudioDecoder(configData: Uint8Array) {
     numberOfChannels: channelCount,
     description: configData,
   });
-  console.log(`AudioDecoder configured: opus ${sampleRate}Hz ${channelCount}ch`);
+  logi(TAG, `AudioDecoder configured: opus ${sampleRate}Hz ${channelCount}ch`);
 }
 
 function decodeAudio(pts: number, data: Uint8Array) {
@@ -357,7 +359,7 @@ function handleEvent(evt: PacketEvent) {
       // 待机面板 → 镜像展开（CSS + 后端 flag；尺寸由 autoFitWindow 设置）
       capsule.classList.remove("sadb-idle");
       capsule.classList.add("sadb-expanded");
-      invoke("set_sadb_expanded", { expanded: true }).catch(() => {});
+      invoke("set_expanded", { expanded: true }).catch(() => {});
       updateDrawRect();
       autoFitWindow();
       break;
@@ -502,8 +504,7 @@ function stopStream() {
     capsule.classList.add("sadb-idle");
     capsule.style.width = "";
     capsule.style.height = "";
-    invoke("set_sadb_expanded", { expanded: false }).catch(() => {});
-    invoke("sadb_set_idle", { idle: true }).catch(() => {});
+    invoke("set_expanded", { expanded: false }).catch(() => {});
   }
   invoke("sadb_stop_mirroring").catch(console.error).finally(() => {
     if (currentSerial) {
@@ -690,6 +691,8 @@ ctx.font = "12px system-ui";
 ctx.textAlign = "center";
 ctx.fillText("点击「开始」连接Android设备", sadbCanvas.width / 2, sadbCanvas.height / 2);
 
+
+let resizeTimer: number | null = null;
 export function initSadb() {
   updateDrawRect();
   new ResizeObserver(() => updateDrawRect()).observe(sadbCanvas);
@@ -711,7 +714,7 @@ export function initSadb() {
     resizeStartScale = sadbScale;
     setSkipResizeSync(true);
     capsule.style.transition = "none";
-    console.log("[sadb-resize] mousedown: screenX=%d, scale=%.3f, initCapW=%d, initCapH=%d, capW=%d, capH=%d",
+    logi("[sadb-resize]", "mousedown: screenX=%d, scale=%.3f, initCapW=%d, initCapH=%d, capW=%d, capH=%d",
       e.screenX, sadbScale, initCapW, initCapH, capsule.offsetWidth, capsule.offsetHeight);
   });
 
@@ -724,18 +727,29 @@ export function initSadb() {
     capsule.style.width = `${capW}px`;
     capsule.style.height = `${capH}px`;
     requestAnimationFrame(updateDrawRect);
-    console.log("[sadb-resize] move: dx=%d, scale %.3f→%.3f, cap %dx%d, offsetW=%d",
+    logi("[sadb-resize]", "move: dx=%d, scale %.3f→%.3f, cap %dx%d, offsetW=%d",
       dx, prevScale, sadbScale, capW, capH, capsule.offsetWidth);
-    if (!syncPending) {
-      syncPending = true;
-      requestAnimationFrame(() => {
-        syncPending = false;
-        const { capW: sw, capH: sh } = getScaledSize();
-        const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 5;
-        console.log("[sadb-resize] sync_window_size: %dx%d", sw, sh + bodyPad + 5);
-        invoke("sync_window_size", { width: sw, height: sh + bodyPad + 5, reposition: false }).catch(() => {});
-      });
-    }
+    
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      if (!syncPending) {
+        requestAnimationFrame(() => {
+          syncPending = false;
+
+          const { capW: sw, capH: sh } = getScaledSize();
+          const bodyPad =
+            parseFloat(getComputedStyle(document.body).paddingTop) || 5;
+
+          logd(TAG, "sync_window_size:",`${sw}x${sh + bodyPad + 5}`);
+
+          invoke("sync_window_size", {
+            width: sw,
+            height: sh + bodyPad + 5,
+            reposition: false,
+          }).catch(() => {});
+        });
+      }
+    },5);
   });
 
   document.addEventListener("mouseup", async () => {
@@ -745,7 +759,7 @@ export function initSadb() {
     setSkipResizeSync(false);
     const { capW: fw, capH: fh } = getScaledSize();
     const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 5;
-    console.log("[sadb-resize] mouseup: scale=%d/1000, sync %dx%d", Math.round(sadbScale * 1000), fw, fh + bodyPad + 5);
+    logi("[sadb-resize]", "mouseup: scale=%d/1000, sync %dx%d", Math.round(sadbScale * 1000), fw, fh + bodyPad + 5);
     try { await invoke("sync_window_size", { width: fw, height: fh + bodyPad + 5, reposition: false }); } catch { /* ignore */ }
   });
 }
@@ -754,14 +768,3 @@ export function isSadbStreaming(): boolean {
   return streaming;
 }
 
-// 切回 sadb 视图时调用：恢复正确的 capsule 状态和窗口位置
-export function onSadbViewEntered() {
-  if (streaming) {
-    capsule.classList.remove("sadb-idle");
-    capsule.classList.add("sadb-expanded");
-  } else {
-    capsule.classList.remove("sadb-expanded");
-    capsule.classList.add("sadb-idle");
-    invoke("sadb_set_idle", { idle: true }).catch(() => {});
-  }
-}
