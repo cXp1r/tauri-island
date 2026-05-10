@@ -7,8 +7,6 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
 
-
-const EMAIL_VIEW_W: f64 = 620.0;
 const TAG: &str = "Window";
 
 pub(crate) fn get_foreground_process_name() -> Option<String> {
@@ -172,10 +170,14 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     }
 }
 
-pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64) {
+pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64, anim_id: Arc<AtomicU64>, my_gen: u64) {
     logger::debug("Window", &format!("snap_back"));
     let start = Instant::now();
     loop {
+        if anim_id.load(Ordering::Relaxed) != my_gen {
+            logger::debug("WindowAnim", &format!("animate_window_height interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
+            return;
+        }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / SNAP_DURATION_MS).min(1.0);
         let t = ease_out_cubic(p);
@@ -231,12 +233,18 @@ pub(crate) fn animate_resize(
     from_x: f64, from_y: f64, from_w: f64, from_h: f64,
     to_x: f64, to_y: f64, to_w: f64, to_h: f64,
     duration_ms: f64,
+    anim_id: Arc<AtomicU64>,
+    my_gen: u64,
 ) {
-    logger::debug(TAG, &format!("animate_resize: to_w: {}, to_h: {}", to_w, to_h));
+
     let scale = window.scale_factor().unwrap_or(1.0);
     let hwnd = HWND(window.hwnd().unwrap().0);
     let start = Instant::now();
     loop {
+        if anim_id.load(Ordering::Relaxed) != my_gen {
+            logger::debug("WindowAnim", &format!("animate_resize interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
+            return;
+        }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / duration_ms).min(1.0);
         let t = ease_out_cubic(p);
@@ -306,62 +314,21 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         let cx = pos.x as f64 / scale;
         let cy = pos.y as f64 / scale;
         let w = window.clone();
-        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
+        let anim_id = state.expand_anim_id.clone();
+        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
+        
+        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y, anim_id, gen); });
     }
 }
 
-#[tauri::command]
-pub fn snap_window_home(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
-    logger::debug("Window", &format!("snap_window_home"));
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let cur_w = window.inner_size()
-        .map(|s| s.width as f64 / scale)
-        .unwrap_or(WIN_W);
-    let target_x = (state.screen_w - cur_w) / 2.0;
-    let target_y = TOP_MARGIN;
-    if let Ok(pos) = window.outer_position() {
-        let cx = pos.x as f64 / scale;
-        let cy = pos.y as f64 / scale;
-        let w = window.clone();
-        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
-    }
-}
-
-#[tauri::command]
-pub fn sync_window_home_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64) {
-    logger::debug("Window", &format!("sync_window_home_size: w={width:.0} h={height:.0}"));
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let new_w = width.max(200.0).min(state.screen_w.max(700.0));
-    let new_h = height.max(60.0).min(1100.0);
-    let target_x = (state.screen_w - new_w) / 2.0;
-    let target_y = TOP_MARGIN;
-    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.inner_size()) {
-        let from_x = pos.x as f64 / scale;
-        let from_y = pos.y as f64 / scale;
-        let from_w = size.width as f64 / scale;
-        let from_h = size.height as f64 / scale;
-        let w = window.clone();
-        thread::spawn(move || {
-            animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, new_w, new_h, SNAP_DURATION_MS);
-        });
-    } else {
-        let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
-        let _ = window.set_position(tauri::LogicalPosition::new(target_x, target_y));
-    }
-}
 
 
 #[tauri::command]
 pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, reposition: Option<bool>) {
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
     let current_view = state.current_view.lock().unwrap().clone();
-    let (max_w, max_h) = if state.sadb_mirroring.load(Ordering::Relaxed) || current_view == "email" {
-        (state.screen_w.max(700.0), 1100.0)
-    } else {
-        (EMAIL_VIEW_W, 700.0)
-    };
-    let new_w = width.max(200.0).min(max_w);
-    let new_h = height.max(60.0).min(max_h);
+    let new_w = (width + 50.0).max(200.0);
+    let new_h = (height + 50.0).max(60.0);
     logger::debug("Window", &format!("sync_window_size: w={width:.0}→{new_w:.0} h={height:.0}→{new_h:.0}"));
     // 只在明确要求居中时（流启动 / 拖拽释放）才重定位，拖拽过程中不移窗口
     if (state.sadb_mirroring.load(Ordering::Relaxed) || current_view == "email") && reposition.unwrap_or(false) {
@@ -406,8 +373,10 @@ pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, Islan
                 .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
                 .unwrap_or((WIN_W, WIN_H_DEFAULT));
             let w = window.clone();
+            let anim_id = state.expand_anim_id.clone();
+            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, target_h, 350.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, target_h, 350.0, anim_id, gen);
             });
         }
     } else {
@@ -419,8 +388,10 @@ pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, Islan
                 .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
                 .unwrap_or((WIN_W, 430.0));
             let w = window.clone();
+            let anim_id = state.expand_anim_id.clone();
+            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT, 300.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT, 300.0, anim_id, gen);
             });
         }
     }
@@ -452,8 +423,10 @@ pub fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, Islan
             let target_h = MINIMIZED_H;
 
             let w = window.clone();
+            let anim_id = state.expand_anim_id.clone();
+            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0, anim_id, gen);
             });
         }
     } else {
@@ -472,8 +445,10 @@ pub fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, Islan
             let target_h = WIN_H_DEFAULT;
 
             let w = window.clone();
+            let anim_id = state.expand_anim_id.clone();
+            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
             thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0);
+                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0, anim_id, gen);
             });
         }
     }
@@ -572,93 +547,107 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 
 //统一封装函数之通用展开设置
 #[tauri::command]
-pub fn set_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool, width: u64, height: u64) {
-    //一展开必须带一次收回否则会出现状态争夺
-    //以下长宽皆为逻辑像素,需要转换成物理像素i32才能交给win32用
-    let width: f64 = (width as f64 + 20.0).max(WIN_W);
-    let height: f64 = (height as f64 + 20.0).max(WIN_H_DEFAULT);
+pub fn set_expanded(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, IslandState>,
+    expanded: bool,
+    width: u64,
+    height: u64,
+) {
+    // 逻辑像素
+    let target_w = (width as f64).max(WIN_W);
+    let target_h = (height as f64).max(WIN_H_DEFAULT);
+
     state.is_expanded.store(expanded, Ordering::Relaxed);
     let v = state.current_view.lock().unwrap().as_str().to_string();
-    logger::debug("Window", &format!("view: {}, expanded: {}, width: {}, height: {}", v, expanded, width, height));
-    match v.as_str() {
-        "lyric" => state.music_expanded.store(expanded, Ordering::Relaxed),
-        "agent" => state.agent_expanded.store(expanded, Ordering::Relaxed),
-        "sadb" => state.sadb_expanded.store(expanded, Ordering::Relaxed),
-        "email" => state.email_expanded.store(expanded, Ordering::Relaxed),
-        _ => return,
-    }
+    let view_expanded = match v.as_str() {
+        "lyric" => &state.music_expanded,
+        "agent" => &state.agent_expanded,
+        "sadb"  => &state.sadb_expanded,
+        "email" => &state.email_expanded,
+        _       => return,
+    };
+    view_expanded.store(expanded, Ordering::Relaxed);
+
+    let Ok(pos) = window.outer_position() else {
+        logger::error("Window", "failed to get outer_position");
+        return;
+    };
+
     let scale = window.scale_factor().unwrap_or(1.0);
+    let from_x = pos.x as f64 / scale;
+    let from_y = pos.y as f64 / scale;
+    let (from_w, from_h) = window
+        .inner_size()
+        .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+        .unwrap_or((WIN_W, WIN_H_DEFAULT));
 
-    if expanded {
-        let hwnd_raw = window.hwnd().unwrap().0 as usize;
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let from_w = window.inner_size()
-                .map(|s| s.width as f64 / scale)
-                .unwrap_or(WIN_W);
-            let target_x = from_x + (from_w - width) / 2.0;
-            let target_y = from_y;
-            thread::spawn(move || {
-                let hwnd = HWND(hwnd_raw as *mut _);
-                unsafe {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        None,
-                        (target_x * scale).round() as i32,
-                        (target_y * scale).round() as i32,
-                        (width * scale).round() as i32,
-                        (height * scale).round() as i32,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                }
-
-            });
-        } else {
-            panic!("");
-        }
+    let home_x = (state.screen_w - WIN_W) / 2.0;
+    let (target_x, target_y, final_w, final_h) = if expanded {
+        (from_x + (from_w - target_w) / 2.0, from_y, target_w, target_h)
     } else {
-        let hwnd_raw = window.hwnd().unwrap().0 as usize;
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let from_w = window.inner_size()
-                .map(|s| s.width as f64 / scale)
-                .unwrap_or(WIN_W);
-            let target_x = from_x + (from_w - WIN_W) / 2.0;
-            let target_y = from_y;
-            thread::spawn(move || {
-                let hwnd = HWND(hwnd_raw as *mut _);
-                unsafe {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        None,
-                        (target_x * scale).round() as i32,
-                        (target_y * scale).round() as i32,
-                        (width * scale).round() as i32,
-                        (height * scale).round() as i32,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                }
-            });
-            let scale = window.scale_factor().unwrap_or(1.0);
-            // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
-            let cur_w = window.inner_size()
-                .map(|s| s.width as f64 / scale)
-                .unwrap_or(WIN_W);
-            let target_x = (state.screen_w - cur_w) / 2.0;
-            let target_y = TOP_MARGIN;
+        (home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT)
+    };
 
-            if let Ok(pos) = window.outer_position() {
-                let cx = pos.x as f64 / scale;
-                let cy = pos.y as f64 / scale;
-                let w = window.clone();
-                thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
+    let w = window.clone();
+    let anim_id = state.expand_anim_id.clone();
+    let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
+
+    thread::spawn(move || {
+        // 这里是子线程不怕阻塞
+        if !expanded {
+            snap_back(&w, from_x, from_y, home_x, TOP_MARGIN, anim_id.clone(), gen);
+            thread::sleep(Duration::from_millis(200));
+        }
+
+        if anim_id.load(Ordering::Relaxed) != gen {
+            return;
+        }
+
+        // 重新采样
+        let scale = w.scale_factor().unwrap_or(1.0);
+        let (actual_from_w, actual_from_h) = w
+            .inner_size()
+            .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+            .unwrap_or((from_w, from_h));
+        let (actual_from_x, actual_from_y) = w
+            .outer_position()
+            .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
+            .unwrap_or((from_x, from_y));
+
+        logger::debug("Window", &format!(
+            "view={v} expanded={expanded} from=({actual_from_w}x{actual_from_h}) target=({final_w}x{final_h})"
+        ));
+
+        if actual_from_w == final_w {
+
+            if actual_from_h == final_h {
+                return;
+            }
+            if anim_id.load(Ordering::Relaxed) != gen {
+                return;
+            }
+            // 直接硬切
+            unsafe {
+                let _ = SetWindowPos(
+                    w.hwnd().unwrap(),
+                    None,
+                    (target_x * scale).round() as i32,
+                    (target_y * scale).round() as i32,
+                    (final_w  * scale).round() as i32,
+                    (final_h  * scale).round() as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
             }
         } else {
-            panic!("");
+            animate_resize(
+                &w,
+                actual_from_x, actual_from_y, actual_from_w, actual_from_h,
+                target_x, target_y, final_w, final_h,
+                350.0, anim_id, gen,
+            );
         }
-    }
+    });
 }
 #[tauri::command]
 pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
@@ -691,4 +680,3 @@ pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
         Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
     }
 }
-
