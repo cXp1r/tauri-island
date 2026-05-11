@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { capsule } from "../dom";
-import { currentView, setLyricMode, skipResizeSync } from "../state";
+import { setLyricMode } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
 // 根据窗口大小档位更新 CSS 变量
@@ -28,49 +28,6 @@ export function updateAgentCSSSize(size: string) {
 
 
 
-// html 高度实时同步到后端窗口
-let lastSyncedHtmlH = 0;
-const RESIZE_LOG_DELAY_MS = 120;
-let resizeLogTimer: number | null = null;
-let resizeLogFrom = 0;
-let resizeLogExtreme = 0;
-let resizeLogDirection: "up" | "down" | null = null;
-
-function trackResizeLog(from: number, to: number) {
-  const direction = to > from ? "up" : "down";
-  if (resizeLogDirection && resizeLogDirection !== direction) {
-    flushResizeLog();
-  }
-
-  if (!resizeLogDirection) {
-    resizeLogDirection = direction;
-    resizeLogFrom = from;
-    resizeLogExtreme = to;
-  } else if (direction === "up") {
-    resizeLogExtreme = Math.max(resizeLogExtreme, to);
-  } else {
-    resizeLogExtreme = Math.min(resizeLogExtreme, to);
-  }
-
-  if (resizeLogTimer !== null) {
-    clearTimeout(resizeLogTimer);
-  }
-  resizeLogTimer = window.setTimeout(flushResizeLog, RESIZE_LOG_DELAY_MS);
-}
-
-function flushResizeLog() {
-  if (!resizeLogDirection) return;
-  if (resizeLogTimer !== null) {
-    clearTimeout(resizeLogTimer);
-    resizeLogTimer = null;
-  }
-  const marker = resizeLogDirection === "up" ? "↑ max" : "↓ min";
-  console.log(`[ResizeObserver] html height ${marker}:`, resizeLogFrom, "→", resizeLogExtreme);
-  resizeLogDirection = null;
-}
-
-
-
 export function initResizeObserver() {
   const el = document.getElementById("island-capsule");
   let timer: number | null = null;
@@ -78,9 +35,10 @@ export function initResizeObserver() {
     if (timer !== null) {
       clearTimeout(timer);
     }
+    void invoke('set_capsule_rect', { height: el?.offsetHeight, width: el?.offsetWidth });
     timer = window.setTimeout(() => {
-      void invoke('set_capsule_rect', { height: el?.offsetHeight, width: el?.offsetWidth });
-    }, 50);
+      
+    }, 1);
   });
   if (el) {
     bodyObserver.observe(el);

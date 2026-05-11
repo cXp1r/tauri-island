@@ -506,7 +506,7 @@ function stopStream() {
     capsule.style.height = "";
     invoke("set_expanded", { expanded: false }).catch(() => {});
   }
-  invoke("sadb_stop_mirroring").catch(console.error).finally(() => {
+  invoke("sadb_stop_mirroring").catch((e) => loge(TAG, "sadb_stop_mirroring failed:", e)).finally(() => {
     if (currentSerial) {
       invoke("sadb_disconnect_device", { serial: currentSerial }).catch(() => {});
       currentSerial = null;

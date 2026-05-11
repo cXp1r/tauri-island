@@ -7,13 +7,14 @@ function n2t(level: number) {
         return "INFO";
     }else if(level == 2){
         return "WARN";
+    }else if(level == 3){
+        return "ERROR";
     }
 }
 export function initLogLevel() {
     invoke<number>("get_log_level_num").then(l => {
-        
-        console.log(`[Logger][DEBUG][${Math.floor(Date.now() / 1000)}]`, "log level:", n2t(l));
         logLevel = l;
+        log(0, "Logger", "log level:", n2t(l));
     });
 }
 function log(level: number, tag: string, ...args: any[]) {

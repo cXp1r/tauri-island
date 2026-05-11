@@ -4,7 +4,10 @@ import { capsule, searchInput, searchNextBtn, searchPageLabel, searchPrevBtn, se
 import { currentView, isMinimized } from "../state";
 import { setView } from "./view-switcher";
 import { expandFromMinimized } from "./minimize-drag";
+import { loge } from "../logger";
 import type { ViewMode } from "../types";
+
+const TAG = "Search";
 
 // ===== Types =====
 
@@ -102,7 +105,7 @@ async function fetchSearchPage(query: string, offset: number) {
       return;
     }
     const errStr = String(err);
-    console.error("[Search] search_query failed:", errStr, err);
+    loge(TAG, "search_query failed:", errStr, err);
     renderError(errStr);
   }
 }

@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 import { initLyricOffset } from "./settings-lyric-offset";
+import { loge } from "./logger";
 
+const TAG = "Settings";
 
 
 type SettingsResponse = {
@@ -206,7 +208,7 @@ async function loadSettings() {
       aiModelTypeResult.style.color = "#93a4c8";
     }
   } catch (e) {
-    console.error("加载 AI 设置失败:", e);
+    loge(TAG, "load ai settings failed:", e);
   }
 
   // 加载天气城市
@@ -758,7 +760,7 @@ document.addEventListener("mousemove", async (e: MouseEvent) => {
       await appWindow.setPosition(new LogicalPosition(newX, newY));
     }
   } catch (err) {
-    console.error("调整窗口大小失败:", err);
+    loge(TAG, "resize settings window failed:", err);
   }
 });
 
@@ -790,7 +792,7 @@ async function loadLinkHandlers() {
     linkHandlers = await invoke<LinkHandler[]>("get_link_handlers");
     renderLinkHandlersList();
   } catch (e) {
-    console.error("加载链接处理器失败:", e);
+    loge(TAG, "load link handlers failed:", e);
   }
 }
 
@@ -995,7 +997,7 @@ weatherCitySearch.addEventListener("input", () => {
       // 自动滚动让搜索结果可见
       cityResultsEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (e) {
-      console.error("搜索城市失败:", e);
+      loge(TAG, "search city failed:", e);
     }
   }, 400);
 });
@@ -1246,7 +1248,7 @@ async function loadBlacklist() {
     blacklistProcesses = await invoke<string[]>("get_blacklist");
     renderBlacklist();
   } catch (e) {
-    console.error("加载黑名单失败:", e);
+    loge(TAG, "load blacklist failed:", e);
   }
 }
 
@@ -1256,7 +1258,7 @@ async function loadBlacklistEnabled() {
     if (blacklistEnabledToggle) blacklistEnabledToggle.checked = enabled;
     updateBlacklistContentVisibility(enabled);
   } catch (e) {
-    console.error("加载黑名单开关失败:", e);
+    loge(TAG, "load blacklist enabled failed:", e);
   }
 }
 
@@ -1362,7 +1364,7 @@ async function loadSmtcWhitelist() {
     smtcWhitelistApps = await invoke<string[]>("get_smtc_whitelist");
     renderSmtcWhitelist();
   } catch (e) {
-    console.error("加载 SMTC 白名单失败:", e);
+    loge(TAG, "load smtc whitelist failed:", e);
   }
 }
 
@@ -1372,7 +1374,7 @@ async function loadSmtcWhitelistEnabled() {
     if (smtcWhitelistEnabledToggle) smtcWhitelistEnabledToggle.checked = enabled;
     updateSmtcWhitelistContentVisibility(enabled);
   } catch (e) {
-    console.error("加载 SMTC 白名单开关失败:", e);
+    loge(TAG, "load smtc whitelist enabled failed:", e);
   }
 }
 

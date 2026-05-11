@@ -110,7 +110,9 @@ html, body {
 
 }
 
-
+body {
+    width: fit-content;
+}
 
 #island-capsule {
 
