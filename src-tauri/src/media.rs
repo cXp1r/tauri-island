@@ -456,7 +456,7 @@ pub(crate) fn select_best_smtc_session(
             let allowed = !whitelist.app_ids.is_empty()
                 && whitelist.app_ids.iter().any(|id| app_id_lc.contains(id));
             if !allowed {
-                logger::debug("SMTC-WHITELIST", &format!("app_id not in whitelist: {}", app_id_lc));
+                //logger::debug("SMTC-WHITELIST", &format!("app_id not in whitelist: {}", app_id_lc));
                 continue;
             }
         }

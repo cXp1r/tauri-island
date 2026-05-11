@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { capsule } from "../dom";
+import { capsule, collapsedIndicator } from "../dom";
 import { setLyricMode } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
@@ -31,11 +31,18 @@ export function updateAgentCSSSize(size: string) {
 export function initResizeObserver() {
   const el = document.getElementById("island-capsule");
   let timer: number | null = null;
+  const syncCapsuleRect = () => {
+    const minimized = document.body.classList.contains("minimized");
+    const target = minimized ? collapsedIndicator : el;
+    const width = target?.offsetWidth || 0;
+    const height = target?.offsetHeight || 0;
+    void invoke('set_capsule_rect', { height, width });
+  };
   const bodyObserver = new ResizeObserver(() => {
     if (timer !== null) {
       clearTimeout(timer);
     }
-    void invoke('set_capsule_rect', { height: el?.offsetHeight, width: el?.offsetWidth });
+    syncCapsuleRect();
     timer = window.setTimeout(() => {
       
     }, 1);
@@ -43,6 +50,7 @@ export function initResizeObserver() {
   if (el) {
     bodyObserver.observe(el);
   }
+  bodyObserver.observe(collapsedIndicator);
 
 
   invoke<{ lyric_mode: string; indicator_color: string; agent_window_size: string }>("get_settings").then((s) => {

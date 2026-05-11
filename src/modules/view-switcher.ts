@@ -230,7 +230,7 @@ export function setView(mode: ViewMode, animated = true) {
     capsule.style.height = "";
     if (capsule.classList.contains("sadb-expanded")) {
       capsule.classList.remove("sadb-expanded");
-      void invoke("set_sadb_expanded", { expanded: false });
+      void invoke("set_expanded", { expanded: false, width: 0, height:0});
     }
     if (capsule.classList.contains("sadb-idle")) {
       capsule.classList.remove("sadb-idle");

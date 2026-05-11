@@ -329,14 +329,6 @@ function finishAll(): void {
 
   // 通知后端释放 is_notifying / is_expanded
   void invoke("dismiss_island");
-
-  const views = getAvailableViews();
-  if (views.includes(userChosenView)) {
-    setView(userChosenView, true);
-  } else {
-    setUserChosenView("time");
-    setView("time", true);
-  }
 }
 
 // ===== 初始化：注册所有事件监听 =====

@@ -291,6 +291,7 @@ pub fn run() {
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
             logger::set_level(&settings.log_level);
+            logger::set_filter(settings.log_filter_tags.clone(), settings.log_filter_invert);
             let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
             let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
@@ -324,6 +325,7 @@ pub fn run() {
             let music_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
+            let move_anim_id = Arc::new(AtomicU64::new(0));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
             let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
             let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
@@ -390,6 +392,7 @@ pub fn run() {
                 music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
+                move_anim_id: move_anim_id.clone(),
                 screen_w, home_x, hwnd, scale,
                 ai_api_url: ai_api_url.clone(),
                 ai_api_key: ai_api_key.clone(),
@@ -527,6 +530,7 @@ pub fn run() {
             let current_view_m = current_view.clone();
             let capsule_h_m = capsule_h.clone();
             let capsule_w_m = capsule_w.clone();
+            let is_minimized_m = is_minimized.clone();
             thread::spawn(move || {
                 let mut was_on_capsule = false;//穿透快照
                 let mut was_in_zone = false;//顶部展开快照
@@ -543,11 +547,13 @@ pub fn run() {
                         let win_w = (rect.right - rect.left) as f64 / current_scale;
                         let fmx = (mx as f64 - rect.left as f64) / current_scale;
                         let fmy = (my as f64 - rect.top as f64) / current_scale;
-                        let dw = capsule_w_m.load(Ordering::Relaxed) as f64;
-                        let dh = capsule_h_m.load(Ordering::Relaxed) as f64;
+                        let minimized = is_minimized_m.load(Ordering::Relaxed);
+                        let dw = capsule_w_m.load(Ordering::Relaxed).max(if minimized { 60 } else { 1 }) as f64;
+                        let dh = capsule_h_m.load(Ordering::Relaxed).max(if minimized { 4 } else { 1 }) as f64;
                         //logger::debug("LIB", &format!("{} {} {} {}",win_x + (win_w - dw) / 2.0 , win_x + (win_w + dw) / 2.0, win_y , win_y + dh));
                         // 大于左起的x 
-                        let on_capsule = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 10.0) && (fmy <= 10.0 + dh);
+                        let hit_top = if minimized { 5.0 } else { 10.0 };
+                        let on_capsule = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= hit_top) && (fmy <= hit_top + dh);
                         let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
                         if hit_on_capsule && !was_on_capsule {
@@ -561,32 +567,30 @@ pub fn run() {
                         }
 
                         let v = current_view_m.lock().unwrap().as_str().to_string();
-                        if (v == "time" || v == "lyric") && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
+                        if (v == "time" || v == "lyric") && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) && !minimized {
                             let in_zone = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 logger::debug("HitTest", "in_zone");
                                 was_in_zone = true;
                                 is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
-                                let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(60.0);
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
+                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id);
                                 });
                             }else if was_in_zone && !in_zone && !hit_on_capsule {
                                 logger::debug("HitTest", "in_zone -> not_in_zone");
                                 was_in_zone = false;
                                 is_expanded_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
-                                let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(WIN_H_DEFAULT);
                                 let collapsed_h = CAPSULE_COLLAPSED_H + 10.0;
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, collapsed_h, WIN_W, 350.0, anim_id, gen);
+                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, collapsed_h, WIN_W, 350.0, anim_id);
                                 });
                             }
                         }
@@ -1424,6 +1428,7 @@ pub struct IslandState {
     pub music_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,
     pub expand_anim_id: Arc<AtomicU64>,
+    pub move_anim_id: Arc<AtomicU64>,
     pub screen_w: f64,
     pub home_x: f64,
     pub hwnd: HWND,

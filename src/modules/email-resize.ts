@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { capsule, emailPanel, emailResizeHandle } from "../dom";
 import { currentView, setSkipResizeSync } from "../state";
 
-const EMAIL_DEFAULT_W = 620;
+const EMAIL_DEFAULT_W = 820;
 const EMAIL_DEFAULT_H = 620;
 const EMAIL_MIN_W = 360;
 const EMAIL_MIN_H = 360;

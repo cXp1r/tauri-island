@@ -134,6 +134,66 @@ pub(crate) fn ease_out_cubic(t: f64) -> f64 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
 
+#[track_caller]
+pub(crate) fn anim_next_id(anim_id: &Arc<AtomicU64>, label: &str) -> u64 {
+    let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
+    let caller = std::panic::Location::caller();
+    logger::debug("WindowAnim", &format!(
+        "anim_next_id: label={label}, gen={gen}, caller={}:{}:{}",
+        caller.file(),
+        caller.line(),
+        caller.column(),
+    ));
+    gen
+}
+
+#[track_caller]
+pub(crate) fn anim_is_current(anim_id: &Arc<AtomicU64>, my_gen: u64, label: &str) -> bool {
+    let current_gen = anim_id.load(Ordering::Relaxed);
+    if current_gen != my_gen {
+        let caller = std::panic::Location::caller();
+        logger::debug("WindowAnim", &format!(
+            "anim_mismatch: label={label}, gen={my_gen}, current_gen={current_gen}, caller={}:{}:{}",
+            caller.file(),
+            caller.line(),
+            caller.column(),
+        ));
+        return false;
+    }
+    true
+}
+
+#[track_caller]
+pub(crate) fn anim_current_id(anim_id: &Arc<AtomicU64>) -> u64 {
+    anim_id.load(Ordering::Relaxed)
+}
+
+#[track_caller]
+pub(crate) fn anim_finish_if_current(anim_id: &Arc<AtomicU64>, my_gen: u64, label: &str) -> bool {
+    match anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed) {
+        Ok(_) => {
+            let caller = std::panic::Location::caller();
+            logger::debug("WindowAnim", &format!(
+                "anim_idle: label={label}, gen={my_gen}, caller={}:{}:{}",
+                caller.file(),
+                caller.line(),
+                caller.column(),
+            ));
+            true
+        }
+        Err(current_gen) => {
+            let caller = std::panic::Location::caller();
+            logger::debug("WindowAnim", &format!(
+                "anim_finish_skipped: label={label}, gen={my_gen}, current_gen={current_gen}, caller={}:{}:{}",
+                caller.file(),
+                caller.line(),
+                caller.column(),
+            ));
+            false
+        }
+    }
+}
+
 pub(crate) fn get_cursor_pos() -> Option<(i32, i32)> {
     use windows::Win32::Foundation::POINT;
     let mut pt = POINT { x: 0, y: 0 };
@@ -147,7 +207,6 @@ pub(crate) fn get_window_rect(hwnd: HWND) -> Option<windows::Win32::Foundation::
     }
 }
 
-
 #[tauri::command]
 pub(crate) fn set_capsule_rect(state: tauri::State<'_, IslandState>, width: u64, height: u64) {
     state.capsule_w.store(width, Ordering::Relaxed);
@@ -155,8 +214,6 @@ pub(crate) fn set_capsule_rect(state: tauri::State<'_, IslandState>, width: u64,
     //打日志吃io性能,不打了.有报错自己把这里去掉注释看
     //logger::debug(TAG,&format!("recieve size from webview, width: {}, height: {}", width, height));
 }
-
-
 
 pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     unsafe {
@@ -170,17 +227,19 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     }
 }
 
-pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64, anim_id: Arc<AtomicU64>, my_gen: u64) {
+#[track_caller]
+pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64, anim_id: Arc<AtomicU64>) -> bool {
+    let my_gen = anim_next_id(&anim_id, "snap_back");
     logger::debug("WindowAnim", &format!("snap_back start: gen={my_gen}, from=({from_x:.1},{from_y:.1}), to=({to_x:.1},{to_y:.1})"));
 
     let start = Instant::now();
     loop {
-        if anim_id.load(Ordering::Relaxed) != my_gen {
-            logger::debug("WindowAnim", &format!("snap_back interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
-            return;
+        if !anim_is_current(&anim_id, my_gen, "snap_back") {
+            return false;
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / SNAP_DURATION_MS).min(1.0);
+
         let t = ease_out_cubic(p);
         let _ = window.set_position(tauri::LogicalPosition::new(
             from_x + (to_x - from_x) * t, from_y + (to_y - from_y) * t,
@@ -188,10 +247,11 @@ pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64,
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
-    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
+    anim_finish_if_current(&anim_id, my_gen, "snap_back")
 }
 
 //专门给垂直展开用,避免左右展开弹跳位移,
+#[track_caller]
 pub(crate) fn animate_window_height(
     hwnd: HWND,
     scale: f64,
@@ -200,18 +260,18 @@ pub(crate) fn animate_window_height(
     win_w: f64,
     duration_ms: f64,
     anim_id: Arc<AtomicU64>,
-    my_gen: u64,
-) {
+) -> bool {
+    let my_gen = anim_next_id(&anim_id, "animate_window_height");
     let phys_w = (win_w * scale).round() as i32;
     logger::debug("WindowAnim", &format!("animate_window_height start: gen={my_gen}, from_h={from_h:.1}, to_h={to_h:.1}, win_w={win_w:.1}, duration_ms={duration_ms:.0}"));
     let start = Instant::now();
     loop {
-        if anim_id.load(Ordering::Relaxed) != my_gen {
-            logger::debug("WindowAnim", &format!("animate_window_height interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
-            return;
+        if !anim_is_current(&anim_id, my_gen, "animate_window_height") {
+            return false;
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / duration_ms).min(1.0);
+
         let t = ease_out_cubic(p);
         let cur_h = from_h + (to_h - from_h) * t;
         unsafe {
@@ -226,29 +286,30 @@ pub(crate) fn animate_window_height(
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
-    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
+    anim_finish_if_current(&anim_id, my_gen, "animate_window_height")
 }
 
 /// 动画插值窗口尺寸和位置，duration_ms 与 CSS transition 同步
+#[track_caller]
 pub(crate) fn animate_resize(
     window: &tauri::WebviewWindow,
     from_x: f64, from_y: f64, from_w: f64, from_h: f64,
     to_x: f64, to_y: f64, to_w: f64, to_h: f64,
     duration_ms: f64,
     anim_id: Arc<AtomicU64>,
-    my_gen: u64,
-) {
+) -> bool {
 
+    let my_gen = anim_next_id(&anim_id, "animate_resize");
     let scale = window.scale_factor().unwrap_or(1.0);
     let hwnd = HWND(window.hwnd().unwrap().0);
     let start = Instant::now();
     loop {
-        if anim_id.load(Ordering::Relaxed) != my_gen {
-            logger::debug("WindowAnim", &format!("animate_resize interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
-            return;
+        if !anim_is_current(&anim_id, my_gen, "animate_resize") {
+            return false;
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / duration_ms).min(1.0);
+
         let t = ease_out_cubic(p);
 
         let cur_w = from_w + (to_w - from_w) * t;
@@ -270,25 +331,32 @@ pub(crate) fn animate_resize(
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
-    let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
+    anim_finish_if_current(&anim_id, my_gen, "animate_resize")
 }
 
 #[tauri::command]
 pub fn start_drag(state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(true, Ordering::Relaxed);
+    let gen = anim_next_id(&state.move_anim_id, "start_drag");
+    anim_finish_if_current(&state.move_anim_id, gen, "start_drag");
 }
 
 #[tauri::command]
-pub fn drag_move(window: tauri::WebviewWindow, dx: i32, dy: i32) {
+pub fn drag_move(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, dx: i32, dy: i32) {
+    let gen = anim_next_id(&state.move_anim_id, "drag_move");
     if let Ok(pos) = window.outer_position() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let logical_x = pos.x as f64 / scale;
         let logical_y = pos.y as f64 / scale;
+        if !anim_is_current(&state.move_anim_id, gen, "drag_move") {
+            return;
+        }
         let _ = window.set_position(tauri::LogicalPosition::new(
             logical_x + dx as f64,
             logical_y + dy as f64,
         ));
     }
+    anim_finish_if_current(&state.move_anim_id, gen, "drag_move");
 }
 
 #[tauri::command]
@@ -318,13 +386,10 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         let cx = pos.x as f64 / scale;
         let cy = pos.y as f64 / scale;
         let w = window.clone();
-        let anim_id = state.expand_anim_id.clone();
-        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-        
-        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y, anim_id, gen); });
+        let anim_id = state.move_anim_id.clone();
+        thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y, anim_id); });
     }
 }
-
 
 #[tauri::command]
 pub fn sync_window_size(
@@ -334,9 +399,8 @@ pub fn sync_window_size(
     height: f64,
     reposition: Option<bool>,
 ) {
-    if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
-
     let current_view = state.current_view.lock().unwrap().clone();
+
     let new_w = width;
     let new_h = height;
 
@@ -347,6 +411,7 @@ pub fn sync_window_size(
     ));
 
     if should_reposition {
+
         let scale = window.scale_factor().unwrap_or(1.0);
         let (from_w, from_h) = window
             .inner_size()
@@ -362,77 +427,29 @@ pub fn sync_window_size(
 
         let w = window.clone();
         let anim_id = state.expand_anim_id.clone();
-        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-
         thread::spawn(move || {
             animate_resize(
                 &w,
                 from_x, from_y, from_w, from_h,
                 target_x, target_y, new_w, new_h,
-                250.0, anim_id, gen,
+                250.0, anim_id,
             );
         });
     } else {
+        let gen = anim_next_id(&state.expand_anim_id, "sync_window_size_set_size");
+        if !anim_is_current(&state.expand_anim_id, gen, "sync_window_size_set_size") {
+            return;
+        }
         let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
+        anim_finish_if_current(&state.expand_anim_id, gen, "sync_window_size_set_size");
     }
 }
 
-
-
-
 #[tauri::command]
-pub fn set_minimized(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, minimized: bool) {
+pub fn set_minimized(state: tauri::State<'_, IslandState>, minimized: bool) {
     state.is_minimized.store(minimized, Ordering::Relaxed);
     if state.email_expanded.load(Ordering::Relaxed) {
         return;
-    }
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-
-    if minimized {
-        // 收起到绿条：窗口缩小到绿条尺寸
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-
-            // 绿条居中在屏幕顶部
-            let target_x = (screen_w - MINIMIZED_W) / 2.0;
-            let target_y = TOP_MARGIN;
-            let target_w = MINIMIZED_W;
-            let target_h = MINIMIZED_H;
-
-            let w = window.clone();
-            let anim_id = state.expand_anim_id.clone();
-            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0, anim_id, gen);
-            });
-        }
-    } else {
-        // 从绿条展开：恢复到默认尺寸
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((MINIMIZED_W, MINIMIZED_H));
-
-            // 恢复到屏幕顶部居中
-            let target_x = (screen_w - WIN_W) / 2.0;
-            let target_y = TOP_MARGIN;
-            let target_w = WIN_W;
-            let target_h = WIN_H_DEFAULT;
-
-            let w = window.clone();
-            let anim_id = state.expand_anim_id.clone();
-            let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 300.0, anim_id, gen);
-            });
-        }
     }
 }
 
@@ -503,8 +520,6 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
     state.is_interacting.store(false, Ordering::Relaxed);
     state.is_notifying.store(false, Ordering::Relaxed);
     state.is_expanded.store(false, Ordering::Relaxed);
-    let _ = window.emit("set-expand", false);
-    let _ = window.emit("reset-view", ());
 }
 
 #[tauri::command]
@@ -537,6 +552,7 @@ pub fn set_expanded(
     width: u64,
     height: u64,
 ) {
+    // 
     // 逻辑像素
     let target_w = (width as f64).max(WIN_W);
     let target_h = (height as f64).max(WIN_H_DEFAULT);
@@ -565,26 +581,25 @@ pub fn set_expanded(
         .inner_size()
         .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
         .unwrap_or((WIN_W, WIN_H_DEFAULT));
-
-    let home_x = (state.screen_w - WIN_W) / 2.0;
+    let screen = state.screen_w;
+    let home_x = (screen - target_w) / 2.0;
     let (target_x, target_y, final_w, final_h) = if expanded {
         (from_x + (from_w - target_w) / 2.0, from_y, target_w, target_h)
     } else {
         (home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT)
     };
-    let anim_id = state.expand_anim_id.clone();
+    let expand_anim_id = state.expand_anim_id.clone();
+    let move_anim_id = state.move_anim_id.clone();
     let w = window.clone();
     thread::spawn(move || {
         // 这里是子线程不怕阻塞
         
-        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
         if !expanded {
-            snap_back(&w, from_x, from_y, home_x, TOP_MARGIN, anim_id.clone(), gen);
+            snap_back(&w, from_x, from_y, (screen - from_w) / 2.0, TOP_MARGIN, move_anim_id.clone());
             thread::sleep(Duration::from_millis(200));
         }
 
         // 重新采样
-        let gen = anim_id.fetch_add(1, Ordering::Relaxed) + 1;
         let scale = w.scale_factor().unwrap_or(1.0);
         let (actual_from_w, actual_from_h) = w
             .inner_size()
@@ -596,7 +611,8 @@ pub fn set_expanded(
             .unwrap_or((from_x, from_y));
 
         logger::debug("WindowAnim", &format!(
-            "set_expanded sample: view={v}, expanded={expanded}, gen={gen}, from=({actual_from_x:.1},{actual_from_y:.1},{actual_from_w:.1}x{actual_from_h:.1}), target=({target_x:.1},{target_y:.1},{final_w:.1}x{final_h:.1})"
+            "set_expanded sample: view={v}, expanded={expanded}, current_gen={}, from=({actual_from_x:.1},{actual_from_y:.1},{actual_from_w:.1}x{actual_from_h:.1}), target=({target_x:.1},{target_y:.1},{final_w:.1}x{final_h:.1})",
+            anim_current_id(&expand_anim_id),
         ));
 
         if actual_from_w == final_w {
@@ -604,7 +620,8 @@ pub fn set_expanded(
             if actual_from_h == final_h {
                 return;
             }
-            if anim_id.load(Ordering::Relaxed) != gen {
+            let gen = anim_next_id(&expand_anim_id, "set_expanded_hard_cut");
+            if !anim_is_current(&expand_anim_id, gen, "set_expanded_hard_cut") {
                 return;
             }
             // 直接硬切
@@ -619,17 +636,18 @@ pub fn set_expanded(
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 );
             }
-            let _ = anim_id.compare_exchange(gen, 0, Ordering::Relaxed, Ordering::Relaxed);
+            anim_finish_if_current(&expand_anim_id, gen, "set_expanded_hard_cut");
         } else {
             animate_resize(
                 &w,
                 actual_from_x, actual_from_y, actual_from_w, actual_from_h,
                 target_x, target_y, final_w, final_h,
-                350.0, anim_id, gen,
+                350.0, expand_anim_id,
             );
         }
     });
 }
+
 #[tauri::command]
 pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
     // 如果已有 email 窗口则聚焦
