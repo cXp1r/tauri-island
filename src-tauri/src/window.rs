@@ -171,11 +171,12 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
 }
 
 pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64, anim_id: Arc<AtomicU64>, my_gen: u64) {
-    logger::debug("Window", &format!("snap_back"));
+    logger::debug("WindowAnim", &format!("snap_back start: gen={my_gen}, from=({from_x:.1},{from_y:.1}), to=({to_x:.1},{to_y:.1})"));
+
     let start = Instant::now();
     loop {
         if anim_id.load(Ordering::Relaxed) != my_gen {
-            logger::debug("WindowAnim", &format!("animate_window_height interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
+            logger::debug("WindowAnim", &format!("snap_back interrupted: gen={my_gen}, current_gen={}", anim_id.load(Ordering::Relaxed)));
             return;
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -300,7 +301,8 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         || state.sadb_mirroring.load(Ordering::Relaxed)
         || state.email_expanded.load(Ordering::Relaxed)
     {
-        logger::debug(TAG, "reach expanded");
+        logger::debug(TAG, "end_drag skipped: expanded=true");
+
         return;
     }
 
@@ -335,11 +337,14 @@ pub fn sync_window_size(
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
 
     let current_view = state.current_view.lock().unwrap().clone();
-    let new_w = (width + 50.0).max(200.0);
-    let new_h = (height + 50.0).max(60.0);
+    let new_w = width;
+    let new_h = height;
 
     let should_reposition = reposition.unwrap_or(false)
         && (state.sadb_mirroring.load(Ordering::Relaxed) || current_view == "email");
+    logger::debug(TAG, &format!(
+        "sync_window_size: input=({width:.1}x{height:.1}), target=({new_w:.1}x{new_h:.1}), should_reposition={should_reposition}, view={current_view}, reposition={reposition:?}",
+    ));
 
     if should_reposition {
         let scale = window.scale_factor().unwrap_or(1.0);
@@ -505,7 +510,8 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let v = state.current_view.lock().unwrap().as_str().to_string();
-    logger::debug(TAG, &format!("{} -> {}", v, &view));
+    logger::debug(TAG, &format!("current_view changed: from={v}, to={view}"));
+
     let normalized = match view.as_str() {
         "time" | "lyric" | "agent" | "search" | "sadb" | "email" => view,
         _ => "time".to_string(),
@@ -547,7 +553,8 @@ pub fn set_expanded(
     view_expanded.store(expanded, Ordering::Relaxed);
 
     let Ok(pos) = window.outer_position() else {
-        logger::error("Window", "failed to get outer_position");
+        logger::error(TAG, "set_expanded failed: outer_position unavailable");
+
         return;
     };
 
@@ -588,8 +595,8 @@ pub fn set_expanded(
             .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
             .unwrap_or((from_x, from_y));
 
-        logger::debug("Window", &format!(
-            "view={v} expanded={expanded} from=({actual_from_w}x{actual_from_h}) target=({final_w}x{final_h})"
+        logger::debug("WindowAnim", &format!(
+            "set_expanded sample: view={v}, expanded={expanded}, gen={gen}, from=({actual_from_x:.1},{actual_from_y:.1},{actual_from_w:.1}x{actual_from_h:.1}), target=({target_x:.1},{target_y:.1},{final_w:.1}x{final_h:.1})"
         ));
 
         if actual_from_w == final_w {
@@ -650,7 +657,7 @@ pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
     .resizable(true);
 
     match builder.build() {
-        Ok(_) => logger::info("Window", "email window opened"),
-        Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
+        Ok(_) => logger::info(TAG, "open_email_window succeeded"),
+        Err(e) => logger::info(TAG, &format!("open_email_window failed: error={e}")),
     }
 }
