@@ -24,6 +24,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::logger;
 use crate::IslandState;
 
+const TAG: &str = "SADB";
 /// Event emitted to the frontend over the IPC channel.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -70,13 +71,13 @@ fn codec_to_str(c: VideoCodec) -> &'static str {
 /// Locate the scrcpy-server jar.
 fn resolve_server_jar(app: &AppHandle) -> PathBuf {
     if let Ok(p) = std::env::var("SADB_SERVER_JAR") {
-        logger::info("SADB", &format!("using SADB_SERVER_JAR env var: path={}", p));
+        logger::info(TAG, &format!("using SADB_SERVER_JAR env var: path={}", p));
         return PathBuf::from(p);
     }
     if let Ok(r) = app.path().resource_dir() {
         let p = r.join("resources/scrcpy-server-v3.3.4");
         if p.exists() {
-            logger::info("SADB", &format!("using resource dir server jar: path={}", p.display()));
+            logger::info(TAG, &format!("using resource dir server jar: path={}", p.display()));
             return p;
         }
     }
@@ -84,12 +85,12 @@ fn resolve_server_jar(app: &AppHandle) -> PathBuf {
         for anc in exe.ancestors().take(8) {
             let p = anc.join("assets").join("scrcpy-server-v3.3.4");
             if p.exists() {
-                logger::info("SADB", &format!("using exe-relative server jar: path={}", p.display()));
+                logger::info(TAG, &format!("using exe-relative server jar: path={}", p.display()));
                 return p;
             }
         }
     }
-    logger::warn("SADB", "scrcpy-server jar not found in any standard location, using default path");
+    logger::warn(TAG, "scrcpy-server jar not found in any standard location, using default path");
     PathBuf::from("assets/scrcpy-server-v3.3.4")
 }
 
@@ -102,40 +103,40 @@ pub(crate) async fn sadb_start_mirroring(
     bitrate: Option<u32>,
     serial: Option<String>,
 ) -> Result<(), String> {
-    logger::info("SADB", &format!("sadb initialization requested: serial={:?}, max_size={:?}, bitrate={:?}", serial, max_size, bitrate));
+    logger::info(TAG, &format!("sadb initialization requested: serial={:?}, max_size={:?}, bitrate={:?}", serial, max_size, bitrate));
     // 先杀掉已有 session（保证干净状态）
     {
-        logger::debug("SADB", "checking existing sadb session before initialization");
+        logger::debug(TAG, "checking existing sadb session before initialization");
         let mut guard = state.sadb_session.lock().await;
         if let Some(mut session) = guard.take() {
-            logger::info("SADB", "killing existing session before starting new one");
+            logger::info(TAG, "killing existing session before starting new one");
             session.stop.store(true, Ordering::Relaxed);
             if let Err(e) = session.client.cleanup().await {
-                logger::warn("SADB", &format!("cleanup error for existing session: {}", e));
+                logger::warn(TAG, &format!("cleanup error for existing session: {}", e));
             }
-            logger::info("SADB", "existing session killed");
+            logger::info(TAG, "existing session killed");
         } else {
-            logger::debug("SADB", "no existing sadb session found");
+            logger::debug(TAG, "no existing sadb session found");
         }
     }
     state.sadb_mirroring.store(false, Ordering::Relaxed);
-    logger::debug("SADB", "sadb mirroring state reset");
+    logger::debug(TAG, "sadb mirroring state reset");
 
     let server_jar = resolve_server_jar(&app);
-    logger::info("SADB", &format!("resolved scrcpy-server jar: path={}, exists={}", server_jar.display(), server_jar.exists()));
+    logger::info(TAG, &format!("resolved scrcpy-server jar: path={}, exists={}", server_jar.display(), server_jar.exists()));
     if !server_jar.exists() {
-        logger::error("SADB", &format!("scrcpy-server jar not found: path={}", server_jar.display()));
+        logger::error(TAG, &format!("scrcpy-server jar not found: path={}", server_jar.display()));
         return Err(format!("scrcpy-server jar not found at {}", server_jar.display()));
     }
 
     let bitrate_val = bitrate.or(Some(8_000_000));
     let adb_path = state.adb_path.lock().unwrap().trim().to_string();
-    logger::debug("SADB", &format!("loaded adb path from settings: {}", adb_path));
+    logger::debug(TAG, &format!("loaded adb path from settings: {}", adb_path));
     let adb_path = if adb_path.is_empty() {
-        logger::info("SADB", "no custom adb path configured, falling back to PATH adb");
+        logger::info(TAG, "no custom adb path configured, falling back to PATH adb");
         None
     } else {
-        logger::info("SADB", &format!("using custom adb path for sadb: adb_path={}", adb_path));
+        logger::info(TAG, &format!("using custom adb path for sadb: adb_path={}", adb_path));
         Some(adb_path)
     };
 
@@ -150,41 +151,41 @@ pub(crate) async fn sadb_start_mirroring(
         ..Config::default()
     };
 
-    logger::info("SADB", &format!("starting mirroring session: serial={:?}, max_size={:?}, bitrate={:?}, adb_path={:?}, audio=true, control=true", serial, max_size, bitrate_val, adb_path));
+    logger::info(TAG, &format!("starting mirroring session: serial={:?}, max_size={:?}, bitrate={:?}, adb_path={:?}, audio=true, control=true", serial, max_size, bitrate_val, adb_path));
 
-    logger::debug("SADB", "creating ScrcpyClient");
+    logger::debug(TAG, "creating ScrcpyClient");
     let mut client = ScrcpyClient::new(cfg).await.map_err(|e| {
-        logger::error("SADB", &format!("failed to create ScrcpyClient: {}", e));
+        logger::error(TAG, &format!("failed to create ScrcpyClient: {}", e));
         e.to_string()
     })?;
 
-    logger::info("SADB", &format!("ScrcpyClient created: scid={}", client.scid()));
-    logger::debug("SADB", &format!("starting scrcpy server: scid={}", client.scid()));
+    logger::info(TAG, &format!("ScrcpyClient created: scid={}", client.scid()));
+    logger::debug(TAG, &format!("starting scrcpy server: scid={}", client.scid()));
     client.start().await.map_err(|e| {
-        logger::error("SADB", &format!("failed to start scrcpy: {}", e));
+        logger::error(TAG, &format!("failed to start scrcpy: {}", e));
         e.to_string()
     })?;
-    logger::info("SADB", &format!("scrcpy server started: scid={}", client.scid()));
+    logger::info(TAG, &format!("scrcpy server started: scid={}", client.scid()));
 
-    logger::debug("SADB", &format!("reading device metadata: scid={}", client.scid()));
+    logger::debug(TAG, &format!("reading device metadata: scid={}", client.scid()));
     let device_meta = client.read_device_metadata().map_err(|e| {
-        logger::error("SADB", &format!("failed to read device metadata: {}", e));
+        logger::error(TAG, &format!("failed to read device metadata: {}", e));
         e.to_string()
     })?;
-    logger::info("SADB", &format!("device metadata received: device_name={}", device_meta.name));
+    logger::info(TAG, &format!("device metadata received: device_name={}", device_meta.name));
 
-    logger::debug("SADB", &format!("reading video codec metadata: scid={}", client.scid()));
+    logger::debug(TAG, &format!("reading video codec metadata: scid={}", client.scid()));
     let codec_meta = client.read_video_codec_metadata().map_err(|e| {
-        logger::error("SADB", &format!("failed to read video codec metadata: {}", e));
+        logger::error(TAG, &format!("failed to read video codec metadata: {}", e));
         e.to_string()
     })?;
-    logger::info("SADB", &format!("video codec metadata received: codec={:?}, width={}, height={}", codec_meta.codec, codec_meta.width, codec_meta.height));
+    logger::info(TAG, &format!("video codec metadata received: codec={:?}, width={}, height={}", codec_meta.codec, codec_meta.width, codec_meta.height));
 
     // ── Audio metadata ──
     let audio_meta = client.read_audio_codec_metadata();
     match &audio_meta {
-        Ok(m) => logger::info("SADB", &format!("audio codec metadata received: codec={:?}", m.codec)),
-        Err(e) => logger::warn("SADB", &format!("audio metadata unavailable (device may not support audio capture): {}", e)),
+        Ok(m) => logger::info(TAG, &format!("audio codec metadata received: codec={:?}", m.codec)),
+        Err(e) => logger::warn(TAG, &format!("audio metadata unavailable (device may not support audio capture): {}", e)),
     }
 
     channel
@@ -195,20 +196,20 @@ pub(crate) async fn sadb_start_mirroring(
             height: codec_meta.height,
         })
         .map_err(|e| {
-            logger::error("SADB", &format!("failed to send meta event to frontend: {}", e));
+            logger::error(TAG, &format!("failed to send meta event to frontend: {}", e));
             e.to_string()
         })?;
 
     let mut video_stream = client.video_stream().map_err(|e| {
-        logger::error("SADB", &format!("failed to get video stream: {}", e));
+        logger::error(TAG, &format!("failed to get video stream: {}", e));
         e.to_string()
     })?;
-    logger::info("SADB", "video stream obtained");
+    logger::info(TAG, "video stream obtained");
 
     let audio_stream = client.audio_stream().ok();
     match &audio_stream {
-        Some(_) => logger::info("SADB", "audio stream obtained"),
-        None => logger::warn("SADB", "audio stream unavailable — no audio will be sent"),
+        Some(_) => logger::info(TAG, "audio stream obtained"),
+        None => logger::warn(TAG, "audio stream unavailable — no audio will be sent"),
     }
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -219,18 +220,18 @@ pub(crate) async fn sadb_start_mirroring(
     let join_video = std::thread::Builder::new()
         .name("sadb-video-reader".into())
         .spawn(move || {
-            logger::info("SADB", "video reader thread started");
+            logger::info(TAG, "video reader thread started");
             let mut packet_count: u64 = 0;
             loop {
                 if stop_video.load(Ordering::Relaxed) {
-                    logger::info("SADB", &format!("video reader stopping: packets={}", packet_count));
+                    logger::info(TAG, &format!("video reader stopping: packets={}", packet_count));
                     break;
                 }
                 match video_stream.read_packet() {
                     Ok(Some(pkt)) => {
                         packet_count += 1;
                         if packet_count % 300 == 0 {
-                            logger::debug("SADB", &format!("video packet: packets={}, pts={}, key_frame={}", packet_count, pkt.header.pts, pkt.header.key_frame));
+                            logger::debug(TAG, &format!("video packet: packets={}, pts={}, key_frame={}", packet_count, pkt.header.pts, pkt.header.key_frame));
                         }
                         let evt = PacketEvent::Packet {
                             pts: pkt.header.pts,
@@ -239,13 +240,13 @@ pub(crate) async fn sadb_start_mirroring(
                             data: B64.encode(&pkt.data),
                         };
                         if let Err(e) = channel_video.send(evt) {
-                            logger::error("SADB", &format!("video channel send failed: {}", e));
+                            logger::error(TAG, &format!("video channel send failed: {}", e));
                             break;
                         }
                     }
                     Ok(None) => continue,
                     Err(e) => {
-                        logger::error("SADB", &format!("video read_packet error: {}", e));
+                        logger::error(TAG, &format!("video read_packet error: {}", e));
                         let _ = channel_video.send(PacketEvent::Error {
                             message: e.to_string(),
                         });
@@ -254,7 +255,7 @@ pub(crate) async fn sadb_start_mirroring(
                 }
             }
             let _ = channel_video.send(PacketEvent::Closed);
-            logger::info("SADB", "video reader thread finished");
+            logger::info(TAG, "video reader thread finished");
         })
         .map_err(|e| format!("failed to spawn video reader thread: {}", e))?;
 
@@ -266,18 +267,18 @@ pub(crate) async fn sadb_start_mirroring(
             std::thread::Builder::new()
                 .name("sadb-audio-reader".into())
                 .spawn(move || {
-                    logger::info("SADB", "audio reader thread started");
+                    logger::info(TAG, "audio reader thread started");
                     let mut packet_count: u64 = 0;
                     loop {
                         if stop_audio.load(Ordering::Relaxed) {
-                            logger::info("SADB", &format!("audio reader stopping: packets={}", packet_count));
+                            logger::info(TAG, &format!("audio reader stopping: packets={}", packet_count));
                             break;
                         }
                         match audio_stream.read_packet() {
                             Ok(Some(pkt)) => {
                                 packet_count += 1;
                                 if packet_count <= 5 || packet_count % 200 == 0 {
-                                    logger::debug("SADB", &format!("audio packet: packets={}, pts={}, config={}, size={}", packet_count, pkt.header.pts, pkt.header.config_packet, pkt.data.len()));
+                                    logger::debug(TAG, &format!("audio packet: packets={}, pts={}, config={}, size={}", packet_count, pkt.header.pts, pkt.header.config_packet, pkt.data.len()));
                                 }
                                 let evt = PacketEvent::AudioPacket {
                                     pts: pkt.header.pts,
@@ -285,26 +286,26 @@ pub(crate) async fn sadb_start_mirroring(
                                     data: B64.encode(&pkt.data),
                                 };
                                 if let Err(e) = channel_audio.send(evt) {
-                                    logger::error("SADB", &format!("audio channel send failed: {}", e));
+                                    logger::error(TAG, &format!("audio channel send failed: {}", e));
                                     break;
                                 }
                             }
                             Ok(None) => {
-                                logger::debug("SADB", "audio read_packet returned None, continuing");
+                                logger::debug(TAG, "audio read_packet returned None, continuing");
                                 continue;
                             }
                             Err(e) => {
-                                logger::error("SADB", &format!("audio read_packet error: {}", e));
+                                logger::error(TAG, &format!("audio read_packet error: {}", e));
                                 break;
                             }
                         }
                     }
-                    logger::info("SADB", "audio reader thread finished");
+                    logger::info(TAG, "audio reader thread finished");
                 })
                 .expect("failed to spawn audio reader thread"),
         )
     } else {
-        logger::warn("SADB", "no audio stream available, skipping audio reader thread");
+        logger::warn(TAG, "no audio stream available, skipping audio reader thread");
         None
     };
 
@@ -317,35 +318,35 @@ pub(crate) async fn sadb_start_mirroring(
             std::thread::Builder::new()
                 .name("sadb-control-reader".into())
                 .spawn(move || {
-                    logger::info("SADB", "control reader thread started");
+                    logger::info(TAG, "control reader thread started");
                     let mut reader = BufReader::with_capacity(64 * 1024, ctrl);
                     let mut buf = Vec::new();
                     loop {
                         if stop_ctrl.load(Ordering::Relaxed) {
-                            logger::info("SADB", "control reader stopping");
+                            logger::info(TAG, "control reader stopping");
                             break;
                         }
                         let mut temp = [0u8; 4096];
                         match reader.read(&mut temp) {
                             Ok(0) => {
-                                logger::debug("SADB", "control socket closed (read 0)");
+                                logger::debug(TAG, "control socket closed (read 0)");
                                 break;
                             }
                             Ok(n) => {
-                                logger::debug("SADB", &format!("control data received: bytes={}", n));
+                                logger::debug(TAG, &format!("control data received: bytes={}", n));
                                 buf.extend_from_slice(&temp[..n]);
                                 loop {
                                     match DeviceMessage::deserialize(&buf) {
                                         Ok(Some((msg, consumed))) => {
                                             buf.drain(..consumed);
                                             if let DeviceMessage::Clipboard { text } = msg {
-                                                logger::debug("SADB", &format!("clipboard message from device: text_len={}", text.len()));
+                                                logger::debug(TAG, &format!("clipboard message from device: text_len={}", text.len()));
                                                 let _ = channel_ctrl.send(PacketEvent::Clipboard { text });
                                             }
                                         }
                                         Ok(None) => break,
                                         Err(e) => {
-                                            logger::warn("SADB", &format!("device msg parse error, clearing buffer: {}", e));
+                                            logger::warn(TAG, &format!("device msg parse error, clearing buffer: {}", e));
                                             buf.clear();
                                             break;
                                         }
@@ -353,17 +354,17 @@ pub(crate) async fn sadb_start_mirroring(
                                 }
                             }
                             Err(e) => {
-                                logger::error("SADB", &format!("control read error: {}", e));
+                                logger::error(TAG, &format!("control read error: {}", e));
                                 break;
                             }
                         }
                     }
-                    logger::info("SADB", "control reader thread finished");
+                    logger::info(TAG, "control reader thread finished");
                 })
                 .expect("failed to spawn control reader thread"),
         )
     } else {
-        logger::debug("SADB", "no control socket available");
+        logger::debug(TAG, "no control socket available");
         None
     };
 
@@ -376,7 +377,7 @@ pub(crate) async fn sadb_start_mirroring(
     });
 
     state.sadb_mirroring.store(true, Ordering::Relaxed);
-    logger::info("SADB", "mirroring session fully established");
+    logger::info(TAG, "mirroring session fully established");
     Ok(())
 }
 
@@ -418,7 +419,7 @@ pub(crate) async fn sadb_send_touch_event(
             .client
             .send_control_msg(&msg.serialize())
             .map_err(|e| {
-                logger::error("SADB", &format!("send touch event failed: {}", e));
+                logger::error(TAG, &format!("send touch event failed: {}", e));
                 e.to_string()
             })?;
     }
@@ -444,12 +445,12 @@ pub(crate) async fn sadb_send_keycode(
             repeat: 0,
             metastate,
         };
-        logger::debug("SADB", &format!("send keycode: action={}, keycode={}, metastate={}", action, keycode, metastate));
+        logger::debug(TAG, &format!("send keycode: action={}, keycode={}, metastate={}", action, keycode, metastate));
         session
             .client
             .send_control_msg(&msg.serialize())
             .map_err(|e| {
-                logger::error("SADB", &format!("send keycode failed: {}", e));
+                logger::error(TAG, &format!("send keycode failed: {}", e));
                 e.to_string()
             })?;
     }
@@ -463,13 +464,13 @@ pub(crate) async fn sadb_inject_text(
 ) -> Result<(), String> {
     let guard = state.sadb_session.lock().await;
     if let Some(ref session) = *guard {
-        logger::debug("SADB", &format!("inject text: text_len={}", text.len()));
+        logger::debug(TAG, &format!("inject text: text_len={}", text.len()));
         let msg = InjectTextEvent { text };
         session
             .client
             .send_control_msg(&msg.serialize())
             .map_err(|e| {
-                logger::error("SADB", &format!("inject text failed: {}", e));
+                logger::error(TAG, &format!("inject text failed: {}", e));
                 e.to_string()
             })?;
     }
@@ -488,7 +489,7 @@ pub(crate) async fn sadb_connect_device(
         .to_string();
     let adb_path_opt = if adb_path.is_empty() { None } else { Some(adb_path) };
 
-    logger::info("SADB", &format!(
+    logger::info(TAG, &format!(
         "connecting to device via ADB: serial={}, adb_path={}",
         serial,
         adb_path_opt.as_deref().unwrap_or("adb")
@@ -496,10 +497,10 @@ pub(crate) async fn sadb_connect_device(
     sadb_core::adb::AdbClient::connect_with_adb_path(&serial, adb_path_opt.as_deref())
         .await
         .map_err(|e| {
-            logger::error("SADB", &format!("ADB connect failed: serial={}, error={}", serial, e));
+            logger::error(TAG, &format!("ADB connect failed: serial={}, error={}", serial, e));
             e.to_string()
         })?;
-    logger::info("SADB", &format!("ADB connect succeeded: serial={}", serial));
+    logger::info(TAG, &format!("ADB connect succeeded: serial={}", serial));
     Ok(())
 }
 
@@ -515,7 +516,7 @@ pub(crate) async fn sadb_disconnect_device(
         .to_string();
     let adb_path_opt = if adb_path.is_empty() { None } else { Some(adb_path) };
 
-    logger::info("SADB", &format!(
+    logger::info(TAG, &format!(
         "disconnecting device: serial={}, adb_path={}",
         serial,
         adb_path_opt.as_deref().unwrap_or("adb")
@@ -523,10 +524,10 @@ pub(crate) async fn sadb_disconnect_device(
     sadb_core::adb::AdbClient::disconnect_with_adb_path(&serial, adb_path_opt.as_deref())
         .await
         .map_err(|e| {
-            logger::warn("SADB", &format!("ADB disconnect failed: serial={}, error={}", serial, e));
+            logger::warn(TAG, &format!("ADB disconnect failed: serial={}, error={}", serial, e));
             e.to_string()
         })?;
-    logger::info("SADB", &format!("ADB disconnect succeeded: serial={}", serial));
+    logger::info(TAG, &format!("ADB disconnect succeeded: serial={}", serial));
     Ok(())
 }
 
@@ -538,13 +539,13 @@ pub(crate) async fn sadb_set_clipboard(
 ) -> Result<(), String> {
     let guard = state.sadb_session.lock().await;
     if let Some(ref session) = *guard {
-        logger::debug("SADB", &format!("set clipboard: text_len={}, paste={}", text.len(), paste));
+        logger::debug(TAG, &format!("set clipboard: text_len={}, paste={}", text.len(), paste));
         let msg = SetClipboard { text, paste };
         session
             .client
             .send_control_msg(&msg.serialize())
             .map_err(|e| {
-                logger::error("SADB", &format!("set clipboard failed: {}", e));
+                logger::error(TAG, &format!("set clipboard failed: {}", e));
                 e.to_string()
             })?;
     }
@@ -576,7 +577,7 @@ pub(crate) async fn sadb_send_scroll_event(
             .client
             .send_control_msg(&msg.serialize())
             .map_err(|e| {
-                logger::error("SADB", &format!("send scroll event failed: {}", e));
+                logger::error(TAG, &format!("send scroll event failed: {}", e));
                 e.to_string()
             })?;
     }
@@ -586,13 +587,13 @@ pub(crate) async fn sadb_send_scroll_event(
 #[tauri::command]
 pub(crate) async fn sadb_stop_mirroring(state: State<'_, IslandState>) -> Result<(), String> {
     state.sadb_mirroring.store(false, Ordering::Relaxed);
-    logger::info("SADB", "stopping mirroring session");
+    logger::info(TAG, "stopping mirroring session");
     let session = state.sadb_session.lock().await.take();
     if let Some(mut session) = session {
         session.stop.store(true, Ordering::Relaxed);
 
         if let Err(e) = session.client.cleanup().await {
-            logger::warn("SADB", &format!("cleanup error: {}", e));
+            logger::warn(TAG, &format!("cleanup error: {}", e));
         }
 
         if let Some(join) = session.join_video.take() {
@@ -600,26 +601,26 @@ pub(crate) async fn sadb_stop_mirroring(state: State<'_, IslandState>) -> Result
                 let _ = join.join();
             })
             .await;
-            logger::info("SADB", "video thread joined");
+            logger::info(TAG, "video thread joined");
         }
         if let Some(join) = session.join_audio.take() {
             let _ = tokio::task::spawn_blocking(move || {
                 let _ = join.join();
             })
             .await;
-            logger::info("SADB", "audio thread joined");
+            logger::info(TAG, "audio thread joined");
         }
         if let Some(join) = session.join_control.take() {
             let _ = tokio::task::spawn_blocking(move || {
                 let _ = join.join();
             })
             .await;
-            logger::info("SADB", "control thread joined");
+            logger::info(TAG, "control thread joined");
         }
 
-        logger::info("SADB", "mirroring session stopped");
+        logger::info(TAG, "mirroring session stopped");
     } else {
-        logger::debug("SADB", "stop_mirroring called but no active session");
+        logger::debug(TAG, "stop_mirroring called but no active session");
     }
     Ok(())
 }
