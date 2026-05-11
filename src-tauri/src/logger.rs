@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,6 +11,8 @@ static LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 // 0=DEBUG, 1=INFO, 2=WARN
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(1);
+static LOG_FILTER_TAGS: OnceLock<RwLock<Vec<String>>> = OnceLock::new();
+static LOG_FILTER_INVERT: AtomicU8 = AtomicU8::new(0);
 
 fn level_to_u8(level: &str) -> u8 {
     match level {
@@ -33,6 +35,28 @@ pub fn get_level() -> String {
         2 => "warn".to_string(),
         _ => "info".to_string(),
     }
+}
+
+pub fn set_filter(tags: Vec<String>, invert: bool) {
+    let normalized: Vec<String> = tags
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+    *LOG_FILTER_TAGS.get_or_init(|| RwLock::new(Vec::new())).write().unwrap() = normalized;
+    LOG_FILTER_INVERT.store(if invert { 1 } else { 0 }, Ordering::Relaxed);
+}
+
+pub fn get_filter_tags() -> Vec<String> {
+    LOG_FILTER_TAGS
+        .get_or_init(|| RwLock::new(Vec::new()))
+        .read()
+        .unwrap()
+        .clone()
+}
+
+pub fn get_filter_invert() -> bool {
+    LOG_FILTER_INVERT.load(Ordering::Relaxed) != 0
 }
 
 pub fn log_file_path() -> Option<&'static PathBuf> {
@@ -88,6 +112,14 @@ fn get_sender() -> &'static Sender<LogMsg> {
 fn write_log(tag: &str, level: &str, message: &str) {
     if level_to_u8(level) < LOG_LEVEL.load(Ordering::Relaxed) {
         return;
+    }
+    let filter_tags = LOG_FILTER_TAGS.get_or_init(|| RwLock::new(Vec::new())).read().unwrap();
+    if !filter_tags.is_empty() {
+        let matched = filter_tags.contains(&tag.to_string());
+        let invert = LOG_FILTER_INVERT.load(Ordering::Relaxed) != 0;
+        if (!invert && matched) || (invert && !matched) {
+            return;
+        }
     }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

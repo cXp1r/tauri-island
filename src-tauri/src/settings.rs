@@ -99,6 +99,10 @@ pub(crate) struct SettingsData {
     pub show_preview_toggle: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_log_filter_tags")]
+    pub log_filter_tags: Vec<String>,
+    #[serde(default = "default_log_filter_invert")]
+    pub log_filter_invert: bool,
     #[serde(default)]
     pub sadb_ip: String,
     #[serde(default = "default_sadb_port")]
@@ -160,6 +164,14 @@ fn default_show_preview_toggle() -> bool {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_log_filter_tags() -> Vec<String> {
+    vec!["SADB".to_string(), "HitTest".to_string(), "Email".to_string()]
+}
+
+fn default_log_filter_invert() -> bool {
+    false
 }
 
 fn default_shortcut() -> String {
@@ -258,6 +270,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         preview_updates: false,
         show_preview_toggle: false,
         log_level: default_log_level(),
+        log_filter_tags: default_log_filter_tags(),
+        log_filter_invert: default_log_filter_invert(),
         sadb_ip: String::new(),
         sadb_port: default_sadb_port(),
         adb_install_dir: default_adb_install_dir(),
@@ -314,6 +328,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         preview_updates: state.preview_updates.load(Ordering::Relaxed),
         show_preview_toggle: state.show_preview_toggle.load(Ordering::Relaxed),
         log_level: crate::logger::get_level(),
+        log_filter_tags: crate::logger::get_filter_tags(),
+        log_filter_invert: crate::logger::get_filter_invert(),
         sadb_ip: state.sadb_ip.lock().unwrap().clone(),
         sadb_port: *state.sadb_port.lock().unwrap(),
         adb_install_dir: state.adb_install_dir.lock().unwrap().clone(),
@@ -384,6 +400,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "smtc_whitelist_enabled": smtc_whitelist_enabled,
         "smtc_app_whitelist": smtc_app_whitelist,
         "log_level": crate::logger::get_level(),
+        "log_filter_tags": crate::logger::get_filter_tags(),
+        "log_filter_invert": crate::logger::get_filter_invert(),
         "sadb_ip": sadb_ip,
         "sadb_port": sadb_port,
         "adb_install_dir": adb_install_dir,
@@ -415,6 +433,8 @@ pub fn save_settings(
     smtc_whitelist_enabled: Option<bool>,
     smtc_app_whitelist: Option<Vec<String>>,
     log_level: Option<String>,
+    log_filter_tags: Option<Vec<String>>,
+    log_filter_invert: Option<bool>,
     sadb_ip: Option<String>,
     sadb_port: Option<u16>,
     adb_install_dir: Option<String>,
@@ -428,6 +448,11 @@ pub fn save_settings(
 ) {
     if let Some(ref level) = log_level {
         crate::logger::set_level(level);
+    }
+    if log_filter_tags.is_some() || log_filter_invert.is_some() {
+        let tags = log_filter_tags.clone().unwrap_or_else(crate::logger::get_filter_tags);
+        let invert = log_filter_invert.unwrap_or_else(crate::logger::get_filter_invert);
+        crate::logger::set_filter(tags, invert);
     }
     state.clipboard_enabled.store(clipboard_enabled, Ordering::Relaxed);
     *state.shortcut_key.lock().unwrap() = shortcut_key.clone();
@@ -562,6 +587,12 @@ pub fn save_settings(
     }
     if let Some(enabled) = smtc_whitelist_enabled {
         settings_data.smtc_whitelist_enabled = enabled;
+    }
+    if let Some(tags) = log_filter_tags {
+        settings_data.log_filter_tags = tags;
+    }
+    if let Some(invert) = log_filter_invert {
+        settings_data.log_filter_invert = invert;
     }
     if let Some(ref app_ids) = smtc_app_whitelist {
         let normalized: Vec<String> = app_ids

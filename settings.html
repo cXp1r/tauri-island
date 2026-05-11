@@ -23,6 +23,7 @@
         <div class="nav-item" data-page="sadb">ADB 镜像</div>
         <div class="nav-item" data-page="plugins">插件管理</div>
         <div class="nav-item" data-page="blacklist">黑名单</div>
+        <div class="nav-item" data-page="log">日志</div>
         <div class="nav-item" data-page="about">关于与更新</div>
       </nav>
     </aside>
@@ -508,6 +509,59 @@
             </div>
           </div>
         </div>
+        <div class="page" id="page-log">
+          <div class="setting-group">
+            <div class="setting-group-title">日志输出</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>日志等级</h3>
+                <p>等级越低输出越详细，debug 包含所有日志。</p>
+              </div>
+              <div class="setting-control">
+                <select id="log-level-select" class="select">
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warning</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>最后一次日志</h3>
+                <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
+              </div>
+              <div class="setting-control">
+                <button id="open-log-dir-btn" class="btn" type="button">打开</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">日志过滤</div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <h3>反向过滤</h3>
+                <p>关闭时隐藏列表中的 Tag；开启时只显示列表中的 Tag。</p>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="log-filter-invert" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item" style="display: block; border: none; padding: 0;">
+              <div class="setting-label" style="margin-bottom: 12px;">
+                <p>按日志 Tag 完全匹配过滤，例如 <code style="background:var(--surface-active);padding:1px 5px;border-radius:4px;font-family:monospace;">SADB</code>。</p>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <input id="log-filter-tag-input" class="input" type="text" placeholder="输入 Tag，如 WindowAnim" style="flex:1;" />
+                <button id="log-filter-tag-add-btn" class="btn btn-primary">添加</button>
+              </div>
+              <div id="log-filter-tag-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+          </div>
+        </div>
         <!-- 关于与更新页面 -->
         <div class="page" id="page-about">
           <div class="setting-group">
@@ -573,28 +627,6 @@
                 <button id="open-github-btn" class="btn" type="button">打开</button>
               </div>
             </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>日志等级</h3>
-                <p>等级越低输出越详细，debug 包含所有日志。</p>
-              </div>
-              <div class="setting-control">
-                <select id="log-level-select" class="select">
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warning</option>
-                </select>
-              </div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>最后一次日志</h3>
-                <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
-              </div>
-              <div class="setting-control">
-                <button id="open-log-dir-btn" class="btn" type="button">打开</button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -650,6 +682,7 @@ const pageInfo = {
   plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
   sadb:             { title: "ADB 镜像",     desc: "配置 Android 设备屏幕镜像连接参数。" },
   blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
+  log:              { title: "日志",          desc: "配置日志等级、日志文件和 Tag 过滤。" },
   about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
 };
 

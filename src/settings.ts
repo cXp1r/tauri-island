@@ -23,6 +23,8 @@ type SettingsResponse = {
   weather_lon: number;
   auto_start: boolean;
   log_level: string;
+  log_filter_tags: string[];
+  log_filter_invert: boolean;
   sadb_ip: string;
   sadb_port: number;
   adb_install_dir: string;
@@ -114,6 +116,10 @@ const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const autoStartToggle = document.getElementById("auto-start-toggle") as HTMLInputElement;
 const logLevelSelect = document.getElementById("log-level-select") as HTMLSelectElement | null;
+const logFilterInvertToggle = document.getElementById("log-filter-invert") as HTMLInputElement | null;
+const logFilterTagInput = document.getElementById("log-filter-tag-input") as HTMLInputElement | null;
+const logFilterTagAddBtn = document.getElementById("log-filter-tag-add-btn") as HTMLButtonElement | null;
+const logFilterTagList = document.getElementById("log-filter-tag-list") as HTMLDivElement | null;
 
 const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInputElement;
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
@@ -146,6 +152,7 @@ const emailShortcutInput = document.getElementById("email-shortcut-input") as HT
 let isRecording = false;
 let statusTimer: number | null = null;
 const shortcutHint = "请按下快捷键...";
+let logFilterTags: string[] = [];
 
 // 天气城市搜索相关
 const weatherCitySearch = document.getElementById("weather-city-search") as HTMLInputElement;
@@ -189,6 +196,11 @@ async function loadSettings() {
   if (logLevelSelect) {
     logLevelSelect.value = settings.log_level || "info";
   }
+  if (logFilterInvertToggle) {
+    logFilterInvertToggle.checked = settings.log_filter_invert || false;
+  }
+  logFilterTags = Array.isArray(settings.log_filter_tags) ? settings.log_filter_tags : [];
+  renderLogFilterTags();
 
   // 加载 AI 设置
   try {
@@ -361,6 +373,8 @@ saveBtn.addEventListener("click", async () => {
       agentWindowSize: agentWindowSizeSelect.value,
       autoStart: autoStartToggle.checked,
       logLevel: logLevelSelect ? logLevelSelect.value : undefined,
+      logFilterTags,
+      logFilterInvert: logFilterInvertToggle ? logFilterInvertToggle.checked : undefined,
       sadbIp: sadbIpInput.value.trim(),
       sadbPort: parseInt(sadbPortInput.value) || 5555,
       adbInstallDir: adbInstallDirInput.value.trim(),
@@ -1223,6 +1237,62 @@ invoke<string>("get_log_path").then((p) => {
 if (openLogDirBtn) {
   openLogDirBtn.addEventListener("click", () => {
     void invoke("open_log_dir");
+  });
+}
+
+function renderLogFilterTags() {
+  if (!logFilterTagList) return;
+  logFilterTagList.innerHTML = "";
+
+  if (logFilterTags.length === 0) {
+    const empty = document.createElement("p");
+    empty.style.color = "var(--text-muted)";
+    empty.style.fontSize = "13px";
+    empty.textContent = "过滤 Tag 为空。";
+    logFilterTagList.appendChild(empty);
+    return;
+  }
+
+  logFilterTags.forEach((tag, index) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface);border-radius:8px;gap:8px;";
+
+    const label = document.createElement("span");
+    label.textContent = tag;
+    row.appendChild(label);
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn btn-small";
+    delBtn.style.color = "var(--danger, #ff6f7f)";
+    delBtn.textContent = "删除";
+    delBtn.addEventListener("click", () => {
+      logFilterTags.splice(index, 1);
+      renderLogFilterTags();
+    });
+    row.appendChild(delBtn);
+    logFilterTagList.appendChild(row);
+  });
+}
+
+function addLogFilterTag() {
+  if (!logFilterTagInput) return;
+  const val = logFilterTagInput.value.trim();
+  if (!val) return;
+  if (logFilterTags.includes(val)) {
+    showStatus("该 Tag 已在过滤列表中", true);
+    return;
+  }
+  logFilterTags.push(val);
+  logFilterTagInput.value = "";
+  renderLogFilterTags();
+}
+
+if (logFilterTagAddBtn) {
+  logFilterTagAddBtn.addEventListener("click", () => addLogFilterTag());
+}
+if (logFilterTagInput) {
+  logFilterTagInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addLogFilterTag();
   });
 }
 
