@@ -104,7 +104,7 @@ export function initCapsuleInteraction() {
         if (!capsule.classList.contains("agent-expanded")) {
           setSkipResizeSync(true);
           capsule.classList.add("agent-expanded");
-          void invoke("set_expanded", { expanded: true, width: 0, height: 640 });
+          void invoke("set_expanded", { expanded: true, width: 520, height: 550 });
           window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
         } else {
           setSkipResizeSync(true);

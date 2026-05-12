@@ -15,7 +15,7 @@ import { initSadb } from "./modules/sadb";
 import { initEmailResize } from "./modules/email-resize";
 import { initEmailView } from "./modules/email-view";
 import { initNoticeQueue } from "./modules/notice-queue";
-
+import { initrAF } from "./modules/rAF";
 initLogLevel()
 initNoticeUrl();
 initNoticeQueue();
@@ -32,6 +32,7 @@ initSadb();
 initEmailView();
 initEmailResize();
 initResizeObserver();
+initrAF();
 
 showOnlyView("time");
 hidePrivacyPopup();

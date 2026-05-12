@@ -169,6 +169,9 @@ export function setEmailConfigure(v: boolean) { emailConfigure = v; }
 export let emailClickTimer: number | null = null; // 音乐单击延时
 export function setEmailClickTimer(v: number | null) { emailClickTimer = v; }
 
+
+export let cAFTimer: number | null = null;
+export function setcAFTimer(v: number | null) { cAFTimer = v; }
 // --- 拖拽状态 ---
 
 export let isDragging = false;

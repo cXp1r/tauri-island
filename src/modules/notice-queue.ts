@@ -4,10 +4,8 @@ import { capsule, noticeArea } from "../dom";
 import {
   setPendingUrls,
   isMinimized,
-  userChosenView, setUserChosenView,
 } from "../state";
 import { truncateUrl } from "../utils";
-import { getAvailableViews, setView } from "./view-switcher";
 import { logi } from "../logger";
 
 const TAG: string = "NoticeQueue";

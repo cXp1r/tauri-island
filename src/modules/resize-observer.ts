@@ -27,9 +27,8 @@ export function updateAgentCSSSize(size: string) {
 }
 
 
-
 export function initResizeObserver() {
-  const el = document.getElementById("island-capsule");
+  const el = document.getElementById('island-capsule');
   let timer: number | null = null;
   const syncCapsuleRect = () => {
     const minimized = document.body.classList.contains("minimized");
