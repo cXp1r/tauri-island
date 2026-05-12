@@ -30,7 +30,7 @@ use ai::ChatMessage;
 use email::Email;
 use link_handler::LinkHandler;
 
-pub(crate) const WIN_W: f64 = 620.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
+pub(crate) const WIN_W: f64 = 140.0;
 pub(crate) const TOP_MARGIN: f64 = 0.0;
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -49,10 +49,8 @@ pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
 pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
 
 pub(crate) const WIN_H_DEFAULT: f64 = 84.0;        // CAPSULE_EXPANDED_H + padding
+const TOP_HOVER_LEAVE_DELAY_MS: u64 = 120;
 
-// 收起态（绿条）尺寸
-pub(crate) const MINIMIZED_W: f64 = 70.0;
-pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
 pub(crate) const SNAP_FRAME_MS: u64 = 16;
@@ -226,6 +224,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            window::resize_raf, window::snap_back_fast,
             window::start_drag, window::end_drag, window::drag_move,//三个移动函数
             link_handler::open_url, link_handler::open_url_with_whitelist,//两个url跳转函数
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
@@ -323,6 +322,7 @@ pub fn run() {
             let sadb_idle = Arc::new(AtomicBool::new(false));
             let sadb_mirroring = Arc::new(AtomicBool::new(false));
             let music_expanded = Arc::new(AtomicBool::new(false));
+            let is_music = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
             let move_anim_id = Arc::new(AtomicU64::new(0));
@@ -525,8 +525,6 @@ pub fn run() {
             let drag_m = is_dragging.clone();
             let is_expanded_m = is_expanded.clone();
             let hwnd_raw = hwnd.0 as usize;
-            let expand_anim_id_m = expand_anim_id.clone();
-            let is_music = Arc::new(AtomicBool::new(false));
             let current_view_m = current_view.clone();
             let capsule_h_m = capsule_h.clone();
             let capsule_w_m = capsule_w.clone();
@@ -534,6 +532,7 @@ pub fn run() {
             thread::spawn(move || {
                 let mut was_on_capsule = false;//穿透快照
                 let mut was_in_zone = false;//顶部展开快照
+                let mut out_of_zone_since: Option<Instant> = None;
                 let hwnd = HWND(hwnd_raw as *mut _);
                 //顶部展开
                 loop {
@@ -544,7 +543,6 @@ pub fn run() {
                             continue 
                         };
                         let current_scale = win_m.scale_factor().unwrap_or(scale).max(0.1);
-                        let win_w = (rect.right - rect.left) as f64 / current_scale;
                         let fmx = (mx as f64 - rect.left as f64) / current_scale;
                         let fmy = (my as f64 - rect.top as f64) / current_scale;
                         let minimized = is_minimized_m.load(Ordering::Relaxed);
@@ -552,8 +550,10 @@ pub fn run() {
                         let dh = capsule_h_m.load(Ordering::Relaxed).max(if minimized { 4 } else { 1 }) as f64;
                         //logger::debug("LIB", &format!("{} {} {} {}",win_x + (win_w - dw) / 2.0 , win_x + (win_w + dw) / 2.0, win_y , win_y + dh));
                         // 大于左起的x 
+                        let capsule_left = 0.0;
+                        let capsule_right = capsule_left + dw;
                         let hit_top = if minimized { 5.0 } else { 10.0 };
-                        let on_capsule = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= hit_top) && (fmy <= hit_top + dh);
+                        let on_capsule = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= hit_top) && (fmy <= hit_top + dh);
                         let hit_on_capsule = on_capsule || drag_m.load(Ordering::Relaxed);
 
                         if hit_on_capsule && !was_on_capsule {
@@ -567,31 +567,38 @@ pub fn run() {
                         }
 
                         let v = current_view_m.lock().unwrap().as_str().to_string();
-                        if (v == "time" || v == "lyric") && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) && !minimized {
-                            let in_zone = (fmx >= (win_w - dw) / 2.0) && (fmx <= (win_w + dw) / 2.0) && (fmy >= 0.0) && (fmy <= 10.0);
+                        let allow_top_hover = (v == "time" || v == "lyric") && !minimized;
+                        if !allow_top_hover {
+                            was_in_zone = false;
+                            out_of_zone_since = None;
+                        }
+                        if allow_top_hover && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
+                            let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 logger::debug("HitTest", "in_zone");
                                 was_in_zone = true;
+                                out_of_zone_since = None;
                                 is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
-                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(60.0);
-                                let anim_id = expand_anim_id_m.clone();
-                                let h_raw = hwnd.0 as usize;
-                                thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id);
-                                });
+
                             }else if was_in_zone && !in_zone && !hit_on_capsule {
-                                logger::debug("HitTest", "in_zone -> not_in_zone");
-                                was_in_zone = false;
-                                is_expanded_m.store(false, Ordering::Relaxed);
-                                let _ = win_m.emit("set-expand", false);
-                                let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / current_scale).unwrap_or(WIN_H_DEFAULT);
-                                let collapsed_h = CAPSULE_COLLAPSED_H + 10.0;
-                                let anim_id = expand_anim_id_m.clone();
-                                let h_raw = hwnd.0 as usize;
-                                thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), current_scale, from_h, collapsed_h, WIN_W, 350.0, anim_id);
-                                });
+                                let now = Instant::now();
+                                match out_of_zone_since {
+                                    Some(since) if now.duration_since(since) >= Duration::from_millis(TOP_HOVER_LEAVE_DELAY_MS) => {
+                                        logger::debug("HitTest", "in_zone -> not_in_zone");
+                                        was_in_zone = false;
+                                        out_of_zone_since = None;
+                                        is_expanded_m.store(false, Ordering::Relaxed);
+                                        let _ = win_m.emit("set-expand", false);
+                                    }
+                                    None => {
+                                        out_of_zone_since = Some(now);
+                                    }
+                                    _ => {}
+                                }
+
+                            } else if in_zone || hit_on_capsule {
+                                out_of_zone_since = None;
                             }
                         }
                     }

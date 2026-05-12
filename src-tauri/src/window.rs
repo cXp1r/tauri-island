@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
+use crate::{logger, IslandState, TOP_MARGIN, SNAP_DURATION_MS, SNAP_FRAME_MS};
 
 const TAG: &str = "Window";
 
@@ -227,6 +227,35 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
     }
 }
 
+#[tauri::command]
+pub fn snap_back_fast(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
+    let Ok(pos) = window.outer_position() else {
+        logger::error(TAG, "set_expanded failed: outer_position unavailable");
+        return;
+    };
+    let anim_id = state.move_anim_id.clone();
+    let my_gen = anim_next_id(&anim_id, "snap_back");
+    let to_x = (state.screen_w - state.capsule_w.load(Ordering::Relaxed) as f64) / 2.0;
+    let start = Instant::now();
+    let scale = window.scale_factor().unwrap_or(1.0);
+    loop {
+        if !anim_is_current(&anim_id, my_gen, "snap_back") {
+            return;
+        }
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        let p = (elapsed / SNAP_DURATION_MS).min(1.0);
+
+        let t = ease_out_cubic(p);
+        let _ = window.set_position(tauri::LogicalPosition::new(
+            pos.x as f64 * (1.0 - t) / scale + to_x * t, pos.y as f64 * (1.0 - t) / scale,
+        ));
+
+        if p >= 1.0 { break; }
+        thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
+    }
+    anim_finish_if_current(&anim_id, my_gen, "snap_back");
+}
+
 #[track_caller]
 pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64, to_x: f64, to_y: f64, anim_id: Arc<AtomicU64>) -> bool {
     let my_gen = anim_next_id(&anim_id, "snap_back");
@@ -250,44 +279,6 @@ pub(crate) fn snap_back(window: &tauri::WebviewWindow, from_x: f64, from_y: f64,
     anim_finish_if_current(&anim_id, my_gen, "snap_back")
 }
 
-//专门给垂直展开用,避免左右展开弹跳位移,
-#[track_caller]
-pub(crate) fn animate_window_height(
-    hwnd: HWND,
-    scale: f64,
-    from_h: f64,
-    to_h: f64,
-    win_w: f64,
-    duration_ms: f64,
-    anim_id: Arc<AtomicU64>,
-) -> bool {
-    let my_gen = anim_next_id(&anim_id, "animate_window_height");
-    let phys_w = (win_w * scale).round() as i32;
-    logger::debug("WindowAnim", &format!("animate_window_height start: gen={my_gen}, from_h={from_h:.1}, to_h={to_h:.1}, win_w={win_w:.1}, duration_ms={duration_ms:.0}"));
-    let start = Instant::now();
-    loop {
-        if !anim_is_current(&anim_id, my_gen, "animate_window_height") {
-            return false;
-        }
-        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-        let p = (elapsed / duration_ms).min(1.0);
-
-        let t = ease_out_cubic(p);
-        let cur_h = from_h + (to_h - from_h) * t;
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd, None,
-                0, 0,
-                phys_w,
-                (cur_h * scale).round() as i32,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE,
-            );
-        }
-        if p >= 1.0 { break; }
-        thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
-    }
-    anim_finish_if_current(&anim_id, my_gen, "animate_window_height")
-}
 
 /// 动画插值窗口尺寸和位置，duration_ms 与 CSS transition 同步
 #[track_caller]
@@ -376,11 +367,11 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
 
     let scale = window.scale_factor().unwrap_or(1.0);
     // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
-    let cur_w = window.inner_size()
-        .map(|s| s.width as f64 / scale)
-        .unwrap_or(WIN_W);
-    let target_x = (state.screen_w - cur_w) / 2.0;
+    let capsule_w = state.capsule_w.load(Ordering::Relaxed) as f64;
+    let capsule_h = state.capsule_h.load(Ordering::Relaxed) as f64;
+    let target_x = (state.screen_w - capsule_w) / 2.0;
     let target_y = TOP_MARGIN;
+    logger::debug(TAG, &format!("end_drag snap_back: capsule=({capsule_w:.1}x{capsule_h:.1}), target=({target_x:.1},{target_y:.1})"));
 
     if let Ok(pos) = window.outer_position() {
         let cx = pos.x as f64 / scale;
@@ -516,7 +507,7 @@ pub fn set_interacting(state: tauri::State<'_, IslandState>, active: bool) {
 }
 
 #[tauri::command]
-pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::WebviewWindow) {
+pub fn dismiss_island(state: tauri::State<'_, IslandState>) {
     state.is_interacting.store(false, Ordering::Relaxed);
     state.is_notifying.store(false, Ordering::Relaxed);
     state.is_expanded.store(false, Ordering::Relaxed);
@@ -543,20 +534,48 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     
 }
 
+#[tauri::command]
+pub fn resize_raf(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64, width: f64, reposition: Option<bool>) {
+    let Ok(pos) = window.outer_position() else {
+        logger::error(TAG, "set_expanded failed: outer_position unavailable");
+        return;
+    };
+
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let window_width = width.max(640.0);
+    let window_height = height.max(480.0);
+    let choice = reposition.unwrap_or(true);
+    let (target_x, target_y) = if choice {
+        ((pos.x as f64 + ((state.capsule_w.load(Ordering::Relaxed) as f64 - width) / 2.0 * scale)).round() as i32, pos.y)
+    } else {
+        (pos.x, pos.y)
+    };
+    logger::debug(TAG, &format!("rAF: target_x={}, pos.y={}, window_width={}, window_height={}", target_x, pos.y, window_width, window_height));
+    // width/height 是逻辑像素 → 转物理像素
+    let phys_w = (window_width * scale).round() as i32;
+    let phys_h = (window_height * scale).round() as i32;
+
+    unsafe {
+        let _ = SetWindowPos(
+            window.hwnd().unwrap(),
+            None,
+            target_x,
+            target_y,
+            phys_w,
+            phys_h,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
 //统一封装函数之通用展开设置
 #[tauri::command]
 pub fn set_expanded(
-    window: tauri::WebviewWindow,
     state: tauri::State<'_, IslandState>,
     expanded: bool,
-    width: u64,
-    height: u64,
+    _width: u64,
+    _height: u64,
 ) {
-    // 
-    // 逻辑像素
-    let target_w = (width as f64).max(WIN_W);
-    let target_h = (height as f64).max(WIN_H_DEFAULT);
-
     state.is_expanded.store(expanded, Ordering::Relaxed);
     let v = state.current_view.lock().unwrap().as_str().to_string();
     let view_expanded = match v.as_str() {
@@ -567,85 +586,6 @@ pub fn set_expanded(
         _       => return,
     };
     view_expanded.store(expanded, Ordering::Relaxed);
-
-    let Ok(pos) = window.outer_position() else {
-        logger::error(TAG, "set_expanded failed: outer_position unavailable");
-
-        return;
-    };
-
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let from_x = pos.x as f64 / scale;
-    let from_y = pos.y as f64 / scale;
-    let (from_w, from_h) = window
-        .inner_size()
-        .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-        .unwrap_or((WIN_W, WIN_H_DEFAULT));
-    let screen = state.screen_w;
-    let home_x = (screen - target_w) / 2.0;
-    let (target_x, target_y, final_w, final_h) = if expanded {
-        (from_x + (from_w - target_w) / 2.0, from_y, target_w, target_h)
-    } else {
-        (home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT)
-    };
-    let expand_anim_id = state.expand_anim_id.clone();
-    let move_anim_id = state.move_anim_id.clone();
-    let w = window.clone();
-    thread::spawn(move || {
-        // 这里是子线程不怕阻塞
-        
-        if !expanded {
-            snap_back(&w, from_x, from_y, (screen - from_w) / 2.0, TOP_MARGIN, move_anim_id.clone());
-            thread::sleep(Duration::from_millis(200));
-        }
-
-        // 重新采样
-        let scale = w.scale_factor().unwrap_or(1.0);
-        let (actual_from_w, actual_from_h) = w
-            .inner_size()
-            .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-            .unwrap_or((from_w, from_h));
-        let (actual_from_x, actual_from_y) = w
-            .outer_position()
-            .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
-            .unwrap_or((from_x, from_y));
-
-        logger::debug("WindowAnim", &format!(
-            "set_expanded sample: view={v}, expanded={expanded}, current_gen={}, from=({actual_from_x:.1},{actual_from_y:.1},{actual_from_w:.1}x{actual_from_h:.1}), target=({target_x:.1},{target_y:.1},{final_w:.1}x{final_h:.1})",
-            anim_current_id(&expand_anim_id),
-        ));
-
-        if actual_from_w == final_w {
-
-            if actual_from_h == final_h {
-                return;
-            }
-            let gen = anim_next_id(&expand_anim_id, "set_expanded_hard_cut");
-            if !anim_is_current(&expand_anim_id, gen, "set_expanded_hard_cut") {
-                return;
-            }
-            // 直接硬切
-            unsafe {
-                let _ = SetWindowPos(
-                    w.hwnd().unwrap(),
-                    None,
-                    (target_x * scale).round() as i32,
-                    (target_y * scale).round() as i32,
-                    (final_w  * scale).round() as i32,
-                    (final_h  * scale).round() as i32,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
-            anim_finish_if_current(&expand_anim_id, gen, "set_expanded_hard_cut");
-        } else {
-            animate_resize(
-                &w,
-                actual_from_x, actual_from_y, actual_from_w, actual_from_h,
-                target_x, target_y, final_w, final_h,
-                350.0, expand_anim_id,
-            );
-        }
-    });
 }
 
 #[tauri::command]
