@@ -80,7 +80,7 @@
 
 
 
-html, body {
+html {
 
     width: 100vw;
 
@@ -89,8 +89,6 @@ html, body {
     background: transparent;
 
     display: flex;
-
-    justify-content: center;
 
     align-items: flex-start;
 
@@ -123,8 +121,6 @@ body {
     border-radius: 50px;
 
     display: flex;
-
-    align-items: center;
 
     justify-content: center;
 
