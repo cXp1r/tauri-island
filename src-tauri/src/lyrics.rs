@@ -87,35 +87,7 @@ fn fetch_lyrics_by_rust_api(
                 ));
             }
         }
-        
-        /*for player in &fallback_players {
-            if gen_ref.load(std::sync::atomic::Ordering::Relaxed) != gen {
-                crate::logger::warn("Lyrics", &format!("rust-api: fallback abort gen={} (stale)", gen));
-                return None;
-            }
-            crate::logger::info("Lyrics", &format!(
-                "rust-api: fallback trying '{}'", player.display_name()
-            ));
-            match smtc_lyrics::get_lyrics_with_player(player, title, artist_opt, album_opt, album_artist_opt, duration_ms_u32).await {
-                Ok(data) => {
-                    let meta = data.track_metadata.as_ref();
-                    crate::logger::info("Lyrics", &format!(
-                        "rust-api: raw from='{}' lines={} file={:?} meta={:?}",
-                        player.display_name(),
-                        data.lines.len(),
-                        data.file.as_ref().map(|f| format!("{:?}/{:?}", f.lyrics_type, f.sync_type)),
-                        meta
-                    ));
-                    return Some(data);
-                }
-                Err(e) => {
-                    crate::logger::warn("Lyrics", &format!(
-                        "rust-api: fallback player='{}' failed: {}",
-                        player.display_name(), e
-                    ));
-                }
-            }
-        }*/
+
 
         crate::logger::warn("Lyrics", "rust-api: all sources exhausted");
         None
