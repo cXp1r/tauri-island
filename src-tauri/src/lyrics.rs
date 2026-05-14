@@ -1,4 +1,4 @@
-use lyrix::models::LyricsData;
+use lyrix::models::{LyricsData, LineInfo};
 use lyrix::smtc_lyrics;
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct LyricToken {
@@ -70,15 +70,28 @@ fn fetch_lyrics_by_rust_api(
         ));
         match smtc_lyrics::get_lyrics_with_player(&player, title, artist_opt, album_opt, album_artist_opt, duration_ms_u32).await {
             Ok(data) => {
-                let meta = data.track_metadata.as_ref();
+                let ddata = if let Some(meta) = &data.track_metadata {
+                    match meta.is_trial {
+                        true => match smtc_lyrics::get_trial_part(data.clone()) {
+                            Ok(l) => l,
+                            Err(e) => {
+                                crate::logger::info("Lyrics", "rust-api: failed to get trial part, return raw_lyrics");
+                                data
+                            }
+                        },
+                        _ => data,
+                    }
+                } else {
+                    data
+                };
                 crate::logger::info("Lyrics", &format!(
                 "rust-api: raw from='{}' lines={} file={:?} meta={:?}",
                     player.display_name(),
-                    data.lines.len(),
-                    data.file.as_ref().map(|f| format!("{:?}/{:?}", f.lyrics_type, f.sync_type)),
-                    meta
+                    ddata.lines.len(),
+                    ddata.file.as_ref().map(|f| format!("{:?}/{:?}", f.lyrics_type, f.sync_type)),
+                    ddata.track_metadata,
                 ));
-                return Some(data);
+                return Some(ddata);
             }
             Err(e) => {
                 crate::logger::warn("Lyrics", &format!(
@@ -160,7 +173,7 @@ fn lyrics_data_to_lyric_lines(data: &LyricsData) -> Vec<LyricLine> {
 
     let mut out = Vec::with_capacity(indices.len());
     for (pos, idx) in indices.iter().enumerate() {
-        let line = &data.lines[*idx];
+        let line: &LineInfo = &data.lines[*idx];
         let start_ms = i64::from(line.start_time);
         let end_ms = line_end_ms(data, &indices, pos, start_ms);
         let text = if line.text.trim().is_empty() {
