@@ -140,6 +140,3 @@ tauri-island/
 - 预览更新通道
 - 日志级别
 
-## 分支说明
-
-本分支 (`tauri-island`) 是使用 Tauri 2 完全重写的版本，与其他 Python 分支无关。
