@@ -563,8 +563,6 @@ pub fn run() {
                             window::set_click_through(hwnd, true);
                             was_on_capsule = false;
                         }
-
-                        let v = current_view_m.lock().unwrap().as_str().to_string();
                         if !minimized && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
                             let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {

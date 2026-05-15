@@ -26,15 +26,12 @@ export function restoreUserView() {
 export function initNoticeUrl() {
   // 展开 / 收起（鼠标悬停、后端指令等）
   listen<boolean>("set-expand", (event) => {
-    if (currentView === "email") return;
     if (event.payload) {
-      if (capsule.classList.contains("agent-expanded")) return;
+      if (capsule.classList.contains("email-expanded") || capsule.classList.contains("agent-expanded") || capsule.classList.contains("music-expanded")) return;
       if (isMinimized) return;
       capsule.classList.add("expanded");
-      capsule.classList.remove("lyric-collapsed");
       updateSwitcherUI();
     } else {
-      if (capsule.classList.contains("agent-expanded")) return;
       capsule.classList.remove("expanded");
       updateCapsuleSize();
       dismissOverlays();

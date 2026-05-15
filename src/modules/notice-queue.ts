@@ -214,11 +214,6 @@ function showNext(): void {
   renderMessage(activeItem);
   capsule.classList.add("notice-active");
   noticeArea.classList.add("active");
-
-  if (!capsule.classList.contains("agent-expanded") && !isMinimized) {
-    capsule.classList.add("expanded");
-    capsule.classList.remove("lyric-collapsed");
-  }
   displayTimer = window.setTimeout(() => {
     const expired = activeItem;
     if (expired) {
