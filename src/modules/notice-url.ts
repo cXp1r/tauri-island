@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { capsule, noticeArea } from "../dom";
-import { currentView, isMinimized, userChosenView, setUserChosenView } from "../state";
+import { isMinimized, userChosenView, setUserChosenView } from "../state";
 import { getAvailableViews, setView, updateSwitcherUI, updateCapsuleSize } from "./view-switcher";
 
 // 从 notice-queue 重新导出，保持其他模块 import 路径不变

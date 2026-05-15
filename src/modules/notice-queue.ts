@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { capsule, noticeArea } from "../dom";
 import {
   setPendingUrls,
-  isMinimized,
 } from "../state";
 import { truncateUrl } from "../utils";
 import { logi } from "../logger";

@@ -524,7 +524,6 @@ pub fn run() {
             let drag_m = is_dragging.clone();
             let is_expanded_m = is_expanded.clone();
             let hwnd_raw = hwnd.0 as usize;
-            let current_view_m = current_view.clone();
             let capsule_h_m = capsule_h.clone();
             let capsule_w_m = capsule_w.clone();
             let is_minimized_m = is_minimized.clone();
