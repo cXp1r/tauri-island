@@ -41,7 +41,7 @@ export function animateCapsule(toW: number, toH: number): void {
 
   const start = performance.now()
   let lw = startW
-  let lh = startH
+  //let lh = startH
 
   function frame(now: number): void {
     const t = Math.min((now - start) / 350, 1)
@@ -52,9 +52,9 @@ export function animateCapsule(toW: number, toH: number): void {
     el.style.width  = w + 'px'
     el.style.height = h + 'px'
 
-    invoke('resize_raf', { width: w, height: h + 10, lwidth: lw, lheight: lh + 10, reposition: true })
+    invoke('resize_raf', { width: w, height: h + 10, lwidth: lw, ewidth: toW, reposition: 1, d: t, e: e})
     lw = w
-    lh = h
+    //lh = h
 
     if (t < 1) {
       raf = requestAnimationFrame(frame)
@@ -67,42 +67,7 @@ export function animateCapsule(toW: number, toH: number): void {
   raf = requestAnimationFrame(frame)
 }
 
-export function animateCapsuleWithoutRaf(toW: number, toH: number): void {
-  if (toW === targetW && toH === targetH) return
-  targetW = toW
-  targetH = toH
 
-  clearInterval(raf)
-
-  const currentW = parseFloat(el.style.width) || fromW
-  const currentH = parseFloat(el.style.height) || fromH
-  const startW = currentW
-  const startH = currentH
-
-  const start = performance.now()
-  let lw = startW
-  let lh = startH
-
-  raf = window.setInterval(() => {
-    const t = Math.min((performance.now() - start) / 500, 1)
-    const e = easing(t)
-    const w = Math.round(startW + (toW - startW) * e)
-    const h = Math.round(startH + (toH - startH) * e)
-
-    el.style.width  = w + 'px'
-    el.style.height = h + 'px'
-
-    invoke('resize_raf', { width: w, height: h + 10, lwidth: lw, lheight: lh + 10, reposition: true })
-    lw = w
-    lh = h
-
-    if (t >= 1) {
-      clearInterval(raf)
-      fromW = toW
-      fromH = toH
-    }
-  }, 1000 / 100) // 约 60fps~
-}
 
 export function initrAF() {
   
@@ -116,15 +81,15 @@ export function initrAF() {
                   [toW, toH] = [380, 420];
                 } else if (el.classList.contains("agent-expanded")) {
                   [toW, toH] = [640, 620];
-                } else if (el.classList.contains("expanded")) {
-                  [toW, toH] = [330, 74];
-                } else if (el.classList.contains("lyric-collapsed")) {
-                  [toW, toH] = [340, 50];
                 } else if (el.classList.contains("sadb-idle")) {
                   [toW, toH] = [380, 420];
                 } else if (el.classList.contains("email-expanded")) {
                   const style = getComputedStyle(document.documentElement);
                   [toW, toH] = [parseInt(style.getPropertyValue('--email-view-w')), parseInt(style.getPropertyValue('--email-view-h')),];
+                } else if (el.classList.contains("expanded")) {
+                  [toW, toH] = [330, 74];
+                } else if (el.classList.contains("lyric-collapsed")) {
+                  [toW, toH] = [340, 50];
                 }
                 animateCapsule(toW, toH);
               }

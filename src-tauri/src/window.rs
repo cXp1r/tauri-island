@@ -164,10 +164,6 @@ pub(crate) fn anim_is_current(anim_id: &Arc<AtomicU64>, my_gen: u64, label: &str
     true
 }
 
-#[track_caller]
-pub(crate) fn anim_current_id(anim_id: &Arc<AtomicU64>) -> u64 {
-    anim_id.load(Ordering::Relaxed)
-}
 
 #[track_caller]
 pub(crate) fn anim_finish_if_current(anim_id: &Arc<AtomicU64>, my_gen: u64, label: &str) -> bool {
@@ -226,36 +222,6 @@ pub(crate) fn set_click_through(hwnd: HWND, through: bool) {
             SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !(WS_EX_TRANSPARENT.0 as i32));
         }
     }
-}
-
-#[tauri::command]
-pub fn snap_back_fast(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
-    let Ok(pos) = window.outer_position() else {
-        logger::error(TAG, "set_expanded failed: outer_position unavailable");
-        return;
-    };
-    let anim_id = state.move_anim_id.clone();
-    let my_gen = anim_next_id(&anim_id, "snap_back_fast");
-    let to_x = (state.screen_w - state.capsule_w.load(Ordering::Relaxed) as f64) / 2.0;
-    println!("{}", to_x);
-    let start = Instant::now();
-    let scale = window.scale_factor().unwrap_or(1.0);
-    loop {
-        if !anim_is_current(&anim_id, my_gen, "snap_back_fast") {
-            return;
-        }
-        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-        let p = (elapsed / SNAP_DURATION_MS).min(1.0);
-
-        let t = ease_out_cubic(p);
-        let _ = window.set_position(tauri::LogicalPosition::new(
-            pos.x as f64 * (1.0 - t) / scale + to_x * t, pos.y as f64 * (1.0 - t) / scale,
-        ));
-
-        if p >= 1.0 { break; }
-        thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
-    }
-    anim_finish_if_current(&anim_id, my_gen, "snap_back_fast");
 }
 
 #[track_caller]
@@ -538,9 +504,8 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 
 
 
-
 #[tauri::command]
-pub fn resize_raf(window: tauri::WebviewWindow, height: f64, width: f64, lheight: f64, lwidth: f64, reposition: Option<bool>) {
+pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWindow, height: f64, width: f64, lwidth: f64, ewidth: f64, reposition: Option<u8>, d: Option<f64>, e: Option<f64>) {
     let Ok(pos) = window.outer_position() else {
         logger::error(TAG, "set_expanded failed: outer_position unavailable");
         return;
@@ -550,18 +515,30 @@ pub fn resize_raf(window: tauri::WebviewWindow, height: f64, width: f64, lheight
     let width = (width * scale).round() as i32;
     let height = (height * scale).round() as i32;
     let lwidth = (lwidth * scale).round() as i32;
-    let lheight = (lheight * scale).round() as i32;
-
+    let ewidth = (ewidth * scale).round() as i32;
     
     let window_width = width.max(640);
     let window_height = height.max(480);
-    let choice = reposition.unwrap_or(true);
-    let (target_x, target_y) = if choice {
-        (pos.x + lwidth /2  - width / 2 , pos.y)
-    } else {
-        (pos.x, pos.y)
+    let choice = reposition.unwrap_or(0);
+    
+    let temp_x = pos.x + lwidth /2 - width / 2;
+    let (target_x, target_y) = match choice  {
+        0 => (temp_x, pos.y),
+        1 => {
+            let x = d.unwrap_or(1.0);
+            let e = e.unwrap_or(1.0);
+            use std::f64::consts::PI;
+            let p = x - (2.0 * PI * x).sin() / (4.0 * PI);
+            let home_x = ((state.screen_w - ewidth as f64) * scale / 2.0) as i32;//ewidth必定为10的倍数
+            if ewidth >= lwidth || pos.y == 0 {
+                (temp_x, pos.y)
+            } else {
+                (pos.x + ((home_x as f64 - pos.x as f64) * e).round() as i32, (pos.y as f64 * (1.0 - p)).round() as i32)
+            }
+        },
+        _ => (pos.x, pos.y),
     };
-    //logger::debug(TAG, &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, lwindow_height={}", target_x, target_y, width, height, lwidth, lheight));
+    logger::debug(TAG, &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
     // width/height 是逻辑像素 → 转物理像素
 
     unsafe {
