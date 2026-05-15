@@ -579,7 +579,7 @@ export function initLyricRenderer() {
       resetMpLyricFlipState();
     }
 
-    updateSwitcherUI();
+    //updateSwitcherUI();
   });
 
 }
