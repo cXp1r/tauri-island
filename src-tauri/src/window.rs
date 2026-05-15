@@ -505,7 +505,7 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 
 
 #[tauri::command]
-pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWindow, height: f64, width: f64, lwidth: f64, ewidth: f64, reposition: Option<u8>, d: Option<f64>, e: Option<f64>) {
+pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWindow, height: f64, width: f64, lwidth: f64, ewidth: f64, reposition: Option<u8>) {
     let Ok(pos) = window.outer_position() else {
         logger::error(TAG, "set_expanded failed: outer_position unavailable");
         return;
@@ -517,30 +517,34 @@ pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
     let lwidth = (lwidth * scale).round() as i32;
     let ewidth = (ewidth * scale).round() as i32;
     
-    let window_width = width.max(640);
-    let window_height = height.max(480);
+    let min_w = (640.0 * scale).round() as i32;
+    let min_h = (480.0 * scale).round() as i32;
+    let window_width = width.max(min_w);
+    let window_height = height.max(min_h);
     let choice = reposition.unwrap_or(0);
     
     let temp_x = pos.x + lwidth /2 - width / 2;
     let (target_x, target_y) = match choice  {
         0 => (temp_x, pos.y),
         1 => {
-            let x = d.unwrap_or(1.0);
-            let e = e.unwrap_or(1.0);
-            use std::f64::consts::PI;
-            let p = x - (2.0 * PI * x).sin() / (4.0 * PI);
-            let home_x = ((state.screen_w - ewidth as f64) * scale / 2.0) as i32;//ewidth必定为10的倍数
+            let home_x = ((state.screen_w - ewidth as f64) / 2.0) as i32;//ewidth必定为10的倍数
             if ewidth >= lwidth || pos.y == 0 {
                 (temp_x, pos.y)
             } else {
-                (pos.x + ((home_x as f64 - pos.x as f64) * e).round() as i32, (pos.y as f64 * (1.0 - p)).round() as i32)
+                let ratio = if lwidth != ewidth {
+                    (width - ewidth) as f64 / (lwidth - ewidth) as f64
+                } else {
+                    1.0 // 避免除以零，lwidth==ewidth 时窗口未变化
+                };
+                //纳闷为啥是这样算的请建系解二元一次方程组
+                let x1 = home_x + ((pos.x - home_x) as f64 * ratio).round() as i32;
+                let y1 = (pos.y as f64 * ratio).round() as i32;
+                (x1, y1)
             }
         },
         _ => (pos.x, pos.y),
     };
-    logger::debug(TAG, &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
-    // width/height 是逻辑像素 → 转物理像素
-
+    logger::debug("rAF", &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
     unsafe {
         let _ = SetWindowPos(
             window.hwnd().unwrap(),

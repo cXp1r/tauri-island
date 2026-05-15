@@ -167,7 +167,7 @@ fn default_log_level() -> String {
 }
 
 fn default_log_filter_tags() -> Vec<String> {
-    vec!["SADB".to_string(), "HitTest".to_string(), "Email".to_string()]
+    vec!["SADB".to_string(), "HitTest".to_string(), "Email".to_string(), "rAF".to_string()]
 }
 
 fn default_log_filter_invert() -> bool {
