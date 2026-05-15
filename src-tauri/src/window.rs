@@ -9,6 +9,7 @@ use crate::{logger, IslandState, TOP_MARGIN, SNAP_DURATION_MS, SNAP_FRAME_MS};
 
 const TAG: &str = "Window";
 
+
 pub(crate) fn get_foreground_process_name() -> Option<String> {
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
@@ -234,12 +235,13 @@ pub fn snap_back_fast(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         return;
     };
     let anim_id = state.move_anim_id.clone();
-    let my_gen = anim_next_id(&anim_id, "snap_back");
+    let my_gen = anim_next_id(&anim_id, "snap_back_fast");
     let to_x = (state.screen_w - state.capsule_w.load(Ordering::Relaxed) as f64) / 2.0;
+    println!("{}", to_x);
     let start = Instant::now();
     let scale = window.scale_factor().unwrap_or(1.0);
     loop {
-        if !anim_is_current(&anim_id, my_gen, "snap_back") {
+        if !anim_is_current(&anim_id, my_gen, "snap_back_fast") {
             return;
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -253,7 +255,7 @@ pub fn snap_back_fast(window: tauri::WebviewWindow, state: tauri::State<'_, Isla
         if p >= 1.0 { break; }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
-    anim_finish_if_current(&anim_id, my_gen, "snap_back");
+    anim_finish_if_current(&anim_id, my_gen, "snap_back_fast");
 }
 
 #[track_caller]
@@ -534,26 +536,33 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     
 }
 
+
+
+
 #[tauri::command]
-pub fn resize_raf(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, height: f64, width: f64, reposition: Option<bool>) {
+pub fn resize_raf(window: tauri::WebviewWindow, height: f64, width: f64, lheight: f64, lwidth: f64, reposition: Option<bool>) {
     let Ok(pos) = window.outer_position() else {
         logger::error(TAG, "set_expanded failed: outer_position unavailable");
         return;
     };
-
     let scale = window.scale_factor().unwrap_or(1.0);
-    let window_width = width.max(640.0);
-    let window_height = height.max(480.0);
+
+    let width = (width * scale).round() as i32;
+    let height = (height * scale).round() as i32;
+    let lwidth = (lwidth * scale).round() as i32;
+    let lheight = (lheight * scale).round() as i32;
+
+    
+    let window_width = width.max(640);
+    let window_height = height.max(480);
     let choice = reposition.unwrap_or(true);
     let (target_x, target_y) = if choice {
-        ((pos.x as f64 + ((state.capsule_w.load(Ordering::Relaxed) as f64 - width) / 2.0 * scale)).round() as i32, pos.y)
+        (pos.x + lwidth /2  - width / 2 , pos.y)
     } else {
         (pos.x, pos.y)
     };
-    logger::debug(TAG, &format!("rAF: target_x={}, pos.y={}, window_width={}, window_height={}", target_x, pos.y, window_width, window_height));
+    //logger::debug(TAG, &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, lwindow_height={}", target_x, target_y, width, height, lwidth, lheight));
     // width/height 是逻辑像素 → 转物理像素
-    let phys_w = (window_width * scale).round() as i32;
-    let phys_h = (window_height * scale).round() as i32;
 
     unsafe {
         let _ = SetWindowPos(
@@ -561,8 +570,8 @@ pub fn resize_raf(window: tauri::WebviewWindow, state: tauri::State<'_, IslandSt
             None,
             target_x,
             target_y,
-            phys_w,
-            phys_h,
+            window_width,
+            window_height,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }

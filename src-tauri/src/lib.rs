@@ -49,7 +49,6 @@ pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
 pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
 
 pub(crate) const WIN_H_DEFAULT: f64 = 84.0;        // CAPSULE_EXPANDED_H + padding
-const TOP_HOVER_LEAVE_DELAY_MS: u64 = 120;
 
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
@@ -224,7 +223,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            window::resize_raf, window::snap_back_fast,
+            window::resize_raf, window::snap_back_fast, 
             window::start_drag, window::end_drag, window::drag_move,//三个移动函数
             link_handler::open_url, link_handler::open_url_with_whitelist,//两个url跳转函数
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
@@ -532,7 +531,6 @@ pub fn run() {
             thread::spawn(move || {
                 let mut was_on_capsule = false;//穿透快照
                 let mut was_in_zone = false;//顶部展开快照
-                let mut out_of_zone_since: Option<Instant> = None;
                 let hwnd = HWND(hwnd_raw as *mut _);
                 //顶部展开
                 loop {
@@ -570,36 +568,21 @@ pub fn run() {
                         let allow_top_hover = (v == "time" || v == "lyric") && !minimized;
                         if !allow_top_hover {
                             was_in_zone = false;
-                            out_of_zone_since = None;
                         }
                         if allow_top_hover && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
                             let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 logger::debug("HitTest", "in_zone");
                                 was_in_zone = true;
-                                out_of_zone_since = None;
                                 is_expanded_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
 
                             }else if was_in_zone && !in_zone && !hit_on_capsule {
-                                let now = Instant::now();
-                                match out_of_zone_since {
-                                    Some(since) if now.duration_since(since) >= Duration::from_millis(TOP_HOVER_LEAVE_DELAY_MS) => {
-                                        logger::debug("HitTest", "in_zone -> not_in_zone");
-                                        was_in_zone = false;
-                                        out_of_zone_since = None;
-                                        is_expanded_m.store(false, Ordering::Relaxed);
-                                        let _ = win_m.emit("set-expand", false);
-                                    }
-                                    None => {
-                                        out_of_zone_since = Some(now);
-                                    }
-                                    _ => {}
-                                }
-
-                            } else if in_zone || hit_on_capsule {
-                                out_of_zone_since = None;
-                            }
+                                logger::debug("HitTest", "in_zone -> not_in_zone");
+                                was_in_zone = false;
+                                is_expanded_m.store(false, Ordering::Relaxed);
+                                let _ = win_m.emit("set-expand", false);
+                            } 
                         }
                     }
                     thread::sleep(Duration::from_millis(33));

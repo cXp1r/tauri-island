@@ -74,7 +74,7 @@ fn fetch_lyrics_by_rust_api(
                     match meta.is_trial {
                         true => match smtc_lyrics::get_trial_part(data.clone()) {
                             Ok(l) => l,
-                            Err(e) => {
+                            Err(_e) => {
                                 crate::logger::info("Lyrics", "rust-api: failed to get trial part, return raw_lyrics");
                                 data
                             }
