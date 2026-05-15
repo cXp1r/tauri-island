@@ -223,7 +223,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            window::resize_raf, window::snap_back_fast, 
+            window::resize_raf, 
             window::start_drag, window::end_drag, window::drag_move,//三个移动函数
             link_handler::open_url, link_handler::open_url_with_whitelist,//两个url跳转函数
             window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
@@ -565,11 +565,7 @@ pub fn run() {
                         }
 
                         let v = current_view_m.lock().unwrap().as_str().to_string();
-                        let allow_top_hover = (v == "time" || v == "lyric") && !minimized;
-                        if !allow_top_hover {
-                            was_in_zone = false;
-                        }
-                        if allow_top_hover && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
+                        if !minimized && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
                             let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= 0.0) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 logger::debug("HitTest", "in_zone");
