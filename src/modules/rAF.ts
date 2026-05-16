@@ -17,6 +17,8 @@ const ease = (p1x: number, p1y: number, p2x: number, p2y: number) => {
 }
 
 const easing = ease(0.25, 1, 0.5, 1)
+const { port1, port2 } = new MessageChannel()
+
 
 let raf: number
 let targetW: number = 0
@@ -25,7 +27,17 @@ const el = document.getElementById('island-capsule')!
 let rect = el.getBoundingClientRect()
 let fromW = Math.round(rect.width)
 let fromH = Math.round(rect.height)
-
+port1.onmessage = ({ data }: MessageEvent<{ w: number; h: number; lw: number; t: number; e: number }>) => {
+  void invoke('resize_raf', {
+    width: data.w,
+    height: data.h + 10,
+    lwidth: data.lw,
+    ewidth: targetW,   // 用模块级变量
+    reposition: 1,
+    d: data.t,
+    e: data.e,
+  })
+}
 export function animateCapsule(toW: number, toH: number): void {
   if (toW === targetW && toH === targetH) return
   targetW = toW
@@ -42,26 +54,19 @@ export function animateCapsule(toW: number, toH: number): void {
   const start = performance.now()
   let lw = startW
   //let lh = startH
-
   function frame(now: number): void {
     const t = Math.min((now - start) / 350, 1)
     const e = easing(t)
-    const w = Math.round(startW + (toW - startW) * e)
-    const h = Math.round(startH + (toH - startH) * e)
+    const w = (Math.round(startW + (toW - startW) * e) + 1) & ~1
+    const h = (Math.round(startH + (toH - startH) * e) + 1) & ~1
 
     el.style.width  = w + 'px'
     el.style.height = h + 'px'
 
-    invoke('resize_raf', { width: w, height: h + 10, lwidth: lw, ewidth: toW, reposition: 1, d: t, e: e})
-    lw = w
-    //lh = h
+    port2.postMessage({ w, h, lw, t, e })
 
-    if (t < 1) {
-      raf = requestAnimationFrame(frame)
-    } else {
-      fromW = toW  // ← 动画结束后再更新
-      fromH = toH
-    }
+    if (t < 1) raf = requestAnimationFrame(frame)
+    lw = w
   }
 
   raf = requestAnimationFrame(frame)
@@ -69,8 +74,16 @@ export function animateCapsule(toW: number, toH: number): void {
 
 
 
+// 在 initrAF 里预热，页面加载时就触发一次
 export function initrAF() {
-  
+  // 预热 Tauri IPC
+  void invoke('resize_raf', {
+    width: 0, height: 0, lwidth: 0,
+    ewidth: 0, reposition: 0, d: 0, e: 0,
+  })
+
+  // 预热 MessageChannel
+  port2.postMessage({ w: 0, h: 0, lw: 0, t: 0, e: 0 })
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             if (mutation.attributeName === 'class') {
