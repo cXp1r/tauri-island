@@ -2,12 +2,14 @@
 // Types
 // ────────────────────────────────────────────────
 
-interface ScreenItem {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export interface MonitorInfo {
+    name: string
+    x: number
+    y: number
+    width: number
+    height: number
+    scale_factor: number
+    is_primary: boolean
 }
 
 interface Vec2 {
@@ -27,10 +29,8 @@ const PADDING   = 20;
 // Default data
 // ────────────────────────────────────────────────
 
-const screenData: ScreenItem[] = [
-  { id: 'screen-0', x: 2560,  y: 344, width: 1920, height: 1080 },
-  { id: 'screen-1', x: 0,     y: 0,   width: 2560, height: 1440 },
-  { id: 'screen-2', x: -1920, y: 352, width: 1920, height: 1080 },
+let screenData: MonitorInfo[] = [
+  { name: 'Unknown', x: 0,  y: 0, width: 1920, height: 1080, scale_factor: 1, is_primary: false }
 ];
 
 // ────────────────────────────────────────────────
@@ -39,7 +39,7 @@ const screenData: ScreenItem[] = [
 
 let offset: Vec2     = { x: 0, y: 0 };
 let scale: number    = 1;
-let selectedId: string | null = null;
+let selectedId: string  = "";
 
 // ────────────────────────────────────────────────
 // DOM refs
@@ -106,13 +106,13 @@ function drawGrid(): void {
 // World / DOM rendering
 // ────────────────────────────────────────────────
 
-function renderScreens(data: ScreenItem[]): void {
+export function renderScreens(data: MonitorInfo[]): void {
   world.querySelectorAll('.screen-div').forEach(e => e.remove());
 
   data.forEach((s, i) => {
     const div = document.createElement('div');
     div.className = 'screen-div';
-    div.id = s.id;
+    div.id = s.name;
     div.innerHTML = `
       <span class="screen-label">SCREEN · ${i}</span>
       <span class="screen-dims">${s.width} × ${s.height}</span>
@@ -123,7 +123,7 @@ function renderScreens(data: ScreenItem[]): void {
     div.style.height = `${s.height}px`;
     div.addEventListener('click', (e) => {
       e.stopPropagation();
-      selectScreen(s.id, s);
+      selectScreen(s.name);
     });
     world.appendChild(div);
   });
@@ -135,7 +135,7 @@ function applyOffset(): void {
   drawGrid();
 }
 
-function selectScreen(id: string, data: ScreenItem): void {
+function selectScreen(id: string): void {
   if (selectedId) {
     document.getElementById(selectedId)?.classList.remove('selected');
   }
@@ -179,7 +179,7 @@ worldContainer.addEventListener('click', (e: MouseEvent) => {
   if (e.target === worldContainer || e.target === world) {
     if (selectedId) {
       document.getElementById(selectedId)?.classList.remove('selected');
-      selectedId = null;
+      selectedId = "";
     }
   }
 });
@@ -245,16 +245,18 @@ function centerAll(): void {
 // Public API
 // ────────────────────────────────────────────────
 
-function setScreenData(data: Omit<ScreenItem, 'id'>[]): void {
-  const items: ScreenItem[] = data.map((s, i) => ({
+export function setScreenData(data: MonitorInfo[], selected: MonitorInfo): void {
+    
+  const items: MonitorInfo[] = data.map((s, i) => ({
     ...s,
     id: `screen-${i}`,
   }));
   screenData.length = 0;
   items.forEach(s => screenData.push(s));
   renderScreens(screenData);
-  centerAll();
-  if (screenData.length > 0) selectScreen(screenData[0].id, screenData[0]);
+  selectedId = selected.name
+  selectScreen(selectedId);
+  console.log(selected);
 }
 
 (window as any).setScreenData = setScreenData;
@@ -284,14 +286,14 @@ new ResizeObserver(() => {
 
 let initialized = false;
 
-function init(): void {
+export function init(): void {
   if (initialized) return;
   if (frame.clientWidth === 0 || frame.clientHeight === 0) return;
   initialized = true;
   resizeCanvas();
   renderScreens(screenData);
+  selectScreen(selectedId);
   centerAll();
-  if (screenData.length > 0) selectScreen(screenData[0].id, screenData[0]);
 }
 
 // Exposed globally so non-module scripts can call window.initScreensFrame()

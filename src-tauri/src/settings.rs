@@ -8,7 +8,7 @@ use crate::IslandState;
 use crate::link_handler::LinkHandler;
 use crate::cc::CcRoute;
 use windows::Win32::Foundation::HWND;
-
+use crate::window::{MonitorInfo, get_monitor_info, get_primary_monitor_info};
 /// 歌词补偿：按播放器保存时 clamp 的边界与步长（毫秒）
 pub(crate) const LYRIC_OFFSET_MIN_MS: i64 = -3000;
 pub(crate) const LYRIC_OFFSET_MAX_MS: i64 = 3000;
@@ -50,6 +50,10 @@ use winreg::RegKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
+    #[serde(default = "get_monitor_info")]
+    pub monitor_info: Vec<MonitorInfo>,
+    #[serde(default = "get_primary_monitor_info")]
+    pub primary_monitor_info: MonitorInfo,
     #[serde(default)]
     pub clipboard_enabled: bool,
     #[serde(default = "default_shortcut")]
@@ -130,9 +134,9 @@ pub(crate) struct SettingsData {
 fn default_cc_routes() -> Vec<CcRoute> {
     vec![
         CcRoute { path: "/Stop".into(), tag: "$1 任务完成".into(), time: 2000 },
-        CcRoute { path: "/StopFailure".into(), tag: "$1 任务出错".into(), time: 3000 },
+        CcRoute { path: "/StopFailure".into(), tag: "$1 任务出错".into(), time: 2000 },
         CcRoute { path: "/SubagentStop".into(), tag: "Subagent 完成工作".into(), time: 1000 },
-        CcRoute { path: "/PermissionRequest".into(), tag: "$1 有待操作的请求".into(), time: 3000 },
+        CcRoute { path: "/PermissionRequest".into(), tag: "$1 有待操作的请求".into(), time: 2000 },
     ]
 }
 
@@ -246,6 +250,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
     }
     // 文件不存在或解析失败，使用默认值并立即写入磁盘
     let defaults = SettingsData {
+        monitor_info: get_monitor_info(),
+        primary_monitor_info: get_primary_monitor_info(),
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
         search_shortcut: default_search_shortcut(),
@@ -304,6 +310,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     let ec_port = ec.port;
     drop(ec);
     SettingsData {
+        primary_monitor_info: state.primary_monitor_info.lock().unwrap().clone(),
+        monitor_info: state.monitor_info.lock().unwrap().clone(),
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
         search_shortcut: state.search_shortcut.lock().unwrap().clone(),
@@ -384,6 +392,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     let email_auth = email_cfg.auth.clone();
     let email_address = email_cfg.address.clone();
     let email_port = email_cfg.port;
+
     drop(email_cfg);
     serde_json::json!({
         "clipboard_enabled": clipboard_enabled,
@@ -412,12 +421,15 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "email_address": email_address,
         "email_port": email_port,
         "email_shortcut": state.email_shortcut.lock().unwrap().clone(),
+        "monitor_info": state.monitor_info.lock().unwrap().clone(),
+        "primary_monitor_info": state.primary_monitor_info.lock().unwrap().clone(),
     })
 }
 
 #[tauri::command]
 pub fn save_settings(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, IslandState>,
     clipboard_enabled: bool,
     shortcut_key: String,
@@ -445,7 +457,33 @@ pub fn save_settings(
     email_address: Option<String>,
     email_port: Option<u16>,
     email_shortcut: Option<String>,
+    monitor_id: Option<String>,
 ) {
+    if let Some(monitor_id) = monitor_id {
+        let monitors = state.monitor_info.lock().unwrap();
+        
+        // 先拿主窗体~
+        let main_window = app.get_webview_window("main").unwrap(); // 换成你主窗体的 label
+        
+        for x in monitors.iter() {
+            if x.name == monitor_id {
+                state.screen_w.store(x.width, Ordering::Relaxed);
+                state.screen_x.store(x.x, Ordering::Relaxed);
+                state.screen_y.store(x.y, Ordering::Relaxed);
+                
+                *state.primary_monitor_info.lock().unwrap() = x.clone();
+                
+                let scale = main_window.scale_factor().unwrap_or(1.0);
+                let capsule_w = state.capsule_w.load(Ordering::Relaxed) as f64;
+                
+                let _ = main_window.set_position(tauri::LogicalPosition::new(
+                    x.x as f64 + (x.width as f64 / scale - capsule_w) / 2.0,
+                    x.y as f64,
+                ));
+            }
+        }
+    }
+
     if let Some(ref level) = log_level {
         crate::logger::set_level(level);
     }
@@ -502,7 +540,7 @@ pub fn save_settings(
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.emit("lyric-mode-changed", &lyric_mode);
     }
-
+    
     // 重新注册快捷键
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let _ = app.global_shortcut().unregister_all();

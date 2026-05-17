@@ -3,7 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 import { initLyricOffset } from "./settings-lyric-offset";
 import { loge } from "./logger";
-
+import { MonitorInfo, setScreenData, init } from "./screens-frame";
 const TAG = "Settings";
 
 
@@ -35,6 +35,8 @@ type SettingsResponse = {
   email_address: string;
   email_port: number;
   email_shortcut: string;
+  monitor_info: MonitorInfo[];
+  primary_monitor_info: MonitorInfo;
 };
 
 type AISettingsResponse = {
@@ -164,6 +166,8 @@ let citySearchTimer: number | null = null;
 
 async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
+  init();
+  setScreenData(settings.monitor_info, settings.primary_monitor_info);
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   searchShortcutInput.value = settings.search_shortcut;
@@ -363,7 +367,9 @@ saveBtn.addEventListener("click", async () => {
   }
 
   try {
+    //保存逻辑
     await invoke("save_settings", {
+      monitorId:  document.querySelector('.screen-div.selected')?.id,
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,
       searchShortcut: searchShortcutInput.value,

@@ -41,6 +41,7 @@ native-tls = "0.2"
 mailparse = "0.15"
 encoding_rs = "0.8"
 lyrix = "26.4.5"
+display-info = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

@@ -3,12 +3,25 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+use serde::{Deserialize, Serialize};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, TOP_MARGIN, SNAP_DURATION_MS, SNAP_FRAME_MS};
+use display_info::DisplayInfo;
+
 
 const TAG: &str = "Window";
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitorInfo {
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub is_primary: bool,
+    pub scale_factor: f64,
+}
 
 pub(crate) fn get_foreground_process_name() -> Option<String> {
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
@@ -337,8 +350,8 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
     // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
     let capsule_w = state.capsule_w.load(Ordering::Relaxed) as f64;
     let capsule_h = state.capsule_h.load(Ordering::Relaxed) as f64;
-    let target_x = (state.screen_w - capsule_w) / 2.0;
-    let target_y = TOP_MARGIN;
+    let target_x = state.screen_x.load(Ordering::Relaxed) as f64 * scale + (state.screen_w.load(Ordering::Relaxed) as f64 * scale - capsule_w) / 2.0;
+    let target_y = state.screen_y.load(Ordering::Relaxed) as f64 * scale;
     logger::debug(TAG, &format!("end_drag snap_back: capsule=({capsule_w:.1}x{capsule_h:.1}), target=({target_x:.1},{target_y:.1})"));
 
     if let Ok(pos) = window.outer_position() {
@@ -381,7 +394,7 @@ pub fn sync_window_size(
             .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
             .unwrap_or((0.0, TOP_MARGIN));
 
-        let target_x = (state.screen_w - new_w) / 2.0;
+        let target_x = (state.screen_w.load(Ordering::Relaxed) as f64 * scale - new_w) / 2.0;
         let target_y = from_y; // 纵向不动
 
         let w = window.clone();
@@ -524,11 +537,13 @@ pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
     let choice = reposition.unwrap_or(0);
     
     let temp_x = pos.x + lwidth /2 - width / 2;
+    //println!("{:?} {:?} {:?} {temp_x}",state.screen_w.load(Ordering::Relaxed), state.screen_x.load(Ordering::Relaxed), state.screen_y.load(Ordering::Relaxed));
     let (target_x, target_y) = match choice  {
         0 => (temp_x, pos.y),
         1 => {
-            let home_x = ((state.screen_w - ewidth as f64) / 2.0) as i32;//ewidth必定为10的倍数
-            if ewidth >= lwidth || pos.y == 0 {
+            let home_x = state.screen_x.load(Ordering::Relaxed) 
+                + ((state.screen_w.load(Ordering::Relaxed) as f64 * scale - ewidth as f64) / 2.0) as i32;//ewidth必定为10的倍数
+            if ewidth >= lwidth || pos.y == state.screen_y.load(Ordering::Relaxed)  {
                 (temp_x, pos.y)
             } else {
                 let ratio = if lwidth != ewidth {
@@ -538,13 +553,14 @@ pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
                 };
                 //纳闷为啥是这样算的请建系解二元一次方程组
                 let x1 = home_x + ((pos.x - home_x) as f64 * ratio).round() as i32;
-                let y1 = (pos.y as f64 * ratio).round() as i32;
+                let y1 = state.screen_y.load(Ordering::Relaxed) + (pos.y as f64 * ratio).round() as i32;
                 (x1, y1)
             }
         },
         _ => (pos.x, pos.y),
     };
-    logger::debug("rAF", &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
+    //logger::debug("rAF", &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
+    
     unsafe {
         let _ = SetWindowPos(
             window.hwnd().unwrap(),
@@ -608,4 +624,50 @@ pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
         Ok(_) => logger::info(TAG, "open_email_window succeeded"),
         Err(e) => logger::info(TAG, &format!("open_email_window failed: error={e}")),
     }
+}
+
+pub fn get_primary_monitor_info() -> MonitorInfo {
+    let displays = DisplayInfo::all().unwrap_or_default();
+    
+    let primary = displays.iter()
+        .find(|d| d.is_primary)
+        .or_else(|| displays.first()); // 找不到主屏就取第一个~
+
+    if let Some(d) = primary {
+        MonitorInfo {
+            name: d.name.clone(),
+            x: d.x,
+            y: d.y,
+            width: d.width,
+            height: d.height,
+            scale_factor: d.scale_factor as f64,
+            is_primary: true,
+        }
+    } else {
+        // 兜底默认值
+        MonitorInfo {
+            name: "Unknown".to_string(),
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            scale_factor: 1.0,
+            is_primary: true,
+        }
+    }
+}
+
+pub fn get_monitor_info() -> Vec<MonitorInfo> {
+    // 不再需要传 EventLoop 进来了~
+    let displays = DisplayInfo::all().unwrap_or_default();
+
+    displays.iter().map(|d| MonitorInfo {
+        name: d.name.clone(),
+        x: d.x,
+        y: d.y,
+        width: d.width,
+        height: d.height,
+        scale_factor: d.scale_factor as f64,
+        is_primary: d.is_primary,
+    }).collect()
 }

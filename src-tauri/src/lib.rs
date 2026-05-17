@@ -15,7 +15,7 @@ mod email;
 mod cc;
 mod tools;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -29,6 +29,8 @@ use windows::Win32::Foundation::HWND;
 use ai::ChatMessage;
 use email::Email;
 use link_handler::LinkHandler;
+
+use crate::window::MonitorInfo;
 
 pub(crate) const WIN_W: f64 = 140.0;
 pub(crate) const TOP_MARGIN: f64 = 0.0;
@@ -266,20 +268,37 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
             
+            
+
+            
+            
+
+            let hwnd = HWND(window.hwnd().unwrap().0);
+            window::set_click_through(hwnd, true);
+
+
+            //加载配置
+            let settings = settings::load_settings_from_file();
+            //定位相关
+            let monitor_info = Arc::new(Mutex::new(settings.monitor_info));
+            let primary_monitor_info = Arc::new(Mutex::new(settings.primary_monitor_info));
             let scale = window.scale_factor().unwrap_or(1.0);
-            let screen_w = if let Ok(Some(monitor)) = window.current_monitor() {
-                monitor.size().width as f64 / monitor.scale_factor()
-            } else { 1920.0 };
 
             let capsule_w: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
             let capsule_h: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let _ = window.set_position(tauri::LogicalPosition::new(home_x, TOP_MARGIN));
+            let screen_w = primary_monitor_info.lock().unwrap().width;
+            let screen_x = primary_monitor_info.lock().unwrap().x;
+            let screen_y = primary_monitor_info.lock().unwrap().y;
+
+            let _ = window.set_position(tauri::LogicalPosition::new(screen_x * scale as f64 + screen_w as f64 * scale - WIN_W, screen_y as f64 * scale));
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
 
-            let hwnd = HWND(window.hwnd().unwrap().0);
-            window::set_click_through(hwnd, true);
+            //统一遮蔽
+            let screen_w = Arc::new(AtomicU32::new(screen_w));
+            let screen_x = Arc::new(AtomicI32::new(screen_x));
+            let screen_y = Arc::new(AtomicI32::new(screen_y));
+            let scale = Arc::new(AtomicU32::new((scale * 100.0) as u32));
 
             let is_expanded = Arc::new(AtomicBool::new(false));
             let is_notifying = Arc::new(AtomicBool::new(false));
@@ -287,7 +306,7 @@ pub fn run() {
             let is_interacting = Arc::new(AtomicBool::new(false));
 
             // 从文件加载设置
-            let settings = settings::load_settings_from_file();
+            
             logger::set_level(&settings.log_level);
             logger::set_filter(settings.log_filter_tags.clone(), settings.log_filter_invert);
             let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
@@ -363,6 +382,8 @@ pub fn run() {
             );
 
             app.manage(IslandState {
+                primary_monitor_info: primary_monitor_info.clone(),
+                monitor_info: monitor_info.clone(),
                 capsule_w: capsule_w.clone(),
                 capsule_h: capsule_h.clone(),
                 sadb_session: tokio::sync::Mutex::new(None),
@@ -392,7 +413,7 @@ pub fn run() {
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
                 move_anim_id: move_anim_id.clone(),
-                screen_w, home_x, hwnd, scale,
+                screen_w, screen_x, screen_y, hwnd, scale,
                 ai_api_url: ai_api_url.clone(),
                 ai_api_key: ai_api_key.clone(),
                 ai_model: ai_model.clone(),
@@ -539,7 +560,7 @@ pub fn run() {
                             thread::sleep(Duration::from_millis(33)); 
                             continue 
                         };
-                        let current_scale = win_m.scale_factor().unwrap_or(scale).max(0.1);
+                        let current_scale = win_m.scale_factor().unwrap_or(1.0).max(0.1);
                         let fmx = (mx as f64 - rect.left as f64) / current_scale;
                         let fmy = (my as f64 - rect.top as f64) / current_scale;
                         let minimized = is_minimized_m.load(Ordering::Relaxed);
@@ -1389,6 +1410,8 @@ fn create_tray_icon() -> Vec<u8> {
 }
 
 pub struct IslandState {
+    pub primary_monitor_info: Arc<Mutex<MonitorInfo>>,
+    pub monitor_info: Arc<Mutex<Vec<MonitorInfo>>>,
     pub capsule_w: Arc<AtomicU64>,
     pub capsule_h: Arc<AtomicU64>,
     pub is_notifying: Arc<AtomicBool>,
@@ -1412,10 +1435,11 @@ pub struct IslandState {
     pub is_minimized: Arc<AtomicBool>,
     pub expand_anim_id: Arc<AtomicU64>,
     pub move_anim_id: Arc<AtomicU64>,
-    pub screen_w: f64,
-    pub home_x: f64,
+    pub screen_w: Arc<AtomicU32>,// /100
+    pub screen_x: Arc<AtomicI32>,
+    pub screen_y: Arc<AtomicI32>,
     pub hwnd: HWND,
-    pub scale: f64,
+    pub scale: Arc<AtomicU32>,// /100
     // AI Agent 相关字段
     pub ai_api_url: Arc<Mutex<String>>,
     pub ai_api_key: Arc<Mutex<String>>,
