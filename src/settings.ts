@@ -37,6 +37,8 @@ type SettingsResponse = {
   email_shortcut: string;
   monitor_info: MonitorInfo[];
   primary_monitor_info: MonitorInfo;
+  offset_x: number,
+  offset_y: number,
 };
 
 type AISettingsResponse = {
@@ -123,6 +125,9 @@ const logFilterTagInput = document.getElementById("log-filter-tag-input") as HTM
 const logFilterTagAddBtn = document.getElementById("log-filter-tag-add-btn") as HTMLButtonElement | null;
 const logFilterTagList = document.getElementById("log-filter-tag-list") as HTMLDivElement | null;
 
+const offsetX = document.getElementById("offsetX") as HTMLInputElement;
+const offsetY = document.getElementById("offsetY") as HTMLInputElement;
+
 const betterncmPathInput = document.getElementById("betterncm-path") as HTMLInputElement;
 const repairBtn = document.getElementById("install-betterncm-btn") as HTMLButtonElement;
 const openInfLinkBtn = document.getElementById("open-inflink-btn") as HTMLButtonElement;
@@ -168,6 +173,8 @@ async function loadSettings() {
   const settings = await invoke<SettingsResponse>("get_settings");
   init();
   setScreenData(settings.monitor_info, settings.primary_monitor_info);
+  offsetX.value = String(settings.offset_x);
+  offsetY.value = String(settings.offset_y);
   clipboardToggle.checked = settings.clipboard_enabled;
   shortcutInput.value = settings.shortcut_key;
   searchShortcutInput.value = settings.search_shortcut;
@@ -368,7 +375,10 @@ saveBtn.addEventListener("click", async () => {
 
   try {
     //保存逻辑
+    console.log(parseInt(offsetY.value))
     await invoke("save_settings", {
+      offsetX: parseInt(offsetX.value) || 0,
+      offsetY: parseInt(offsetY.value) || 0,
       monitorId:  document.querySelector('.screen-div.selected')?.id,
       clipboardEnabled: clipboardToggle.checked,
       shortcutKey: shortcut,

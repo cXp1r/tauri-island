@@ -280,6 +280,8 @@ pub fn run() {
             //加载配置
             let settings = settings::load_settings_from_file();
             //定位相关
+            let offset_x = settings.offset_x;
+            let offset_y = settings.offset_y;
             let monitor_info = Arc::new(Mutex::new(window::get_monitor_info()));
             let primary_monitor_info = Arc::new(Mutex::new(settings.primary_monitor_info));
             let scale = window.scale_factor().unwrap_or(1.0);
@@ -291,7 +293,7 @@ pub fn run() {
             let screen_x = primary_monitor_info.lock().unwrap().x;
             let screen_y = primary_monitor_info.lock().unwrap().y;
 
-            let _ = window.set_position(tauri::LogicalPosition::new(screen_x as f64 * scale + (screen_w as f64 * scale - WIN_W) / 2.0, screen_y as f64 * scale));
+            let _ = window.set_position(tauri::LogicalPosition::new(offset_x as f64 + screen_x as f64 * scale + (screen_w as f64 * scale - WIN_W) / 2.0, offset_y as f64 + screen_y as f64 * scale));
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
 
             //统一遮蔽
@@ -299,6 +301,8 @@ pub fn run() {
             let screen_x = Arc::new(AtomicI32::new(screen_x));
             let screen_y = Arc::new(AtomicI32::new(screen_y));
             let scale = Arc::new(AtomicU32::new((scale * 100.0) as u32));
+            let offset_x = Arc::new(AtomicI32::new(offset_x));
+            let offset_y = Arc::new(AtomicI32::new(offset_y));
 
             let is_expanded = Arc::new(AtomicBool::new(false));
             let is_notifying = Arc::new(AtomicBool::new(false));
@@ -382,6 +386,7 @@ pub fn run() {
             );
 
             app.manage(IslandState {
+                offset_x: offset_x.clone(), offset_y: offset_y.clone(),
                 primary_monitor_info: primary_monitor_info.clone(),
                 monitor_info: monitor_info.clone(),
                 capsule_w: capsule_w.clone(),
@@ -548,6 +553,8 @@ pub fn run() {
             let capsule_h_m = capsule_h.clone();
             let capsule_w_m = capsule_w.clone();
             let is_minimized_m = is_minimized.clone();
+            let offset_x_m = offset_x.clone();
+            let offset_y_m = offset_y.clone();
             thread::spawn(move || {
                 let mut was_on_capsule = false;//穿透快照
                 let mut was_in_zone = false;//顶部展开快照
@@ -584,7 +591,7 @@ pub fn run() {
                             was_on_capsule = false;
                         }
                         if !minimized && (!is_expanded_m.load(Ordering::Relaxed) || was_in_zone) {
-                            let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= 0.0) && (fmy <= 10.0);
+                            let in_zone = (fmx >= capsule_left) && (fmx <= capsule_right) && (fmy >= - offset_y_m.load(Ordering::Relaxed) as f64) && (fmy <= 10.0);
                             if in_zone && !was_in_zone {
                                 logger::debug("HitTest", "in_zone");
                                 was_in_zone = true;
@@ -1410,6 +1417,8 @@ fn create_tray_icon() -> Vec<u8> {
 }
 
 pub struct IslandState {
+    pub offset_x: Arc<AtomicI32>,
+    pub offset_y: Arc<AtomicI32>,
     pub primary_monitor_info: Arc<Mutex<MonitorInfo>>,
     pub monitor_info: Arc<Mutex<Vec<MonitorInfo>>>,
     pub capsule_w: Arc<AtomicU64>,

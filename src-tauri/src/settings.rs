@@ -8,7 +8,7 @@ use crate::IslandState;
 use crate::link_handler::LinkHandler;
 use crate::cc::CcRoute;
 use windows::Win32::Foundation::HWND;
-use crate::window::{MonitorInfo, get_monitor_info, get_primary_monitor_info};
+use crate::window::{MonitorInfo, get_primary_monitor_info};
 /// 歌词补偿：按播放器保存时 clamp 的边界与步长（毫秒）
 pub(crate) const LYRIC_OFFSET_MIN_MS: i64 = -3000;
 pub(crate) const LYRIC_OFFSET_MAX_MS: i64 = 3000;
@@ -50,6 +50,8 @@ use winreg::RegKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
+    pub offset_x: i32,
+    pub offset_y: i32,
     #[serde(default = "get_primary_monitor_info")]
     pub primary_monitor_info: MonitorInfo,
     #[serde(default)]
@@ -248,6 +250,8 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
     }
     // 文件不存在或解析失败，使用默认值并立即写入磁盘
     let defaults = SettingsData {
+        offset_x: 0,
+        offset_y: 0,
         primary_monitor_info: get_primary_monitor_info(),
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
@@ -307,6 +311,8 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     let ec_port = ec.port;
     drop(ec);
     SettingsData {
+        offset_x: state.offset_x.load(Ordering::Relaxed),
+        offset_y: state.offset_y.load(Ordering::Relaxed),
         primary_monitor_info: state.primary_monitor_info.lock().unwrap().clone(),
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
@@ -419,6 +425,8 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "email_shortcut": state.email_shortcut.lock().unwrap().clone(),
         "monitor_info": state.monitor_info.lock().unwrap().clone(),
         "primary_monitor_info": state.primary_monitor_info.lock().unwrap().clone(),
+        "offset_x": state.offset_x.load(Ordering::Relaxed),
+        "offset_y": state.offset_y.load(Ordering::Relaxed),
     })
 }
 
@@ -453,7 +461,13 @@ pub fn save_settings(
     email_port: Option<u16>,
     email_shortcut: Option<String>,
     monitor_id: Option<String>,
+    offset_x: Option<i32>,
+    offset_y: Option<i32>,
 ) {
+    if let (Some(offset_x),Some(offset_y)) = (offset_x, offset_y) {
+        state.offset_x.store(offset_x, Ordering::Relaxed);
+        state.offset_y.store(offset_y, Ordering::Relaxed);
+    }
     if let Some(monitor_id) = monitor_id {
         let monitors = state.monitor_info.lock().unwrap();
         
@@ -472,8 +486,8 @@ pub fn save_settings(
                 let capsule_w = state.capsule_w.load(Ordering::Relaxed) as f64;
                 
                 let _ = main_window.set_position(tauri::LogicalPosition::new(
-                    x.x as f64 + (x.width as f64 / scale - capsule_w) / 2.0,
-                    x.y as f64,
+                    state.offset_x.load(Ordering::Relaxed) as f64 + x.x as f64 + (x.width as f64 / scale - capsule_w) / 2.0,
+                    state.offset_y.load(Ordering::Relaxed) as f64 + x.y as f64,
                 ));
             }
         }

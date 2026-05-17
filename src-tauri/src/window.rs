@@ -350,8 +350,8 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
     // 按当前实际窗口宽度重算居中 X，避免 resize-handle 改过宽度后偏移
     let capsule_w = state.capsule_w.load(Ordering::Relaxed) as f64;
     let capsule_h = state.capsule_h.load(Ordering::Relaxed) as f64;
-    let target_x = state.screen_x.load(Ordering::Relaxed) as f64 * scale + (state.screen_w.load(Ordering::Relaxed) as f64 * scale - capsule_w) / 2.0;
-    let target_y = state.screen_y.load(Ordering::Relaxed) as f64 * scale;
+    let target_x = state.offset_x.load(Ordering::Relaxed) as f64 * scale + state.screen_x.load(Ordering::Relaxed) as f64 * scale + (state.screen_w.load(Ordering::Relaxed) as f64 * scale - capsule_w) / 2.0;
+    let target_y = state.offset_y.load(Ordering::Relaxed) as f64 * scale + state.screen_y.load(Ordering::Relaxed) as f64 * scale;
     logger::debug(TAG, &format!("end_drag snap_back: capsule=({capsule_w:.1}x{capsule_h:.1}), target=({target_x:.1},{target_y:.1})"));
 
     if let Ok(pos) = window.outer_position() {
@@ -535,31 +535,37 @@ pub fn resize_raf(state: tauri::State<'_, IslandState>, window: tauri::WebviewWi
     let window_width = width.max(min_w);
     let window_height = height.max(min_h);
     let choice = reposition.unwrap_or(0);
-    
-    let temp_x = pos.x + lwidth /2 - width / 2;
+
     //println!("{:?} {:?} {:?} {temp_x}",state.screen_w.load(Ordering::Relaxed), state.screen_x.load(Ordering::Relaxed), state.screen_y.load(Ordering::Relaxed));
-    let (target_x, target_y) = match choice  {
-        0 => (temp_x, pos.y),
+    let offset_x = (state.offset_x.load(Ordering::Relaxed) as f64 * scale) as i32;
+    let offset_y = (state.offset_y.load(Ordering::Relaxed) as f64 * scale) as i32;
+
+    let temp_x = pos.x + lwidth / 2 - width / 2; // 不加 offset~
+
+    let (target_x, target_y) = match choice {
+        0 => (temp_x, pos.y), // 不加 offset~
         1 => {
-            let home_x = state.screen_x.load(Ordering::Relaxed) 
-                + ((state.screen_w.load(Ordering::Relaxed) as f64 * scale - ewidth as f64) / 2.0) as i32;//ewidth必定为10的倍数
-            if ewidth >= lwidth || pos.y == state.screen_y.load(Ordering::Relaxed)  {
-                (temp_x, pos.y)
+            let home_x = state.screen_x.load(Ordering::Relaxed)
+                + offset_x  // 只有 home 加 offset~
+                + ((state.screen_w.load(Ordering::Relaxed) as f64 * scale - ewidth as f64) / 2.0) as i32;
+            let home_y = state.screen_y.load(Ordering::Relaxed) + offset_y; // 同理~
+            
+            if ewidth >= lwidth || pos.y == home_y {
+                (temp_x, pos.y) // 不加 offset~
             } else {
                 let ratio = if lwidth != ewidth {
                     (width - ewidth) as f64 / (lwidth - ewidth) as f64
                 } else {
-                    1.0 // 避免除以零，lwidth==ewidth 时窗口未变化
+                    1.0
                 };
-                //纳闷为啥是这样算的请建系解二元一次方程组
                 let x1 = home_x + ((pos.x - home_x) as f64 * ratio).round() as i32;
-                let y1 = state.screen_y.load(Ordering::Relaxed) + (pos.y as f64 * ratio).round() as i32;
+                let y1 = home_y + ((pos.y - home_y) as f64 * ratio).round() as i32;
                 (x1, y1)
             }
         },
         _ => (pos.x, pos.y),
     };
-    //logger::debug("rAF", &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
+    logger::debug("rAF", &format!("rAF: target_x={}, target_y={}, window_width={}, window_height={} lwindow_width={}, ewindow_width={}", target_x, target_y, width, height, lwidth, ewidth));
     
     unsafe {
         let _ = SetWindowPos(
