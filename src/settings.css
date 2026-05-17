@@ -779,3 +779,158 @@
     .city-current .clear-city:hover {
       color: var(--danger);
     }
+
+
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Syne:wght@400;700&display=swap');
+ 
+  :root {
+    --bg: #f0f4fa;
+    --panel-bg: rgba(255,255,255,0.92);
+    --border: rgba(59,120,220,0.15);
+    --text: #1a2a4a;
+    --text-dim: #8aa0c0;
+    --accent: #1a6fff;
+    --accent-glow: rgba(26,111,255,0.2);
+    --selected-border: #1a6fff;
+    --selected-bg: rgba(26,111,255,0.06);
+    --div-bg: rgba(255,255,255,0.7);
+    --div-border: rgba(26,111,255,0.25);
+    --div-hover: rgba(26,111,255,0.08);
+  }
+ 
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+  
+ 
+  /* ── Container — all positioning is relative to this ── */
+  #screens-frame {
+    position: relative;
+    width: 100%;
+    height: 250px;
+    overflow: hidden;
+    user-select: none;
+  }
+ 
+  /* ── Grid Canvas ── */
+  #grid-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+ 
+  /* ── World container ── */
+  #world-container {
+    position: absolute;
+    inset: 0;
+    cursor: grab;
+    z-index: 1;
+    overflow: hidden;
+  }
+  #world-container.dragging { cursor: grabbing; }
+ 
+  #world {
+    position: absolute;
+    top: 0; left: 0;
+    width: 0; height: 0;
+    transform-origin: 0 0;
+  }
+ 
+  /* ── Screen Divs ── */
+  .screen-div {
+    position: absolute;
+    background: var(--div-bg);
+    border: 10px solid rgba(26,111,255,0.25);
+    border-radius: 4px;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+    backdrop-filter: blur(2px);
+  }
+  .screen-div:hover {
+    background: var(--div-hover);
+    border-color: rgba(26,111,255,0.45);
+    box-shadow: 0 2px 16px rgba(26,111,255,0.1);
+  }
+  .screen-div.selected {
+    background: var(--selected-bg);
+    border-color: #1a4fd6;
+    box-shadow: 0 0 0 2px #1a4fd6, 0 4px 24px rgba(26,79,214,0.15);
+  }
+ 
+  .screen-div .screen-label {
+    position: absolute;
+    top: 10px; left: 14px;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    transition: color 0.15s;
+  }
+  .screen-div.selected .screen-label { color: var(--accent); }
+  .screen-div .screen-dims {
+    position: absolute;
+    bottom: 10px; right: 14px;
+    font-size: 10px;
+    color: rgba(26,111,255,0.3);
+    letter-spacing: 0.05em;
+    pointer-events: none;
+  }
+  .screen-div.selected .screen-dims { color: rgba(26,111,255,0.55); }
+ 
+  /* corner marks */
+  .screen-div::before, .screen-div::after {
+    content: '';
+    position: absolute;
+    width: 50px; height: 50px;
+    border-color: #e02020;
+    border-style: solid;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+  .screen-div::before { top: -10px; left: -10px; border-width: 10px 0 0 10px; }
+  .screen-div::after  { bottom: -10px; right: -10px; border-width: 0 10px 10px 0; }
+  .screen-div:hover::before,
+  .screen-div:hover::after { opacity: 0.85; }
+  .screen-div.selected::before,
+  .screen-div.selected::after { opacity: 1; }
+ 
+  /* ── Controls — absolute inside frame ── */
+
+  .ctrl-btn {
+    position: absolute;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 40px;
+    padding: 8px 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(26,111,255,0.1);
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .ctrl-btn:hover {
+    background: rgba(26,111,255,0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+ 
+  /* ── Origin cross ── */
+  .origin-h, .origin-v {
+    position: absolute;
+    background: rgba(59,139,255,0.2);
+    pointer-events: none;
+  }
+  .origin-h { height: 1px; width: 60px; top: 0; left: -30px; }
+  .origin-v { width: 1px; height: 60px; top: -30px; left: 0; }

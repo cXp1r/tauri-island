@@ -15,6 +15,7 @@
       </div>
       <nav class="nav-list">
         <div class="nav-item active" data-page="general">常规设置</div>
+        <div class="nav-item" data-page="screens">屏幕设置</div>
         <div class="nav-item" data-page="music">音乐</div>
         <div class="nav-item" data-page="weather">天气</div>
         <div class="nav-item" data-page="ai">AI Agent</div>
@@ -89,6 +90,28 @@
           </div>
         </div>
 
+        <!-- 屏幕设置页面 -->
+        <div class="page" id="page-screens">
+          
+          <div class="setting-group">
+            <div class="setting-group-title">常驻屏幕设置</div>
+            <div id="screens-frame">
+              
+              <canvas id="grid-canvas"></canvas>
+
+              <div id="ruler"></div>
+
+              <div id="world-container">
+                <div id="world">
+                  <div class="origin-h"></div>
+                  <div class="origin-v"></div>
+                </div>
+              </div>
+
+              <button class="ctrl-btn" onclick="resetOffset()">Fit All ~</button>
+            </div>
+          </div>
+        </div>
         <!-- 音乐页面 -->
         <div class="page" id="page-music">
           <div class="setting-group">
@@ -673,6 +696,7 @@
     // ==================== 页面导航 ====================
 const pageInfo = {
   general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
+  screens:          { title: "屏幕设置",     desc: "多屏幕定位,偏移和缩放" },
   music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
   "lyric-offset":   { title: "歌词补偿·按播放器", desc: "每个播放器单独存储补偿时长，点 ± 立即生效。" },
   weather:          { title: "天气",          desc: "配置天气显示位置。" },
@@ -692,6 +716,9 @@ const pageTitle = document.getElementById("page-title");
 const pageDesc  = document.getElementById("page-desc");
 
 function navigateTo(pageId) {
+  if (pageId === 'screens') {
+    initScreensFrame();
+  }
   navItems.forEach(n => n.classList.remove("active"));
   document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
   pages.forEach(p => p.classList.remove("active"));
@@ -709,5 +736,6 @@ document.querySelectorAll("[data-nav-to]").forEach(btn => {
 });
   </script>
   <script type="module" src="src/settings.ts"></script>
+  <script type="module" src="src/screens-frame.ts"></script>
 </body>
 </html>
