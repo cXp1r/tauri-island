@@ -429,7 +429,6 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
 #[tauri::command]
 pub fn save_settings(
     app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
     state: tauri::State<'_, IslandState>,
     clipboard_enabled: bool,
     shortcut_key: String,

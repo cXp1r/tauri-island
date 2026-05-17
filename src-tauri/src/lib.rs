@@ -291,7 +291,7 @@ pub fn run() {
             let screen_x = primary_monitor_info.lock().unwrap().x;
             let screen_y = primary_monitor_info.lock().unwrap().y;
 
-            let _ = window.set_position(tauri::LogicalPosition::new(screen_x * scale as f64 + screen_w as f64 * scale - WIN_W, screen_y as f64 * scale));
+            let _ = window.set_position(tauri::LogicalPosition::new(screen_x as f64 * scale + (screen_w as f64 * scale - WIN_W) / 2.0, screen_y as f64 * scale));
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
 
             //统一遮蔽
