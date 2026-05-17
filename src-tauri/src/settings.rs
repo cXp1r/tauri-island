@@ -50,8 +50,6 @@ use winreg::RegKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
-    #[serde(default = "get_monitor_info")]
-    pub monitor_info: Vec<MonitorInfo>,
     #[serde(default = "get_primary_monitor_info")]
     pub primary_monitor_info: MonitorInfo,
     #[serde(default)]
@@ -250,7 +248,6 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
     }
     // 文件不存在或解析失败，使用默认值并立即写入磁盘
     let defaults = SettingsData {
-        monitor_info: get_monitor_info(),
         primary_monitor_info: get_primary_monitor_info(),
         clipboard_enabled: false,
         shortcut_key: default_shortcut(),
@@ -311,7 +308,6 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     drop(ec);
     SettingsData {
         primary_monitor_info: state.primary_monitor_info.lock().unwrap().clone(),
-        monitor_info: state.monitor_info.lock().unwrap().clone(),
         clipboard_enabled: state.clipboard_enabled.load(Ordering::Relaxed),
         shortcut_key: state.shortcut_key.lock().unwrap().clone(),
         search_shortcut: state.search_shortcut.lock().unwrap().clone(),

@@ -280,7 +280,7 @@ pub fn run() {
             //加载配置
             let settings = settings::load_settings_from_file();
             //定位相关
-            let monitor_info = Arc::new(Mutex::new(settings.monitor_info));
+            let monitor_info = Arc::new(Mutex::new(window::get_monitor_info()));
             let primary_monitor_info = Arc::new(Mutex::new(settings.primary_monitor_info));
             let scale = window.scale_factor().unwrap_or(1.0);
 

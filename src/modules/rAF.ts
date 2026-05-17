@@ -42,19 +42,18 @@ export function animateCapsule(toW: number, toH: number): void {
   if (toW === targetW && toH === targetH) return
   targetW = toW
   targetH = toH
-
+  
   cancelAnimationFrame(raf)
 
   // 从当前实际样式读取起点，而不是依赖外部 fromW/fromH
-  const currentW = parseFloat(el.style.width) || fromW
-  const currentH = parseFloat(el.style.height) || fromH
-  const startW = currentW
-  const startH = currentH
+  const startW = parseFloat(el.style.width) || fromW
+  const startH = parseFloat(el.style.height) || fromH
 
   const start = performance.now()
   let lw = startW
   //let lh = startH
   function frame(now: number): void {
+    
     const t = Math.min((now - start) / 350, 1)
     const e = easing(t)
     const w = (Math.round(startW + (toW - startW) * e) + 1) & ~1
@@ -62,7 +61,7 @@ export function animateCapsule(toW: number, toH: number): void {
 
     el.style.width  = w + 'px'
     el.style.height = h + 'px'
-
+console.log(w);
     port2.postMessage({ w, h, lw, t, e })
 
     if (t < 1) raf = requestAnimationFrame(frame)
